@@ -1,0 +1,10 @@
+# IDE
+.idea
+
+# Build artifacts
+target
+dist
+
+# NodeJS
+node_modules
+yarn-error.log
