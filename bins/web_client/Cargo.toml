@@ -28,10 +28,11 @@ features = [
     "render",
 ]
 
-#[dependencies.web-sys]
-#version = "0.3.45"
-#features = [
-#    "CssStyleDeclaration",
-#    "Document",
-#    "HtmlCollection",
-#]
+[dependencies.web-sys]
+version = "0.3.45"
+features = [
+    "CssStyleDeclaration",
+    "Document",
+    "HtmlCollection",
+    "Window",
+]
