@@ -3,3 +3,6 @@ members = [
     "bins/web_client",
     "bins/server",
 ]
+
+[patch.crates-io]
+bevy = { git = "https://github.com/mrk-its/bevy.git", branch = "wasm" }
