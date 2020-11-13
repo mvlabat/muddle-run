@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "bins/desktop_client",
     "bins/web_client",
     "bins/server",
 ]
