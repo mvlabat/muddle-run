@@ -6,4 +6,5 @@ members = [
 ]
 
 [patch.crates-io]
-bevy = { git = "https://github.com/mrk-its/bevy.git", branch = "wasm" }
+bevy = { git = "https://github.com/mvlabat/bevy.git", branch = "fix-material-handles-rebased" }
+bevy_rapier3d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }

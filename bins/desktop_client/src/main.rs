@@ -111,19 +111,19 @@ fn main() {
         .init_resource::<WindowInnerSize>()
         .init_resource::<MousePosition>()
         // Startup systems,
-        .add_startup_system(basic_scene.system())
+        .add_startup_system(basic_scene)
         // Track input events.
         .init_resource::<TrackInputState>()
-        .add_system(track_input_events.system())
+        .add_system(track_input_events)
         // Game systems.
-        .add_stage_before(stage::POST_UPDATE, "game_stage")
-        .add_system_to_stage("game_stage", move_controllable_object.system())
-        .add_system_to_stage(stage::POST_UPDATE, detect_collisions.system())
+        // .add_stage_before(stage::POST_UPDATE, "game_stage")
+        .add_system(move_controllable_object)
+        .add_system(detect_collisions)
         .run();
 }
 
 fn basic_scene(
-    mut commands: Commands,
+    commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     material_handles: Res<MaterialHandles>,
@@ -131,13 +131,13 @@ fn basic_scene(
     // Add entities to the scene.
     commands
         // Plane.
-        .spawn(PbrComponents {
+        .spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Plane { size: PLANE_SIZE })),
             material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
             ..Default::default()
         })
         // Cube.
-        .spawn(PbrComponents {
+        .spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
             material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
             ..Default::default()
@@ -145,7 +145,7 @@ fn basic_scene(
         .with(RigidBodyBuilder::new_static().translation(0.0, 1.0, 0.0))
         .with(ColliderBuilder::cuboid(1.0, 1.0, 1.0))
         // Controllable cube.
-        .spawn(PbrComponents {
+        .spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Cube { size: 0.5 })),
             material: material_handles.normal.clone(),
             ..Default::default()
@@ -154,12 +154,12 @@ fn basic_scene(
         .with(RigidBodyBuilder::new_kinematic().translation(0.0, 0.5, 0.0))
         .with(ColliderBuilder::cuboid(0.5, 0.5, 0.5))
         // Light.
-        .spawn(LightComponents {
+        .spawn(LightBundle {
             transform: Transform::from_translation(Vec3::new(4.0, 8.0, 4.0)),
             ..Default::default()
         })
         // Camera.
-        .spawn(Camera3dComponents {
+        .spawn(Camera3dBundle {
             transform: Transform::from_translation(Vec3::new(-3.0, 5.0, 8.0))
                 .looking_at(Vec3::default(), Vec3::unit_y()),
             ..Default::default()
@@ -208,8 +208,8 @@ fn cursor_pos_to_ray(
 ) -> Ray {
     // Calculate the cursor pos in NDC space [(-1,-1), (1,1)].
     let cursor_ndc = Vec4::from((
-        (cursor_viewport.x() / window.width() as f32) * 2.0 - 1.0,
-        (cursor_viewport.y() / window.height() as f32) * 2.0 - 1.0,
+        (cursor_viewport.x / window.width() as f32) * 2.0 - 1.0,
+        (cursor_viewport.y / window.height() as f32) * 2.0 - 1.0,
         -1.0, // let the cursor be on the far clipping plane
         1.0,
     ));
@@ -220,15 +220,15 @@ fn cursor_pos_to_ray(
     // Transform the cursor position into object/camera space. This also turns the cursor into
     // a vector that's pointing from the camera center onto the far plane.
     let mut ray_camera = object_to_ndc.inverse().mul_vec4(cursor_ndc);
-    ray_camera.set_z(-1.0);
-    ray_camera.set_w(0.0); // treat the vector as a direction (0 = Direction, 1 = Position)
+    ray_camera.z = -1.0;
+    ray_camera.w = 0.0; // treat the vector as a direction (0 = Direction, 1 = Position)
 
     // Transform the cursor into world space.
     let ray_world = object_to_world.mul_vec4(ray_camera);
-    let ray_world = Vec3::from(ray_world.truncate());
+    let ray_world = ray_world.truncate();
 
-    let camera_pos = camera_transform.w_axis().truncate();
-    let camera_pos = na::Point3::new(camera_pos.x(), camera_pos.y(), camera_pos.z());
+    let camera_pos = camera_transform.w_axis.truncate();
+    let camera_pos = na::Point3::new(camera_pos.x, camera_pos.y, camera_pos.z);
     Ray::new(
         camera_pos,
         na::Vector3::from_row_slice(ray_world.normalize().as_ref()),
@@ -242,7 +242,8 @@ fn move_controllable_object(
     mut rigid_body_set: ResMut<RigidBodySet>,
     mut collider_set: ResMut<ColliderSet>,
     mut controllable_objects: Query<
-        With<ControllableObjectTag, (&RigidBodyHandleComponent, &ColliderHandleComponent)>,
+        (&RigidBodyHandleComponent, &ColliderHandleComponent),
+        With<ControllableObjectTag>,
     >,
     cameras: Query<(
         &Transform,
@@ -274,8 +275,8 @@ fn move_controllable_object(
 
     if let Some(intersection_point) = intersect_ray_plane(&mouse_ray, PLANE_SIZE) {
         let mut new_position = rigid_body.position;
-        new_position.translation.x = intersection_point.x();
-        new_position.translation.z = intersection_point.z();
+        new_position.translation.x = intersection_point.x;
+        new_position.translation.z = intersection_point.z;
         rigid_body.set_position(new_position);
         collider.set_position_debug(new_position);
     }
@@ -293,9 +294,9 @@ fn intersect_ray_plane(ray: &Ray, size: f32) -> Option<Vec3> {
             return Some(ray_origin + t * ray_direction).and_then(|intersection_point| {
                 // Checks that the intersection point is within the plane. Assumes plane's origin
                 // at zero coordinates.
-                if intersection_point.y().abs() <= f32::EPSILON
-                    && intersection_point.x().abs() <= size / 2.0
-                    && intersection_point.z().abs() <= size / 2.0
+                if intersection_point.y.abs() <= f32::EPSILON
+                    && intersection_point.x.abs() <= size / 2.0
+                    && intersection_point.z.abs() <= size / 2.0
                 {
                     Some(intersection_point)
                 } else {
@@ -311,7 +312,8 @@ fn detect_collisions(
     events: Res<EventQueue>,
     material_handles: Res<MaterialHandles>,
     mut controllable_objects: Query<
-        With<ControllableObjectTag, (&mut Handle<StandardMaterial>, &ColliderHandleComponent)>,
+        (&mut Handle<StandardMaterial>, &ColliderHandleComponent),
+        With<ControllableObjectTag>,
     >,
 ) {
     while let Ok(contact_event) = events.contact_events.pop() {
@@ -319,19 +321,20 @@ fn detect_collisions(
             ContactEvent::Started(lhs_handle, rhs_handle) => (true, lhs_handle, rhs_handle),
             ContactEvent::Stopped(lhs_handle, rhs_handle) => (false, lhs_handle, rhs_handle),
         };
-        let controllable_object = controllable_objects
-            .iter_mut()
-            .find(|(_, collider_handle)| {
-                collider_handle.handle() == lhs_handle || collider_handle.handle() == rhs_handle
-            });
+        let controllable_object =
+            controllable_objects
+                .iter_mut()
+                .find(|(_, collider_handle)| {
+                    collider_handle.handle() == lhs_handle || collider_handle.handle() == rhs_handle
+                });
 
         if let Some((mut material, _)) = controllable_object {
-            *material = if contacting {
+            if contacting {
                 log::info!("Applying contacting material");
-                material_handles.contacting.clone()
+                *material = material_handles.contacting.clone();
             } else {
                 log::info!("Applying normal material");
-                material_handles.normal.clone()
+                *material = material_handles.normal.clone();
             }
         }
     }
