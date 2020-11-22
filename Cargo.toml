@@ -1,8 +1,14 @@
 [workspace]
 members = [
+    "libs/client_shared",
+    "bins/desktop_client",
     "bins/web_client",
     "bins/server",
 ]
 
 [patch.crates-io]
-bevy = { git = "https://github.com/mrk-its/bevy.git", branch = "wasm" }
+bevy = { git = "https://github.com/bevyengine/bevy//" }
+bevy_rapier3d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
+
+[patch.'https://github.com/bevyengine/bevy']
+bevy = { git = "https://github.com/bevyengine/bevy//" }
