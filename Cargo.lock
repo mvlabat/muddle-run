@@ -251,7 +251,7 @@ checksum = "3441f0f7b02788e948e47f457ca01f1d7e6d92c693bc132c22b087d3141c03ff"
 [[package]]
 name = "bevy"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_internal",
 ]
@@ -265,12 +265,11 @@ checksum = "0d5f2f58f0aec3c50a20799792c3705e80dd7df327e79791cacec197e84e5e61"
 [[package]]
 name = "bevy_app"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_derive",
  "bevy_ecs",
  "bevy_utils",
- "instant",
  "serde",
  "wasm-bindgen",
  "web-sys",
@@ -279,7 +278,7 @@ dependencies = [
 [[package]]
 name = "bevy_asset"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "anyhow",
  "bevy_app",
@@ -307,7 +306,7 @@ dependencies = [
 [[package]]
 name = "bevy_audio"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "anyhow",
  "bevy_app",
@@ -322,7 +321,7 @@ dependencies = [
 [[package]]
 name = "bevy_core"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -332,13 +331,12 @@ dependencies = [
  "bevy_tasks",
  "bevy_type_registry",
  "bevy_utils",
- "instant",
 ]
 
 [[package]]
 name = "bevy_derive"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "Inflector",
  "find-crate 0.6.1",
@@ -351,13 +349,12 @@ dependencies = [
 [[package]]
 name = "bevy_diagnostic"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_core",
  "bevy_ecs",
  "bevy_utils",
- "instant",
  "parking_lot",
  "uuid",
 ]
@@ -365,7 +362,7 @@ dependencies = [
 [[package]]
 name = "bevy_dynamic_plugin"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "libloading 0.6.5",
@@ -374,7 +371,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_ecs_macros",
  "bevy_tasks",
@@ -392,7 +389,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs_macros"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "find-crate 0.5.0",
  "proc-macro2",
@@ -403,7 +400,7 @@ dependencies = [
 [[package]]
 name = "bevy_gilrs"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -415,7 +412,7 @@ dependencies = [
 [[package]]
 name = "bevy_gltf"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "anyhow",
  "base64 0.12.3",
@@ -436,7 +433,7 @@ dependencies = [
 [[package]]
 name = "bevy_input"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -447,7 +444,7 @@ dependencies = [
 [[package]]
 name = "bevy_internal"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -482,7 +479,7 @@ dependencies = [
 [[package]]
 name = "bevy_log"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "android_log-sys 0.2.0",
  "bevy_app",
@@ -495,7 +492,7 @@ dependencies = [
 [[package]]
 name = "bevy_math"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "glam",
 ]
@@ -503,7 +500,7 @@ dependencies = [
 [[package]]
 name = "bevy_pbr"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -521,7 +518,7 @@ dependencies = [
 [[package]]
 name = "bevy_property"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_ecs",
  "bevy_math",
@@ -536,7 +533,7 @@ dependencies = [
 [[package]]
 name = "bevy_property_derive"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "find-crate 0.5.0",
  "proc-macro2",
@@ -547,7 +544,7 @@ dependencies = [
 [[package]]
 name = "bevy_rapier3d"
 version = "0.5.0"
-source = "git+https://github.com/mvlabat/bevy_rapier.git?branch=bevy-master#33f9b44667d892a3a7bab08af4fd8c726ba7e302"
+source = "git+https://github.com/mvlabat/bevy_rapier.git?branch=bevy-master#fdd46d95f2b9b9f818ed3d702ca3ca7b8c373253"
 dependencies = [
  "bevy",
  "concurrent-queue",
@@ -558,7 +555,7 @@ dependencies = [
 [[package]]
 name = "bevy_render"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "anyhow",
  "bevy-glsl-to-spirv",
@@ -591,7 +588,7 @@ dependencies = [
 [[package]]
 name = "bevy_scene"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "anyhow",
  "bevy_app",
@@ -610,7 +607,7 @@ dependencies = [
 [[package]]
 name = "bevy_sprite"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -629,12 +626,13 @@ dependencies = [
 [[package]]
 name = "bevy_tasks"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "async-channel",
  "async-executor",
  "event-listener",
  "futures-lite",
+ "instant",
  "num_cpus",
  "wasm-bindgen-futures",
 ]
@@ -642,7 +640,7 @@ dependencies = [
 [[package]]
 name = "bevy_text"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -662,7 +660,7 @@ dependencies = [
 [[package]]
 name = "bevy_transform"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -676,7 +674,7 @@ dependencies = [
 [[package]]
 name = "bevy_type_registry"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -691,7 +689,7 @@ dependencies = [
 [[package]]
 name = "bevy_ui"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -713,17 +711,33 @@ dependencies = [
 [[package]]
 name = "bevy_utils"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "ahash",
  "getrandom 0.2.0",
+ "instant",
  "tracing",
+]
+
+[[package]]
+name = "bevy_webgl2"
+version = "0.3.0"
+source = "git+https://github.com/mrk-its/bevy_webgl2.git#0500d2f3f7b8b4bc09706569fa6b125fc14dd52a"
+dependencies = [
+ "bevy",
+ "cfg-if 1.0.0",
+ "js-sys",
+ "parking_lot",
+ "regex",
+ "wasm-bindgen",
+ "web-sys",
+ "winit",
 ]
 
 [[package]]
 name = "bevy_wgpu"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -744,7 +758,7 @@ dependencies = [
 [[package]]
 name = "bevy_window"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -757,7 +771,7 @@ dependencies = [
 [[package]]
 name = "bevy_winit"
 version = "0.3.0"
-source = "git+https://github.com/mvlabat/bevy.git?branch=fix-material-handles-rebased#163435121491358cedcc68aaa8e2bf6cac40c8d3"
+source = "git+https://github.com/bevyengine/bevy//#1e9a0544bdaf2794664b71d3567600e786eefd10"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -2489,6 +2503,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mr_client_shared"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_rapier3d",
+ "env_logger 0.8.2",
+ "log",
+]
+
+[[package]]
 name = "mr_desktop_client"
 version = "0.1.0"
 dependencies = [
@@ -2496,6 +2520,7 @@ dependencies = [
  "bevy_rapier3d",
  "env_logger 0.8.2",
  "log",
+ "mr_client_shared",
 ]
 
 [[package]]
@@ -2507,9 +2532,11 @@ name = "mr_web_client"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_webgl2",
  "console_error_panic_hook",
  "console_log",
  "log",
+ "mr_client_shared",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -3541,9 +3568,9 @@ checksum = "8fb1df15f412ee2e9dfc1c504260fa695c1c3f10fe9f4a6ee2d2184d7d6450e2"
 
 [[package]]
 name = "syn"
-version = "1.0.48"
+version = "1.0.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc371affeffc477f42a221a1e4297aedcea33d47d19b61455588bd9d8f6b19ac"
+checksum = "443b4178719c5a851e1bde36ce12da21d74a0e60b4d982ec3385a933c812f0f6"
 dependencies = [
  "proc-macro2",
  "quote",
