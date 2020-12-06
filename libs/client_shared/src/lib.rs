@@ -1,3 +1,4 @@
+use crate::bevy_megaui::{MegaUiContext, MegaUiPlugin};
 use bevy::{
     input::{keyboard::KeyboardInput, mouse::MouseButtonInput},
     prelude::*,
@@ -17,12 +18,17 @@ use bevy_rapier3d::{
         na,
     },
 };
+use megaui::{hash, Vector2};
+
+mod bevy_megaui;
+mod transform_node;
 
 pub struct MuddlePlugin;
 
 impl Plugin for MuddlePlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
+            .add_plugin(MegaUiPlugin)
             // Physics.
             .add_resource(MouseRay(Ray::new(
                 na::Point3::new(0.0, 0.0, 0.0),
@@ -119,6 +125,13 @@ impl ProximityPairFilter for PairFilter {
     fn filter_proximity_pair(&self, _context: &PairFilterContext) -> bool {
         true
     }
+}
+
+fn test_ui(_world: &World, resources: &Resources) {
+    let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
+    megaui::widgets::Window::new(hash!(), Vector2::new(0.0, 0.0), Vector2::new(300.0, 300.0))
+        .label("TEST")
+        .ui(&mut megaui_context.ui, |_ui| {});
 }
 
 fn basic_scene(
