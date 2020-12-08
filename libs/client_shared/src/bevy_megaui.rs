@@ -21,16 +21,17 @@ use bevy::{
             AsVertexFormats, BindGroupDescriptor, BindType, BindingDescriptor, BindingShaderStage,
             BlendDescriptor, BlendFactor, BlendOperation, ColorStateDescriptor, ColorWrite,
             CompareFunction, CullMode, DepthStencilStateDescriptor, FrontFace, IndexFormat,
-            PipelineDescriptor, RasterizationStateDescriptor, StencilStateDescriptor,
-            StencilStateFaceDescriptor, UniformProperty, VertexFormat,
+            InputStepMode, PipelineCompiler, PipelineDescriptor, PipelineSpecialization,
+            RasterizationStateDescriptor, StencilStateDescriptor, StencilStateFaceDescriptor,
+            UniformProperty, VertexAttributeDescriptor, VertexBufferDescriptor, VertexFormat,
         },
         render_graph::{
             base, base::Msaa, AssetRenderResourcesNode, CommandQueue, Node, RenderGraph,
-            ResourceSlots, SystemNode, WindowSwapChainNode, WindowTextureNode,
+            ResourceSlotInfo, ResourceSlots, SystemNode, WindowSwapChainNode, WindowTextureNode,
         },
         renderer::{
             BindGroup, BindGroupId, BufferId, RenderContext, RenderResource,
-            RenderResourceBindings, RenderResources,
+            RenderResourceBindings, RenderResourceContext, RenderResourceType, RenderResources,
         },
         shader::{Shader, ShaderStage, ShaderStages},
         texture::{Texture, TextureFormat},
@@ -39,7 +40,7 @@ use bevy::{
     window::{CursorMoved, WindowDescriptor, WindowResized},
 };
 use megaui::Vertex;
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 pub const MEGAUI_PIPELINE_HANDLE: Handle<PipelineDescriptor> =
     Handle::weak_from_u64(PipelineDescriptor::TYPE_UUID, 9404026720151354217);
@@ -57,6 +58,21 @@ pub struct MegaUiContext {
     cursor: EventReader<CursorMoved>,
     keys: EventReader<KeyboardInput>,
     resize: EventReader<WindowResized>,
+}
+
+impl MegaUiContext {
+    pub fn new(ui: megaui::Ui, font_texture: Handle<Texture>) -> Self {
+        Self {
+            ui,
+            ui_draw_lists: Vec::new(),
+            font_texture,
+            megaui_textures: Default::default(),
+            mouse_position: (0.0, 0.0),
+            cursor: Default::default(),
+            keys: Default::default(),
+            resize: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -90,6 +106,22 @@ impl Plugin for MegaUiPlugin {
             .add_asset::<MegaUiAsset>();
 
         let resources = app.resources_mut();
+
+        let ui = megaui::Ui::new();
+        let font_texture = {
+            let mut assets = resources.get_mut::<Assets<Texture>>().unwrap();
+            assets.add(Texture::new(
+                Vec2::new(
+                    ui.font_atlas.texture.width as f32,
+                    ui.font_atlas.texture.height as f32,
+                ),
+                ui.font_atlas.texture.data.clone(),
+                TextureFormat::Rgba8UnormSrgb,
+            ))
+        };
+        resources.insert(WindowSize::new(0.0, 0.0));
+        resources.insert_thread_local(MegaUiContext::new(ui, font_texture));
+
         let msaa = resources.get::<Msaa>().unwrap();
 
         let mut render_graph = resources.get_mut::<RenderGraph>().unwrap();
@@ -152,6 +184,11 @@ impl Plugin for MegaUiPlugin {
 
 pub struct MegaUiNode {
     pass_descriptor: PassDescriptor,
+    inputs: Vec<ResourceSlotInfo>,
+    color_attachment_input_indices: Vec<Option<usize>>,
+    color_resolve_target_indices: Vec<Option<usize>>,
+    depth_stencil_attachment_input_index: Option<usize>,
+    default_clear_color_inputs: Vec<usize>,
     transform_bind_group_descriptor: BindGroupDescriptor,
     transform_bind_group_id: Option<BindGroupId>,
     command_queue: CommandQueue,
@@ -176,32 +213,74 @@ impl MegaUiNode {
                 shader_stage: BindingShaderStage::VERTEX | BindingShaderStage::FRAGMENT,
             }],
         );
+        let color_attachments = vec![msaa.color_attachment_descriptor(
+            TextureAttachment::Input("color_attachment".to_string()),
+            TextureAttachment::Input("color_resolve_target".to_string()),
+            Operations {
+                load: LoadOp::Load,
+                store: true,
+            },
+        )];
+        let depth_stencil_attachment = RenderPassDepthStencilAttachmentDescriptor {
+            attachment: TextureAttachment::Input("depth".to_string()),
+            depth_ops: Some(Operations {
+                load: LoadOp::Clear(1.0),
+                store: true,
+            }),
+            stencil_ops: None,
+        };
+
+        let mut inputs = Vec::new();
+        let mut color_attachment_input_indices = Vec::new();
+        let mut color_resolve_target_indices = Vec::new();
+
+        for color_attachment in color_attachments.iter() {
+            if let TextureAttachment::Input(ref name) = color_attachment.attachment {
+                color_attachment_input_indices.push(Some(inputs.len()));
+                inputs.push(ResourceSlotInfo::new(
+                    name.to_string(),
+                    RenderResourceType::Texture,
+                ));
+            } else {
+                color_attachment_input_indices.push(None);
+            }
+
+            if let Some(TextureAttachment::Input(ref name)) = color_attachment.resolve_target {
+                color_resolve_target_indices.push(Some(inputs.len()));
+                inputs.push(ResourceSlotInfo::new(
+                    name.to_string(),
+                    RenderResourceType::Texture,
+                ));
+            } else {
+                color_resolve_target_indices.push(None);
+            }
+        }
+
+        let mut depth_stencil_attachment_input_index = None;
+        if let TextureAttachment::Input(ref name) = depth_stencil_attachment.attachment {
+            depth_stencil_attachment_input_index = Some(inputs.len());
+            inputs.push(ResourceSlotInfo::new(
+                name.to_string(),
+                RenderResourceType::Texture,
+            ));
+        }
 
         Self {
             pass_descriptor: PassDescriptor {
-                color_attachments: vec![msaa.color_attachment_descriptor(
-                    TextureAttachment::Input("color_attachment".to_string()),
-                    TextureAttachment::Input("color_resolve_target".to_string()),
-                    Operations {
-                        load: LoadOp::Load,
-                        store: true,
-                    },
-                )],
-                depth_stencil_attachment: Some(RenderPassDepthStencilAttachmentDescriptor {
-                    attachment: TextureAttachment::Input("depth".to_string()),
-                    depth_ops: Some(Operations {
-                        load: LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
+                color_attachments,
+                depth_stencil_attachment: Some(depth_stencil_attachment),
                 sample_count: msaa.samples,
             },
+            default_clear_color_inputs: Vec::new(),
+            inputs,
+            depth_stencil_attachment_input_index,
+            color_attachment_input_indices,
             transform_bind_group_descriptor,
             transform_bind_group_id: None,
             command_queue: CommandQueue::default(),
             vertex_buffer: None,
             index_buffer: None,
+            color_resolve_target_indices,
         }
     }
 }
@@ -217,6 +296,10 @@ struct DrawCommand {
 }
 
 impl Node for MegaUiNode {
+    fn input(&self) -> &[ResourceSlotInfo] {
+        &self.inputs
+    }
+
     fn update(
         &mut self,
         _world: &World,
@@ -225,6 +308,52 @@ impl Node for MegaUiNode {
         _input: &ResourceSlots,
         _output: &mut ResourceSlots,
     ) {
+        {
+            let mut pipelines = resources.get_mut::<Assets<PipelineDescriptor>>().unwrap();
+            let mut shaders = resources.get_mut::<Assets<Shader>>().unwrap();
+            let render_resource_context = render_context.resources();
+            let mut pipeline_compiler = resources.get_mut::<PipelineCompiler>().unwrap();
+
+            let attributes = vec![
+                VertexAttributeDescriptor {
+                    name: Cow::from("Vertex_Position"),
+                    offset: 0,
+                    format: VertexFormat::Float3,
+                    shader_location: 0,
+                },
+                VertexAttributeDescriptor {
+                    name: Cow::from("Vertex_Uv"),
+                    offset: 0,
+                    format: VertexFormat::Float2,
+                    shader_location: 1,
+                },
+                VertexAttributeDescriptor {
+                    name: Cow::from("Vertex_Color"),
+                    offset: 0,
+                    format: VertexFormat::Float4,
+                    shader_location: 0,
+                },
+            ];
+            pipeline_compiler.compile_pipeline(
+                render_resource_context,
+                &mut pipelines,
+                &mut shaders,
+                &MEGAUI_PIPELINE_HANDLE,
+                &PipelineSpecialization {
+                    vertex_buffer_descriptor: VertexBufferDescriptor {
+                        name: Cow::from("MegaUiVertex"),
+                        stride: attributes
+                            .iter()
+                            .fold(0, |acc, attribute| acc + attribute.format.get_size()),
+                        step_mode: InputStepMode::Vertex,
+                        attributes,
+                    },
+                    index_format: IndexFormat::Uint16,
+                    ..PipelineSpecialization::default()
+                },
+            );
+        }
+
         let render_resources = render_context.resources_mut();
         let render_resource_bindings = resources.get_mut::<RenderResourceBindings>().unwrap();
 
@@ -322,15 +451,6 @@ impl SystemNode for MegaUiNode {
 }
 
 fn render_megaui_system(_world: &mut World, resources: &mut Resources) {}
-
-#[derive(Debug, Clone, Copy)]
-pub struct MegaUiVertex {
-    pub position: Vec3,
-    pub uv: Vec2,
-    pub color: Color,
-}
-
-unsafe impl Byteable for MegaUiVertex {}
 
 #[derive(Debug, RenderResources, TypeUuid)]
 #[uuid = "03b67fa3-bae5-4da3-8ffd-a1d696d9caf2"]
