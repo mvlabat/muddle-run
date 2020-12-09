@@ -309,7 +309,7 @@ impl Node for MegaUiNode {
         _input: &ResourceSlots,
         _output: &mut ResourceSlots,
     ) {
-        {
+        let pipeline_descriptor = {
             let mut pipelines = resources.get_mut::<Assets<PipelineDescriptor>>().unwrap();
             let mut shaders = resources.get_mut::<Assets<Shader>>().unwrap();
             let render_resource_context = render_context.resources();
@@ -352,8 +352,8 @@ impl Node for MegaUiNode {
                     index_format: IndexFormat::Uint16,
                     ..PipelineSpecialization::default()
                 },
-            );
-        }
+            )
+        };
 
         let render_resources = render_context.resources_mut();
         let render_resource_bindings = resources.get_mut::<RenderResourceBindings>().unwrap();
@@ -415,7 +415,7 @@ impl Node for MegaUiNode {
             &self.pass_descriptor,
             &render_resource_bindings,
             &mut |render_pass| {
-                render_pass.set_pipeline(&MEGAUI_PIPELINE_HANDLE);
+                render_pass.set_pipeline(&pipeline_descriptor);
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.unwrap(), 0);
                 render_pass.set_index_buffer(self.index_buffer.unwrap(), 0);
                 render_pass.set_bind_group(
