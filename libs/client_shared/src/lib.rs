@@ -47,7 +47,7 @@ impl Plugin for MuddlePlugin {
                 height: 1024,
                 ..Default::default()
             })
-            .add_resource(Msaa { samples: 4 })
+            // .add_resource(Msaa { samples: 4 })
             .add_plugin(MaterialsPlugin)
             .init_resource::<WindowInnerSize>()
             .init_resource::<MousePosition>()

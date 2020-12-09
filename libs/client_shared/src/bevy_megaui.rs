@@ -127,6 +127,7 @@ impl Plugin for MegaUiPlugin {
         let mut render_graph = resources.get_mut::<RenderGraph>().unwrap();
 
         render_graph.add_node(node::MEGAUI_PASS, MegaUiNode::new(&msaa));
+        render_graph.add_node_edge(base::node::MAIN_PASS, node::MEGAUI_PASS).unwrap();
 
         render_graph
             .add_slot_edge(
