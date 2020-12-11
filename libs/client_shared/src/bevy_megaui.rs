@@ -2,23 +2,21 @@ use crate::transform_node::MegaUiTransformNode;
 use bevy::{
     app::{stage, AppBuilder, EventReader, Events, Plugin},
     asset::{AddAsset, Assets, Handle},
-    core::{AsBytes, Byteable},
-    ecs::{Commands, IntoSystem, Local, Res, ResMut, Resources, System, World},
+    core::{AsBytes},
+    ecs::{Commands, IntoSystem, Resources, System, World},
     input::{
         keyboard::{KeyCode, KeyboardInput},
-        mouse::{MouseButton, MouseButtonInput},
+        mouse::{MouseButton},
         Input,
     },
-    math::{Vec2, Vec3},
+    math::{Vec2},
     render::{
-        color::Color,
-        mesh::VertexAttributeValues,
         pass::{
-            LoadOp, Operations, PassDescriptor, RenderPassDepthStencilAttachmentDescriptor,
-            TextureAttachment,
+            ClearColor, LoadOp, Operations, PassDescriptor,
+            RenderPassDepthStencilAttachmentDescriptor, TextureAttachment,
         },
         pipeline::{
-            AsVertexFormats, BindGroupDescriptor, BindType, BindingDescriptor, BindingShaderStage,
+            BindGroupDescriptor, BindType, BindingDescriptor, BindingShaderStage,
             BlendDescriptor, BlendFactor, BlendOperation, ColorStateDescriptor, ColorWrite,
             CompareFunction, CullMode, DepthStencilStateDescriptor, FrontFace, IndexFormat,
             InputStepMode, PipelineCompiler, PipelineDescriptor, PipelineSpecialization,
@@ -26,12 +24,13 @@ use bevy::{
             UniformProperty, VertexAttributeDescriptor, VertexBufferDescriptor, VertexFormat,
         },
         render_graph::{
-            base, base::Msaa, AssetRenderResourcesNode, CommandQueue, Node, RenderGraph,
+            base, base::Msaa, CommandQueue, Node, RenderGraph,
             ResourceSlotInfo, ResourceSlots, SystemNode, WindowSwapChainNode, WindowTextureNode,
         },
         renderer::{
-            BindGroup, BindGroupId, BufferId, RenderContext, RenderResource,
-            RenderResourceBindings, RenderResourceContext, RenderResourceType, RenderResources,
+            BindGroup, BindGroupId, BufferId, BufferInfo, BufferUsage, RenderContext,
+            RenderResourceBindings, RenderResourceType,
+            RenderResources,
         },
         shader::{Shader, ShaderStage, ShaderStages},
         texture::{Texture, TextureFormat},
@@ -39,8 +38,8 @@ use bevy::{
     type_registry::TypeUuid,
     window::{CursorMoved, WindowDescriptor, WindowResized},
 };
-use megaui::Vertex;
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap};
+use bevy::core::Time;
 
 pub const MEGAUI_PIPELINE_HANDLE: Handle<PipelineDescriptor> =
     Handle::weak_from_u64(PipelineDescriptor::TYPE_UUID, 9404026720151354217);
@@ -127,7 +126,9 @@ impl Plugin for MegaUiPlugin {
         let mut render_graph = resources.get_mut::<RenderGraph>().unwrap();
 
         render_graph.add_node(node::MEGAUI_PASS, MegaUiNode::new(&msaa));
-        render_graph.add_node_edge(base::node::MAIN_PASS, node::MEGAUI_PASS).unwrap();
+        render_graph
+            .add_node_edge(base::node::MAIN_PASS, node::MEGAUI_PASS)
+            .unwrap();
 
         render_graph
             .add_slot_edge(
@@ -169,13 +170,13 @@ impl Plugin for MegaUiPlugin {
             .unwrap();
 
         // Textures.
-        render_graph.add_system_node(
-            node::MEGAUI_ASSET,
-            AssetRenderResourcesNode::<MegaUiAsset>::new(false),
-        );
-        render_graph
-            .add_node_edge(node::MEGAUI_ASSET, node::MEGAUI_PASS)
-            .unwrap();
+        // render_graph.add_system_node(
+        //     node::MEGAUI_ASSET,
+        //     AssetRenderResourcesNode::<MegaUiAsset>::new(false),
+        // );
+        // render_graph
+        //     .add_node_edge(node::MEGAUI_ASSET, node::MEGAUI_PASS)
+        //     .unwrap();
 
         let mut pipelines = resources.get_mut::<Assets<PipelineDescriptor>>().unwrap();
         let mut shaders = resources.get_mut::<Assets<Shader>>().unwrap();
@@ -202,7 +203,7 @@ impl MegaUiNode {
         let transform_bind_group_descriptor = BindGroupDescriptor::new(
             0,
             vec![BindingDescriptor {
-                name: "Transform".to_string(),
+                name: "MegaUiTransform".to_string(),
                 index: 0,
                 bind_type: BindType::Uniform {
                     dynamic: false,
@@ -211,7 +212,7 @@ impl MegaUiNode {
                         UniformProperty::Vec2,
                     ]),
                 },
-                shader_stage: BindingShaderStage::VERTEX | BindingShaderStage::FRAGMENT,
+                shader_stage: BindingShaderStage::VERTEX,
             }],
         );
         let color_attachments = vec![msaa.color_attachment_descriptor(
@@ -306,7 +307,7 @@ impl Node for MegaUiNode {
         _world: &World,
         resources: &Resources,
         render_context: &mut dyn RenderContext,
-        _input: &ResourceSlots,
+        input: &ResourceSlots,
         _output: &mut ResourceSlots,
     ) {
         let pipeline_descriptor = {
@@ -314,6 +315,38 @@ impl Node for MegaUiNode {
             let mut shaders = resources.get_mut::<Assets<Shader>>().unwrap();
             let render_resource_context = render_context.resources();
             let mut pipeline_compiler = resources.get_mut::<PipelineCompiler>().unwrap();
+
+            for (i, color_attachment) in self
+                .pass_descriptor
+                .color_attachments
+                .iter_mut()
+                .enumerate()
+            {
+                if self.default_clear_color_inputs.contains(&i) {
+                    if let Some(default_clear_color) = resources.get::<ClearColor>() {
+                        color_attachment.ops.load = LoadOp::Clear(default_clear_color.0);
+                    }
+                }
+                if let Some(input_index) = self.color_attachment_input_indices[i] {
+                    color_attachment.attachment = TextureAttachment::Id(
+                        input.get(input_index).unwrap().get_texture().unwrap(),
+                    );
+                }
+                if let Some(input_index) = self.color_resolve_target_indices[i] {
+                    color_attachment.resolve_target = Some(TextureAttachment::Id(
+                        input.get(input_index).unwrap().get_texture().unwrap(),
+                    ));
+                }
+            }
+
+            if let Some(input_index) = self.depth_stencil_attachment_input_index {
+                self.pass_descriptor
+                    .depth_stencil_attachment
+                    .as_mut()
+                    .unwrap()
+                    .attachment =
+                    TextureAttachment::Id(input.get(input_index).unwrap().get_texture().unwrap());
+            }
 
             let attributes = vec![
                 VertexAttributeDescriptor {
@@ -410,6 +443,20 @@ impl Node for MegaUiNode {
                 clipping_zone: draw_list.clipping_zone,
             });
         }
+        self.vertex_buffer = Some(render_context.resources().create_buffer_with_data(
+            BufferInfo {
+                buffer_usage: BufferUsage::VERTEX,
+                ..Default::default()
+            },
+            &vertex_buffer,
+        ));
+        self.index_buffer = Some(render_context.resources().create_buffer_with_data(
+            BufferInfo {
+                buffer_usage: BufferUsage::INDEX,
+                ..Default::default()
+            },
+            &index_buffer,
+        ));
 
         render_context.begin_pass(
             &self.pass_descriptor,
@@ -427,14 +474,19 @@ impl Node for MegaUiNode {
                 let mut vertex_offset: u32 = 0;
                 for draw_command in &draw_commands {
                     // render_pass.set_scissor_rect()
-                    render_pass.draw_indexed(
-                        vertex_offset..(vertex_offset + draw_command.vertices_count as u32),
-                        0,
-                        0..1,
-                    );
+                    // Megaui returns an empty DrawList as the last one for some reason.
+                    if draw_command.vertices_count > 0 {
+                        render_pass.draw_indexed(
+                            vertex_offset..(vertex_offset + draw_command.vertices_count as u32),
+                            0,
+                            0..1,
+                        );
+                    }
+                    vertex_offset += draw_command.vertices_count as u32;
                 }
             },
         );
+        ctx.ui.new_frame(resources.get::<Time>().unwrap().delta_seconds);
     }
 }
 
@@ -451,7 +503,7 @@ impl SystemNode for MegaUiNode {
     }
 }
 
-fn render_megaui_system(_world: &mut World, resources: &mut Resources) {}
+fn render_megaui_system(_world: &mut World, _resources: &mut Resources) {}
 
 #[derive(Debug, RenderResources, TypeUuid)]
 #[uuid = "03b67fa3-bae5-4da3-8ffd-a1d696d9caf2"]

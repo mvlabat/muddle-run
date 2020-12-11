@@ -1,7 +1,7 @@
-use crate::bevy_megaui::{MegaUiContext, WindowSize, MEGAUI_TRANSFORM_RESOURCE_BINDING_NAME};
+use crate::bevy_megaui::{WindowSize, MEGAUI_TRANSFORM_RESOURCE_BINDING_NAME};
 use bevy::{
     core::AsBytes,
-    ecs::{Commands, IntoSystem, Local, Query, Res, ResMut, Resources, System, World},
+    ecs::{Commands, IntoSystem, Local, Res, ResMut, Resources, System, World},
     render::{
         render_graph::{CommandQueue, Node, ResourceSlots, SystemNode},
         renderer::{
@@ -10,7 +10,6 @@ use bevy::{
         },
     },
 };
-use std::borrow::Cow;
 
 #[derive(Debug)]
 pub struct MegaUiTransformNode {
@@ -71,14 +70,14 @@ pub fn transform_node_system(
     mut render_resource_bindings: ResMut<RenderResourceBindings>,
 ) {
     let render_resource_context = &**render_resource_context;
+    let transform_data_size = std::mem::size_of::<[[f32; 2]; 2]>();
 
     let staging_buffer = if let Some(staging_buffer) = state.staging_buffer {
         render_resource_context.map_buffer(staging_buffer);
         staging_buffer
     } else {
-        let size = std::mem::size_of::<[[f32; 4]; 4]>();
         let buffer = render_resource_context.create_buffer(BufferInfo {
-            size,
+            size: transform_data_size,
             buffer_usage: BufferUsage::COPY_DST | BufferUsage::UNIFORM,
             ..Default::default()
         });
@@ -86,14 +85,14 @@ pub fn transform_node_system(
             MEGAUI_TRANSFORM_RESOURCE_BINDING_NAME,
             RenderResourceBinding::Buffer {
                 buffer,
-                range: 0..size as u64,
+                range: 0..transform_data_size as u64,
                 dynamic_index: None,
             },
         );
         state.transform_buffer = Some(buffer);
 
         let staging_buffer = render_resource_context.create_buffer(BufferInfo {
-            size,
+            size: transform_data_size,
             buffer_usage: BufferUsage::COPY_SRC | BufferUsage::MAP_WRITE,
             mapped_at_creation: true,
         });
@@ -102,12 +101,11 @@ pub fn transform_node_system(
         staging_buffer
     };
 
-    let transform_data_size = std::mem::size_of::<[[f32; 2]; 2]>();
     let transform_data: [f32; 4] = [
-        0.0,
-        0.0, // transform
         1.0 / window_size.width,
         1.0 / window_size.height, // scale
+        0.0,
+        0.0, // translation
     ];
 
     render_resource_context.write_mapped_buffer(

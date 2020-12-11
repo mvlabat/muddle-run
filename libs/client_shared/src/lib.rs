@@ -58,7 +58,9 @@ impl Plugin for MuddlePlugin {
             .add_system(track_input_events)
             // Game systems.
             .add_system(move_controllable_object)
-            .add_system(detect_collisions);
+            .add_system(detect_collisions)
+            // Megaui.
+            .add_system(test_ui);
     }
 }
 
@@ -127,7 +129,7 @@ impl ProximityPairFilter for PairFilter {
     }
 }
 
-fn test_ui(_world: &World, resources: &Resources) {
+fn test_ui(_world: &mut World, resources: &mut Resources) {
     let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
     megaui::widgets::Window::new(hash!(), Vector2::new(0.0, 0.0), Vector2::new(300.0, 300.0))
         .label("TEST")
