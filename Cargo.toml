@@ -9,6 +9,8 @@ members = [
 [patch.crates-io]
 bevy = { git = "https://github.com/bevyengine/bevy//" }
 bevy_rapier3d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
+#wgpu-core = { path = "../wgpu/wgpu-core" }
+#wgpu-types = { path = "../wgpu/wgpu-types" }
 
 [patch.'https://github.com/bevyengine/bevy']
 bevy = { git = "https://github.com/bevyengine/bevy//" }

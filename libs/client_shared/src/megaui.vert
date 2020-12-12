@@ -15,6 +15,5 @@ layout(set = 0, binding = 0) uniform MegaUiTransform {
 void main() {
     v_Uv = Vertex_Uv;
     v_Color = Vertex_Color;
-//    gl_Position = vec4(Vertex_Position * vec3(1.0 / 1280, 1.0 / 720.0, 1.0) + vec3(0.0, 0.0, 1.0), 1.0);
     gl_Position = vec4(Vertex_Position * vec3(scale, 1.0) + vec3(translation, 1.0), 1.0);
 }

@@ -22,6 +22,7 @@ use megaui::{hash, Vector2};
 
 mod bevy_megaui;
 mod transform_node;
+mod texture_node;
 
 pub struct MuddlePlugin;
 
@@ -40,14 +41,6 @@ impl Plugin for MuddlePlugin {
                     .contact_filter(PairFilter)
                     .proximity_filter(PairFilter),
             )
-            // Window and rendering.
-            .add_resource(WindowDescriptor {
-                title: "Muddle Run".to_owned(),
-                width: 1280,
-                height: 1024,
-                ..Default::default()
-            })
-            // .add_resource(Msaa { samples: 4 })
             .add_plugin(MaterialsPlugin)
             .init_resource::<WindowInnerSize>()
             .init_resource::<MousePosition>()

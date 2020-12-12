@@ -10,6 +10,7 @@ use bevy::{
         },
     },
 };
+use bevy::render::renderer::BindGroupId;
 
 #[derive(Debug)]
 pub struct MegaUiTransformNode {
