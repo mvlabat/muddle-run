@@ -77,16 +77,11 @@ impl MegaUiContext {
 pub struct WindowSize {
     pub width: f32,
     pub height: f32,
-    pub scale_factor: f64,
 }
 
 impl WindowSize {
-    pub fn new(width: f32, height: f32, scale_factor: f64) -> Self {
-        Self {
-            width,
-            height,
-            scale_factor,
-        }
+    pub fn new(width: f32, height: f32) -> Self {
+        Self { width, height }
     }
 }
 
@@ -105,7 +100,7 @@ pub mod node {
 
 impl Plugin for MegaUiPlugin {
     fn build(&self, app: &mut AppBuilder) {
-        app.add_system_to_stage(stage::POST_UPDATE, process_input)
+        app.add_system_to_stage(stage::PRE_UPDATE, process_input)
             .add_asset::<MegaUiTexture>();
 
         let resources = app.resources_mut();
@@ -122,7 +117,7 @@ impl Plugin for MegaUiPlugin {
                 ),
             })
         };
-        resources.insert(WindowSize::new(0.0, 0.0, 0.0));
+        resources.insert(WindowSize::new(0.0, 0.0));
         resources.insert_thread_local(MegaUiContext::new(ui, font_texture.clone()));
 
         let mut pipelines = resources.get_mut::<Assets<PipelineDescriptor>>().unwrap();
@@ -567,25 +562,17 @@ fn process_input(
     let mut window_size = resources.get_mut::<WindowSize>().unwrap();
     let windows = resources.get::<Windows>().unwrap();
 
-    if *window_size == WindowSize::new(0.0, 0.0, 0.0) {
+    if *window_size == WindowSize::new(0.0, 0.0) {
         let window = windows.get_primary().unwrap();
-        *window_size = WindowSize::new(
-            window.logical_width(),
-            window.logical_height(),
-            window.scale_factor(),
-        );
+        *window_size = WindowSize::new(window.logical_width(), window.logical_height());
     }
     if let Some(resize_event) = ctx.resize.latest(&ev_resize) {
-        let window = windows.get(resize_event.id).unwrap();
-        *window_size = WindowSize::new(
-            resize_event.width as f32,
-            resize_event.height as f32,
-            window.scale_factor(),
-        );
+        *window_size = WindowSize::new(resize_event.width as f32, resize_event.height as f32);
     }
 
     if let Some(cursor_moved) = ctx.cursor.latest(&ev_cursor) {
-        let mouse_position = cursor_moved.position.into();
+        let mut mouse_position: (f32, f32) = cursor_moved.position.into();
+        mouse_position.1 = window_size.height - mouse_position.1;
         ctx.mouse_position = mouse_position;
         ctx.ui.mouse_move(mouse_position);
     }

@@ -21,8 +21,8 @@ use bevy_rapier3d::{
 use megaui::{hash, Vector2};
 
 mod bevy_megaui;
-mod transform_node;
 mod texture_node;
+mod transform_node;
 
 pub struct MuddlePlugin;
 
@@ -126,7 +126,44 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
     let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
     megaui::widgets::Window::new(hash!(), Vector2::new(0.0, 0.0), Vector2::new(300.0, 300.0))
         .label("TEST")
-        .ui(&mut megaui_context.ui, |_ui| {});
+        .ui(&mut megaui_context.ui, |ui| {
+            ui.tree_node(hash!(), "input", |ui| {
+                ui.label(None, "Some random text");
+                if ui.button(None, "click me") {
+                    println!("hi");
+                }
+
+                ui.separator();
+
+                ui.label(None, "Some other random text");
+                if ui.button(None, "other button") {
+                    println!("hi2");
+                }
+
+                ui.separator();
+
+                ui.input_field(hash!(), "<- input text 1", &mut String::new());
+                ui.input_field(hash!(), "<- input text 2", &mut String::new());
+                ui.label(
+                    None,
+                    &format!("Text entered: \"{}\" and \"{}\"", String::new(), String::new()),
+                );
+
+                ui.separator();
+            });
+            ui.tree_node(hash!(), "sliders", |ui| {
+                ui.slider(hash!(), "[-10 .. 10]", -10f32..10f32, &mut 0.0);
+                ui.slider(hash!(), "[0 .. 100]", 0f32..100f32, &mut 0.0);
+            });
+            ui.tree_node(hash!(), "editbox 1", |ui| {
+                ui.label(None, "This is editbox!");
+                ui.editbox(hash!(), megaui::Vector2::new(285., 165.), &mut String::new());
+            });
+            ui.tree_node(hash!(), "editbox 2", |ui| {
+                ui.label(None, "This is editbox!");
+                ui.editbox(hash!(), megaui::Vector2::new(285., 165.), &mut String::new());
+            });
+        });
 }
 
 fn basic_scene(
