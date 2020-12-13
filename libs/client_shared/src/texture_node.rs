@@ -1,16 +1,15 @@
 use crate::bevy_megaui::{
-    MegaUiTexture, WindowSize, MEGAUI_TEXTURE_RESOURCE_BINDING_NAME,
+    MegaUiTexture, MEGAUI_TEXTURE_RESOURCE_BINDING_NAME,
     MEGAUI_TEXTURE_SAMPLER_RESOURCE_BINDING_NAME,
 };
 use bevy::{
     asset::{Assets, Handle},
-    core::AsBytes,
-    ecs::{Commands, IntoSystem, Local, Res, ResMut, Resources, System, World},
+    ecs::{Resources, World},
     render::{
-        render_graph::{CommandQueue, Node, ResourceSlots, SystemNode},
+        render_graph::{Node, ResourceSlots},
         renderer::{
-            BindGroupId, BufferId, BufferInfo, BufferUsage, RenderContext, RenderResourceBinding,
-            RenderResourceBindings, RenderResourceContext,
+            BufferInfo, BufferUsage, RenderContext, RenderResourceBinding, RenderResourceBindings,
+            RenderResourceId,
         },
         texture,
         texture::TextureDescriptor,
@@ -20,14 +19,14 @@ use bevy::{
 #[derive(Debug)]
 pub struct MegaUiTextureNode {
     font_texture_handle: Handle<MegaUiTexture>,
-    command_queue: CommandQueue,
+    initialized: bool,
 }
 
 impl MegaUiTextureNode {
     pub fn new(font_texture_handle: Handle<MegaUiTexture>) -> Self {
         MegaUiTextureNode {
             font_texture_handle,
-            command_queue: Default::default(),
+            initialized: false,
         }
     }
 }
@@ -36,65 +35,71 @@ impl Node for MegaUiTextureNode {
     fn update(
         &mut self,
         _world: &World,
-        _resources: &Resources,
+        resources: &Resources,
         render_context: &mut dyn RenderContext,
         _input: &ResourceSlots,
         _output: &mut ResourceSlots,
     ) {
-        self.command_queue.execute(render_context);
-    }
-}
+        let mut render_resource_bindings = resources.get_mut::<RenderResourceBindings>().unwrap();
+        let megaui_texture_assets = resources.get_mut::<Assets<MegaUiTexture>>().unwrap();
 
-impl SystemNode for MegaUiTextureNode {
-    fn get_system(&self, commands: &mut Commands) -> Box<dyn System<Input = (), Output = ()>> {
-        let system = texture_node_system.system();
-        commands.insert_local_resource(
-            system.id(),
-            TextureNodeState {
-                command_queue: self.command_queue.clone(),
-                font_texture_handle: self.font_texture_handle.clone(),
-                initialized: false,
-            },
-        );
-        Box::new(system)
-    }
-}
+        if !self.initialized {
+            let render_resource_context = render_context.resources();
 
-#[derive(Debug, Default)]
-pub struct TextureNodeState {
-    command_queue: CommandQueue,
-    font_texture_handle: Handle<MegaUiTexture>,
-    initialized: bool,
-}
+            let font_texture = megaui_texture_assets
+                .get(self.font_texture_handle.clone())
+                .unwrap();
+            let aligned_width = render_context
+                .resources()
+                .get_aligned_texture_size(font_texture.texture.size.width as usize);
 
-pub fn texture_node_system(
-    mut state: Local<TextureNodeState>,
-    render_resource_context: Res<Box<dyn RenderResourceContext>>,
-    megaui_texture_assets: Res<Assets<MegaUiTexture>>,
-    // PERF: this write on RenderResourceAssignments will prevent this system from running in parallel
-    // with other systems that do the same
-    mut render_resource_bindings: ResMut<RenderResourceBindings>,
-) {
-    let render_resource_context = &**render_resource_context;
+            let texture_descriptor: TextureDescriptor = (&font_texture.texture).into();
+            let texture_resource = render_resource_context.create_texture(texture_descriptor);
+            let sampler_resource =
+                render_resource_context.create_sampler(&font_texture.texture.sampler);
 
-    if !state.initialized {
-        let font_texture = megaui_texture_assets
-            .get(state.font_texture_handle.clone())
-            .unwrap();
+            render_resource_context.set_asset_resource(
+                &self.font_texture_handle,
+                RenderResourceId::Texture(texture_resource),
+                texture::TEXTURE_ASSET_INDEX,
+            );
+            render_resource_context.set_asset_resource(
+                &self.font_texture_handle,
+                RenderResourceId::Sampler(sampler_resource),
+                texture::SAMPLER_ASSET_INDEX,
+            );
 
-        let texture_descriptor: TextureDescriptor = (&font_texture.texture).into();
-        let texture_resource = render_resource_context.create_texture(texture_descriptor);
-        let sampler_resource =
-            render_resource_context.create_sampler(&font_texture.texture.sampler);
+            render_resource_bindings.set(
+                MEGAUI_TEXTURE_RESOURCE_BINDING_NAME,
+                RenderResourceBinding::Texture(texture_resource),
+            );
+            render_resource_bindings.set(
+                MEGAUI_TEXTURE_SAMPLER_RESOURCE_BINDING_NAME,
+                RenderResourceBinding::Sampler(sampler_resource),
+            );
 
-        render_resource_bindings.set(
-            MEGAUI_TEXTURE_RESOURCE_BINDING_NAME,
-            RenderResourceBinding::Texture(texture_resource),
-        );
-        render_resource_bindings.set(
-            MEGAUI_TEXTURE_SAMPLER_RESOURCE_BINDING_NAME,
-            RenderResourceBinding::Sampler(sampler_resource),
-        );
-        state.initialized = true;
+            let format_size = font_texture.texture.format.pixel_size();
+
+            let texture_buffer = render_context.resources().create_buffer_with_data(
+                BufferInfo {
+                    buffer_usage: BufferUsage::COPY_SRC,
+                    ..Default::default()
+                },
+                &font_texture.texture.data,
+            );
+
+            render_context.copy_buffer_to_texture(
+                texture_buffer,
+                0,
+                (format_size * aligned_width) as u32,
+                texture_resource,
+                [0, 0, 0],
+                0,
+                texture_descriptor.size,
+            );
+            render_context.resources().remove_buffer(texture_buffer);
+
+            self.initialized = true;
+        }
     }
 }

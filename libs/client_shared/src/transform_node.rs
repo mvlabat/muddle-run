@@ -10,7 +10,6 @@ use bevy::{
         },
     },
 };
-use bevy::render::renderer::BindGroupId;
 
 #[derive(Debug)]
 pub struct MegaUiTransformNode {
@@ -47,7 +46,7 @@ impl SystemNode for MegaUiTransformNode {
                 command_queue: self.command_queue.clone(),
                 transform_buffer: None,
                 staging_buffer: None,
-                prev_window_size: WindowSize::new(0.0, 0.0),
+                prev_window_size: WindowSize::new(0.0, 0.0, 0.0),
             },
         );
         Box::new(system)
@@ -103,10 +102,10 @@ pub fn transform_node_system(
     };
 
     let transform_data: [f32; 4] = [
-        1.0 / window_size.width,
-        1.0 / window_size.height, // scale
-        0.0,
-        0.0, // translation
+        window_size.scale_factor as f32 / window_size.width,
+        -window_size.scale_factor as f32 / window_size.height, // scale
+        -1.0,
+        1.0, // translation
     ];
 
     render_resource_context.write_mapped_buffer(

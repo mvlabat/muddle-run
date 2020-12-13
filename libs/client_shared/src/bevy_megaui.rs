@@ -3,13 +3,12 @@ use bevy::{
     app::{stage, AppBuilder, EventReader, Events, Plugin},
     asset::{AddAsset, Assets, Handle, HandleUntyped},
     core::{AsBytes, Time},
-    ecs::{Commands, IntoSystem, Resources, System, World},
+    ecs::{Resources, World},
     input::{
         keyboard::{KeyCode, KeyboardInput},
         mouse::MouseButton,
         Input,
     },
-    math::Vec2,
     reflect::TypeUuid,
     render::{
         pass::{
@@ -17,28 +16,27 @@ use bevy::{
             RenderPassDepthStencilAttachmentDescriptor, TextureAttachment,
         },
         pipeline::{
-            BindGroupDescriptor, BindType, BindingDescriptor, BindingShaderStage, BlendDescriptor,
-            BlendFactor, BlendOperation, ColorStateDescriptor, ColorWrite, CompareFunction,
-            CullMode, DepthStencilStateDescriptor, FrontFace, IndexFormat, InputStepMode,
-            PipelineCompiler, PipelineDescriptor, PipelineLayout, PipelineSpecialization,
+            BindGroupDescriptor, BlendDescriptor, BlendFactor, BlendOperation,
+            ColorStateDescriptor, ColorWrite, CompareFunction, CullMode,
+            DepthStencilStateDescriptor, FrontFace, IndexFormat, InputStepMode, PipelineCompiler,
+            PipelineDescriptor, PipelineLayout, PipelineSpecialization,
             RasterizationStateDescriptor, StencilStateDescriptor, StencilStateFaceDescriptor,
-            UniformProperty, VertexAttributeDescriptor, VertexBufferDescriptor, VertexFormat,
+            VertexAttributeDescriptor, VertexBufferDescriptor, VertexFormat,
         },
         render_graph::{
-            base, base::Msaa, CommandQueue, Node, RenderGraph, ResourceSlotInfo, ResourceSlots,
-            SystemNode, WindowSwapChainNode, WindowTextureNode,
+            base, base::Msaa, Node, RenderGraph, ResourceSlotInfo, ResourceSlots,
+            WindowSwapChainNode, WindowTextureNode,
         },
         renderer::{
             BindGroup, BindGroupId, BufferId, BufferInfo, BufferUsage, RenderContext,
-            RenderResourceBindings, RenderResourceContext, RenderResourceType, RenderResources,
+            RenderResourceBindings, RenderResourceContext, RenderResourceType,
         },
         shader::{Shader, ShaderStage, ShaderStages},
         texture::{Extent3d, Texture, TextureDimension, TextureFormat},
     },
-    window::{CursorMoved, WindowDescriptor, WindowResized},
+    window::{CursorMoved, WindowResized, Windows},
 };
 use std::{borrow::Cow, collections::HashMap};
-use megaui::DrawList;
 
 pub const MEGAUI_PIPELINE_HANDLE: HandleUntyped =
     HandleUntyped::weak_from_u64(PipelineDescriptor::TYPE_UUID, 9404026720151354217);
@@ -79,11 +77,16 @@ impl MegaUiContext {
 pub struct WindowSize {
     pub width: f32,
     pub height: f32,
+    pub scale_factor: f64,
 }
 
 impl WindowSize {
-    pub fn new(width: f32, height: f32) -> Self {
-        Self { width, height }
+    pub fn new(width: f32, height: f32, scale_factor: f64) -> Self {
+        Self {
+            width,
+            height,
+            scale_factor,
+        }
     }
 }
 
@@ -115,11 +118,11 @@ impl Plugin for MegaUiPlugin {
                     Extent3d::new(ui.font_atlas.texture.width, ui.font_atlas.texture.height, 1),
                     TextureDimension::D2,
                     ui.font_atlas.texture.data.clone(),
-                    TextureFormat::Rgba8UnormSrgb,
+                    TextureFormat::Rgba8Unorm,
                 ),
             })
         };
-        resources.insert(WindowSize::new(0.0, 0.0));
+        resources.insert(WindowSize::new(0.0, 0.0, 0.0));
         resources.insert_thread_local(MegaUiContext::new(ui, font_texture.clone()));
 
         let mut pipelines = resources.get_mut::<Assets<PipelineDescriptor>>().unwrap();
@@ -140,15 +143,15 @@ impl Plugin for MegaUiPlugin {
                 },
                 VertexAttributeDescriptor {
                     name: Cow::from("Vertex_Uv"),
-                    offset: 0,
+                    offset: VertexFormat::Float3.get_size(),
                     format: VertexFormat::Float2,
                     shader_location: 1,
                 },
                 VertexAttributeDescriptor {
                     name: Cow::from("Vertex_Color"),
-                    offset: 0,
+                    offset: VertexFormat::Float3.get_size() + VertexFormat::Float2.get_size(),
                     format: VertexFormat::Float4,
-                    shader_location: 0,
+                    shader_location: 2,
                 },
             ];
             pipeline_compiler.compile_pipeline(
@@ -171,7 +174,6 @@ impl Plugin for MegaUiPlugin {
             )
         };
         let pipeline_descriptor = pipelines.get(pipeline_descriptor_handle.clone()).unwrap();
-        // dbg!(&pipeline_descriptor);
         let layout = pipeline_descriptor.layout.as_ref().unwrap();
         let transform_bind_group =
             find_bind_group_by_binding_name(layout, MEGAUI_TRANSFORM_RESOURCE_BINDING_NAME)
@@ -186,7 +188,7 @@ impl Plugin for MegaUiPlugin {
         render_graph.add_node(
             node::MEGAUI_PASS,
             MegaUiNode::new(
-                pipeline_descriptor_handle.clone(),
+                pipeline_descriptor_handle,
                 transform_bind_group,
                 texture_bind_group,
                 &msaa,
@@ -236,10 +238,7 @@ impl Plugin for MegaUiPlugin {
             .unwrap();
 
         // Textures.
-        render_graph.add_system_node(
-            node::MEGAUI_TEXTURE,
-            MegaUiTextureNode::new(font_texture.clone()),
-        );
+        render_graph.add_node(node::MEGAUI_TEXTURE, MegaUiTextureNode::new(font_texture));
         render_graph
             .add_node_edge(node::MEGAUI_TEXTURE, node::MEGAUI_PASS)
             .unwrap();
@@ -274,7 +273,6 @@ pub struct MegaUiNode {
     transform_bind_group_id: Option<BindGroupId>,
     texture_bind_group_descriptor: BindGroupDescriptor,
     texture_bind_group_id: Option<BindGroupId>,
-    command_queue: CommandQueue,
     vertex_buffer: Option<BufferId>,
     index_buffer: Option<BufferId>,
 }
@@ -353,7 +351,6 @@ impl MegaUiNode {
             transform_bind_group_id: None,
             texture_bind_group_descriptor,
             texture_bind_group_id: None,
-            command_queue: CommandQueue::default(),
             vertex_buffer: None,
             index_buffer: None,
             color_resolve_target_indices,
@@ -361,13 +358,11 @@ impl MegaUiNode {
     }
 }
 
-pub struct MegaUiNodeState {
-    // command_queue: CommandQueue,
-}
-
 struct DrawCommand {
     vertices_count: usize,
+    #[allow(dead_code)]
     texture_handle: Handle<MegaUiTexture>,
+    #[allow(dead_code)]
     clipping_zone: Option<megaui::Rect>,
 }
 
@@ -438,8 +433,6 @@ impl Node for MegaUiNode {
                 &transform_bind_group,
             );
             self.transform_bind_group_id = Some(transform_bind_group.id);
-            // dbg!(&self.transform_bind_group_descriptor);
-            // dbg!(&transform_bind_group);
         }
 
         if self.texture_bind_group_id.is_none() {
@@ -471,86 +464,7 @@ impl Node for MegaUiNode {
         let mut index_buffer = Vec::new();
         let mut draw_commands = Vec::new();
 
-        log::info!("FRAME");
-        // dbg!(&ui_draw_lists);
-
-        let tl = DrawList {
-            vertices: vec![
-                megaui::Vertex {
-                    pos: [
-                        0.0,
-                        0.0,
-                        0.0,
-                    ],
-                    uv: [
-                        0.0,
-                        0.0,
-                    ],
-                    color: [
-                        0.1,
-                        0.4,
-                        0.7,
-                        1.0,
-                    ],
-                },
-                megaui::Vertex {
-                    pos: [
-                        300.0,
-                        0.0,
-                        0.0,
-                    ],
-                    uv: [
-                        0.0,
-                        0.0,
-                    ],
-                    color: [
-                        0.1,
-                        0.4,
-                        0.7,
-                        1.0,
-                    ],
-                },
-                megaui::Vertex {
-                    pos: [
-                        300.0,
-                        300.0,
-                        0.0,
-                    ],
-                    uv: [
-                        0.0,
-                        0.0,
-                    ],
-                    color: [
-                        0.1,
-                        0.4,
-                        0.7,
-                        1.0,
-                    ],
-                },
-                megaui::Vertex {
-                    pos: [
-                        0.0,
-                        300.0,
-                        0.0,
-                    ],
-                    uv: [
-                        0.0,
-                        0.0,
-                    ],
-                    color: [
-                        0.1,
-                        0.4,
-                        0.7,
-                        1.0,
-                    ],
-                },
-            ],
-            indices: vec![0, 1, 2, 0, 2, 3],
-            clipping_zone: None,
-            texture: None
-        };
-
-        for draw_list in &vec![tl] {
+        for draw_list in &ui_draw_lists {
             let texture_handle = if let Some(texture) = draw_list.texture {
                 ctx.megaui_textures.get(&texture).unwrap().clone()
             } else {
@@ -558,7 +472,6 @@ impl Node for MegaUiNode {
             };
 
             for vertex in &draw_list.vertices {
-                // dbg!(&vertex);
                 vertex_buffer.extend_from_slice(vertex.pos.as_bytes());
                 vertex_buffer.extend_from_slice(vertex.uv.as_bytes());
                 vertex_buffer.extend_from_slice(vertex.color.as_bytes());
@@ -607,22 +520,11 @@ impl Node for MegaUiNode {
                 );
                 let mut vertex_offset: u32 = 0;
                 for draw_command in &draw_commands {
-                    // if let Some(clipping_zone) = draw_command.clipping_zone {
-                    //     render_pass.set_scissor_rect(
-                    //         clipping_zone.x as u32,
-                    //         clipping_zone.y as u32,
-                    //         clipping_zone.w as u32,
-                    //         clipping_zone.h as u32,
-                    //     );
-                    // }
-                    // Megaui returns an empty DrawList as the last one for some reason.
-                    // if draw_command.vertices_count > 0 {
-                        render_pass.draw_indexed(
-                            vertex_offset..(vertex_offset + draw_command.vertices_count as u32),
-                            0,
-                            0..1,
-                        );
-                    // }
+                    render_pass.draw_indexed(
+                        vertex_offset..(vertex_offset + draw_command.vertices_count as u32),
+                        0,
+                        0..1,
+                    );
                     vertex_offset += draw_command.vertices_count as u32;
                 }
             },
@@ -631,21 +533,6 @@ impl Node for MegaUiNode {
             .new_frame(resources.get::<Time>().unwrap().delta_seconds());
     }
 }
-
-impl SystemNode for MegaUiNode {
-    fn get_system(&self, commands: &mut Commands) -> Box<dyn System<Input = (), Output = ()>> {
-        let system = render_megaui_system.system();
-        commands.insert_local_resource(
-            system.id(),
-            MegaUiNodeState {
-                // command_queue: self.command_queue.clone(),
-            },
-        );
-        Box::new(system)
-    }
-}
-
-fn render_megaui_system(_world: &mut World, _resources: &mut Resources) {}
 
 #[derive(Debug, TypeUuid)]
 #[uuid = "03b67fa3-bae5-4da3-8ffd-a1d696d9caf2"]
@@ -677,17 +564,24 @@ fn process_input(
     let ev_resize = resources.get::<Events<WindowResized>>().unwrap();
     let mouse_button_input = resources.get::<Input<MouseButton>>().unwrap();
     let keyboard_input = resources.get::<Input<KeyCode>>().unwrap();
-    let window_descriptor = resources.get::<WindowDescriptor>().unwrap();
     let mut window_size = resources.get_mut::<WindowSize>().unwrap();
+    let windows = resources.get::<Windows>().unwrap();
 
-    if *window_size == WindowSize::new(0.0, 0.0) {
+    if *window_size == WindowSize::new(0.0, 0.0, 0.0) {
+        let window = windows.get_primary().unwrap();
         *window_size = WindowSize::new(
-            window_descriptor.width as f32,
-            window_descriptor.height as f32,
+            window.logical_width(),
+            window.logical_height(),
+            window.scale_factor(),
         );
     }
     if let Some(resize_event) = ctx.resize.latest(&ev_resize) {
-        *window_size = WindowSize::new(resize_event.width as f32, resize_event.height as f32);
+        let window = windows.get(resize_event.id).unwrap();
+        *window_size = WindowSize::new(
+            resize_event.width as f32,
+            resize_event.height as f32,
+            window.scale_factor(),
+        );
     }
 
     if let Some(cursor_moved) = ctx.cursor.latest(&ev_cursor) {
@@ -833,7 +727,7 @@ pub fn build_megaui_pipeline(shaders: &mut Assets<Shader>) -> PipelineDescriptor
             },
             write_mask: ColorWrite::ALL,
         }],
-        index_format: IndexFormat::Uint32,
+        index_format: IndexFormat::Uint16,
         ..PipelineDescriptor::new(ShaderStages {
             vertex: shaders.add(Shader::from_glsl(
                 ShaderStage::Vertex,
