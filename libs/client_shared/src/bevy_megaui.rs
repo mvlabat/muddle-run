@@ -7,7 +7,7 @@ use bevy::{
     input::{
         keyboard::{KeyCode, KeyboardInput},
         mouse::MouseButton,
-        Input,
+        ElementState, Input,
     },
     reflect::TypeUuid,
     render::{
@@ -459,6 +459,10 @@ impl Node for MegaUiNode {
         let mut index_buffer = Vec::new();
         let mut draw_commands = Vec::new();
 
+        log::info!("FRAME");
+        let mut vc = 0;
+        let mut vrt = vec![];
+        let mut vtx = 0;
         for draw_list in &ui_draw_lists {
             let texture_handle = if let Some(texture) = draw_list.texture {
                 ctx.megaui_textures.get(&texture).unwrap().clone()
@@ -470,8 +474,16 @@ impl Node for MegaUiNode {
                 vertex_buffer.extend_from_slice(vertex.pos.as_bytes());
                 vertex_buffer.extend_from_slice(vertex.uv.as_bytes());
                 vertex_buffer.extend_from_slice(vertex.color.as_bytes());
+                vrt.push(vertex.clone());
+                vc += 1;
             }
             index_buffer.extend_from_slice(draw_list.indices.as_slice().as_bytes());
+
+            for index in &draw_list.indices {
+                let vertex = vrt[*index as usize];
+                println!("vtx: {}, idx: {}, pos: [{}, {}, {}]", vtx, *index, vertex.pos[0], vertex.pos[1], vertex.pos[2]);
+                vtx += 1;
+            }
 
             draw_commands.push(DrawCommand {
                 vertices_count: draw_list.indices.len(),
@@ -507,14 +519,26 @@ impl Node for MegaUiNode {
                     self.transform_bind_group_id.unwrap(),
                     None,
                 );
-                render_pass.set_bind_group(
-                    1,
-                    self.texture_bind_group_descriptor.id,
-                    self.texture_bind_group_id.unwrap(),
-                    None,
-                );
                 let mut vertex_offset: u32 = 0;
                 for draw_command in &draw_commands {
+                    if draw_command.texture_handle != ctx.font_texture {
+                        panic!("Textures other than the font atlas are not supported yet");
+                    }
+                    render_pass.set_bind_group(
+                        1,
+                        self.texture_bind_group_descriptor.id,
+                        self.texture_bind_group_id.unwrap(),
+                        None,
+                    );
+
+                    if let Some(clipping_zone) = draw_command.clipping_zone {
+                        render_pass.set_scissor_rect(
+                            (clipping_zone.x * 1.25) as u32,
+                            (clipping_zone.y * 1.25) as u32,
+                            (clipping_zone.w * 1.25) as u32,
+                            (clipping_zone.h * 1.25) as u32,
+                        );
+                    }
                     render_pass.draw_indexed(
                         vertex_offset..(vertex_offset + draw_command.vertices_count as u32),
                         0,
@@ -534,12 +558,6 @@ impl Node for MegaUiNode {
 pub struct MegaUiTexture {
     pub texture: Texture,
 }
-
-// impl MegaUiTexture {
-//     fn new(texture: Handle<Texture>) -> Self {
-//         Self { texture }
-//     }
-// }
 
 // Is a thread local system, because `megaui::Ui` (`MegaUiContext`) doesn't implement Send + Sync.
 fn process_input(
@@ -590,91 +608,100 @@ fn process_input(
         keyboard_input.pressed(KeyCode::LControl) || keyboard_input.pressed(KeyCode::RControl);
 
     for keyboard_input in ctx.keys.iter(&ev_keys) {
+        if let ElementState::Released = keyboard_input.state {
+            continue;
+        }
+
         if let Some(pressed_char) = keyboard_input.key_code.and_then(keycode_to_char) {
+            let char_input = if shift {
+                pressed_char.to_ascii_uppercase()
+            } else {
+                pressed_char
+            };
             if !ctrl {
-                ctx.ui.char_event(pressed_char, false, false);
+                ctx.ui.char_event(char_input, false, false);
             }
         }
     }
 
-    if keyboard_input.just_released(KeyCode::Up) {
+    if keyboard_input.just_pressed(KeyCode::Up) {
         ctx.ui.key_down(megaui::KeyCode::Up, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::Down) {
+    if keyboard_input.just_pressed(KeyCode::Down) {
         ctx.ui.key_down(megaui::KeyCode::Down, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::Right) {
+    if keyboard_input.just_pressed(KeyCode::Right) {
         ctx.ui.key_down(megaui::KeyCode::Right, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::Left) {
+    if keyboard_input.just_pressed(KeyCode::Left) {
         ctx.ui.key_down(megaui::KeyCode::Left, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::Home) {
+    if keyboard_input.just_pressed(KeyCode::Home) {
         ctx.ui.key_down(megaui::KeyCode::Home, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::End) {
+    if keyboard_input.just_pressed(KeyCode::End) {
         ctx.ui.key_down(megaui::KeyCode::End, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::Delete) {
+    if keyboard_input.just_pressed(KeyCode::Delete) {
         ctx.ui.key_down(megaui::KeyCode::Delete, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::Back) {
+    if keyboard_input.just_pressed(KeyCode::Back) {
         ctx.ui.key_down(megaui::KeyCode::Backspace, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::Return) {
+    if keyboard_input.just_pressed(KeyCode::Return) {
         ctx.ui.key_down(megaui::KeyCode::Enter, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::Tab) {
+    if keyboard_input.just_pressed(KeyCode::Tab) {
         ctx.ui.key_down(megaui::KeyCode::Tab, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::Z) {
+    if keyboard_input.just_pressed(KeyCode::Z) {
         ctx.ui.key_down(megaui::KeyCode::Z, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::Y) {
+    if keyboard_input.just_pressed(KeyCode::Y) {
         ctx.ui.key_down(megaui::KeyCode::Y, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::C) {
+    if keyboard_input.just_pressed(KeyCode::C) {
         ctx.ui.key_down(megaui::KeyCode::C, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::X) {
+    if keyboard_input.just_pressed(KeyCode::X) {
         ctx.ui.key_down(megaui::KeyCode::X, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::V) {
+    if keyboard_input.just_pressed(KeyCode::V) {
         ctx.ui.key_down(megaui::KeyCode::V, shift, ctrl);
     }
-    if keyboard_input.just_released(KeyCode::A) {
+    if keyboard_input.just_pressed(KeyCode::A) {
         ctx.ui.key_down(megaui::KeyCode::A, shift, ctrl);
     }
 }
 
 fn keycode_to_char(key_code: KeyCode) -> Option<char> {
     match key_code {
-        KeyCode::A => Some('A'),
-        KeyCode::B => Some('B'),
-        KeyCode::C => Some('C'),
-        KeyCode::D => Some('D'),
-        KeyCode::E => Some('E'),
-        KeyCode::F => Some('F'),
-        KeyCode::G => Some('G'),
-        KeyCode::H => Some('H'),
-        KeyCode::I => Some('I'),
-        KeyCode::J => Some('J'),
-        KeyCode::K => Some('K'),
-        KeyCode::L => Some('L'),
-        KeyCode::M => Some('M'),
-        KeyCode::N => Some('N'),
-        KeyCode::O => Some('O'),
-        KeyCode::P => Some('P'),
-        KeyCode::Q => Some('Q'),
-        KeyCode::R => Some('R'),
-        KeyCode::S => Some('S'),
-        KeyCode::T => Some('T'),
-        KeyCode::U => Some('U'),
-        KeyCode::V => Some('V'),
-        KeyCode::W => Some('W'),
-        KeyCode::X => Some('X'),
-        KeyCode::Y => Some('Y'),
-        KeyCode::Z => Some('Z'),
+        KeyCode::A => Some('a'),
+        KeyCode::B => Some('b'),
+        KeyCode::C => Some('c'),
+        KeyCode::D => Some('d'),
+        KeyCode::E => Some('e'),
+        KeyCode::F => Some('f'),
+        KeyCode::G => Some('g'),
+        KeyCode::H => Some('h'),
+        KeyCode::I => Some('i'),
+        KeyCode::J => Some('j'),
+        KeyCode::K => Some('k'),
+        KeyCode::L => Some('l'),
+        KeyCode::M => Some('m'),
+        KeyCode::N => Some('n'),
+        KeyCode::O => Some('o'),
+        KeyCode::P => Some('p'),
+        KeyCode::Q => Some('q'),
+        KeyCode::R => Some('r'),
+        KeyCode::S => Some('s'),
+        KeyCode::T => Some('t'),
+        KeyCode::U => Some('u'),
+        KeyCode::V => Some('v'),
+        KeyCode::W => Some('w'),
+        KeyCode::X => Some('x'),
+        KeyCode::Y => Some('y'),
+        KeyCode::Z => Some('z'),
         _ => None,
     }
 }

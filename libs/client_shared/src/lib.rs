@@ -122,8 +122,22 @@ impl ProximityPairFilter for PairFilter {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct UiState {
+    input1: String,
+    input2: String,
+    slider1: f32,
+    slider2: f32,
+    e1_input: String,
+    e2_input: String,
+}
+
 fn test_ui(_world: &mut World, resources: &mut Resources) {
+    resources.get_or_insert_with(UiState::default);
+
     let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
+    let mut ui_state = resources.get_mut::<UiState>().unwrap();
+
     megaui::widgets::Window::new(hash!(), Vector2::new(0.0, 0.0), Vector2::new(300.0, 300.0))
         .label("TEST")
         .ui(&mut megaui_context.ui, |ui| {
@@ -142,26 +156,37 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
 
                 ui.separator();
 
-                ui.input_field(hash!(), "<- input text 1", &mut String::new());
-                ui.input_field(hash!(), "<- input text 2", &mut String::new());
+                ui.input_field(hash!(), "<- input text 1", &mut ui_state.input1);
+                ui.input_field(hash!(), "<- input text 2", &mut ui_state.input2);
                 ui.label(
                     None,
-                    &format!("Text entered: \"{}\" and \"{}\"", String::new(), String::new()),
+                    &format!(
+                        "Text entered: \"{}\" and \"{}\"",
+                        ui_state.input1, ui_state.input2
+                    ),
                 );
 
                 ui.separator();
             });
             ui.tree_node(hash!(), "sliders", |ui| {
-                ui.slider(hash!(), "[-10 .. 10]", -10f32..10f32, &mut 0.0);
-                ui.slider(hash!(), "[0 .. 100]", 0f32..100f32, &mut 0.0);
+                ui.slider(hash!(), "[-10 .. 10]", -10f32..10f32, &mut ui_state.slider1);
+                ui.slider(hash!(), "[0 .. 100]", 0f32..100f32, &mut ui_state.slider2);
             });
             ui.tree_node(hash!(), "editbox 1", |ui| {
                 ui.label(None, "This is editbox!");
-                ui.editbox(hash!(), megaui::Vector2::new(285., 165.), &mut String::new());
+                ui.editbox(
+                    hash!(),
+                    megaui::Vector2::new(285., 165.),
+                    &mut ui_state.e1_input,
+                );
             });
             ui.tree_node(hash!(), "editbox 2", |ui| {
                 ui.label(None, "This is editbox!");
-                ui.editbox(hash!(), megaui::Vector2::new(285., 165.), &mut String::new());
+                ui.editbox(
+                    hash!(),
+                    megaui::Vector2::new(285., 165.),
+                    &mut ui_state.e2_input,
+                );
             });
         });
 }
