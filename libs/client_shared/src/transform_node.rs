@@ -46,7 +46,7 @@ impl SystemNode for MegaUiTransformNode {
                 command_queue: self.command_queue.clone(),
                 transform_buffer: None,
                 staging_buffer: None,
-                prev_window_size: WindowSize::new(0.0, 0.0),
+                prev_window_size: WindowSize::new(0.0, 0.0, 0.0),
             },
         );
         Box::new(system)

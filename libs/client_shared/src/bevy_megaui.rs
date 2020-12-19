@@ -4,11 +4,7 @@ use bevy::{
     asset::{AddAsset, Assets, Handle, HandleUntyped},
     core::{AsBytes, Time},
     ecs::{Resources, World},
-    input::{
-        keyboard::{KeyCode, KeyboardInput},
-        mouse::MouseButton,
-        ElementState, Input,
-    },
+    input::{keyboard::KeyCode, mouse::MouseButton, Input},
     reflect::TypeUuid,
     render::{
         pass::{
@@ -34,7 +30,7 @@ use bevy::{
         shader::{Shader, ShaderStage, ShaderStages},
         texture::{Extent3d, Texture, TextureDimension, TextureFormat},
     },
-    window::{CursorMoved, WindowResized, Windows},
+    window::{CursorMoved, ReceivedCharacter, WindowResized, Windows},
 };
 use std::{borrow::Cow, collections::HashMap};
 
@@ -54,7 +50,7 @@ pub struct MegaUiContext {
 
     mouse_position: (f32, f32),
     cursor: EventReader<CursorMoved>,
-    keys: EventReader<KeyboardInput>,
+    received_character: EventReader<ReceivedCharacter>,
     resize: EventReader<WindowResized>,
 }
 
@@ -67,7 +63,7 @@ impl MegaUiContext {
             megaui_textures: Default::default(),
             mouse_position: (0.0, 0.0),
             cursor: Default::default(),
-            keys: Default::default(),
+            received_character: Default::default(),
             resize: Default::default(),
         }
     }
@@ -77,11 +73,16 @@ impl MegaUiContext {
 pub struct WindowSize {
     pub width: f32,
     pub height: f32,
+    pub scale_factor: f32,
 }
 
 impl WindowSize {
-    pub fn new(width: f32, height: f32) -> Self {
-        Self { width, height }
+    pub fn new(width: f32, height: f32, scale_factor: f32) -> Self {
+        Self {
+            width,
+            height,
+            scale_factor,
+        }
     }
 }
 
@@ -117,7 +118,7 @@ impl Plugin for MegaUiPlugin {
                 ),
             })
         };
-        resources.insert(WindowSize::new(0.0, 0.0));
+        resources.insert(WindowSize::new(0.0, 0.0, 0.0));
         resources.insert_thread_local(MegaUiContext::new(ui, font_texture.clone()));
 
         let mut pipelines = resources.get_mut::<Assets<PipelineDescriptor>>().unwrap();
@@ -374,6 +375,8 @@ impl Node for MegaUiNode {
         input: &ResourceSlots,
         _output: &mut ResourceSlots,
     ) {
+        let window_size = resources.get::<WindowSize>().unwrap();
+
         if let Some(input_index) = self.depth_stencil_attachment_input_index {
             self.pass_descriptor
                 .depth_stencil_attachment
@@ -458,11 +461,9 @@ impl Node for MegaUiNode {
         let mut vertex_buffer = Vec::<u8>::new();
         let mut index_buffer = Vec::new();
         let mut draw_commands = Vec::new();
+        let mut index_offset = 0;
 
-        log::info!("FRAME");
-        let mut vc = 0;
-        let mut vrt = vec![];
-        let mut vtx = 0;
+        // log::info!("FRAME");
         for draw_list in &ui_draw_lists {
             let texture_handle = if let Some(texture) = draw_list.texture {
                 ctx.megaui_textures.get(&texture).unwrap().clone()
@@ -474,16 +475,22 @@ impl Node for MegaUiNode {
                 vertex_buffer.extend_from_slice(vertex.pos.as_bytes());
                 vertex_buffer.extend_from_slice(vertex.uv.as_bytes());
                 vertex_buffer.extend_from_slice(vertex.color.as_bytes());
-                vrt.push(vertex.clone());
-                vc += 1;
             }
-            index_buffer.extend_from_slice(draw_list.indices.as_slice().as_bytes());
+            let indices_with_offset = draw_list
+                .indices
+                .iter()
+                .map(|i| i + index_offset)
+                .collect::<Vec<_>>();
+            index_buffer.extend_from_slice(indices_with_offset.as_slice().as_bytes());
+            index_offset += draw_list.vertices.len() as u16;
 
-            for index in &draw_list.indices {
-                let vertex = vrt[*index as usize];
-                println!("vtx: {}, idx: {}, pos: [{}, {}, {}]", vtx, *index, vertex.pos[0], vertex.pos[1], vertex.pos[2]);
-                vtx += 1;
-            }
+            // for index in &draw_list.indices {
+            //     let vertex = draw_list.vertices[*index as usize];
+            //     println!(
+            //         "idx: {}, pos: [{}, {}, {}]",
+            //         *index, vertex.pos[0], vertex.pos[1], vertex.pos[2]
+            //     );
+            // }
 
             draw_commands.push(DrawCommand {
                 vertices_count: draw_list.indices.len(),
@@ -533,10 +540,17 @@ impl Node for MegaUiNode {
 
                     if let Some(clipping_zone) = draw_command.clipping_zone {
                         render_pass.set_scissor_rect(
-                            (clipping_zone.x * 1.25) as u32,
-                            (clipping_zone.y * 1.25) as u32,
-                            (clipping_zone.w * 1.25) as u32,
-                            (clipping_zone.h * 1.25) as u32,
+                            (clipping_zone.x * window_size.scale_factor) as u32,
+                            (clipping_zone.y * window_size.scale_factor) as u32,
+                            (clipping_zone.w * window_size.scale_factor) as u32,
+                            (clipping_zone.h * window_size.scale_factor) as u32,
+                        );
+                    } else {
+                        render_pass.set_scissor_rect(
+                            0,
+                            0,
+                            (window_size.width * window_size.scale_factor) as u32,
+                            (window_size.height * window_size.scale_factor) as u32,
                         );
                     }
                     render_pass.draw_indexed(
@@ -548,6 +562,7 @@ impl Node for MegaUiNode {
                 }
             },
         );
+        std::mem::swap(&mut ui_draw_lists, &mut ctx.ui_draw_lists);
         ctx.ui
             .new_frame(resources.get::<Time>().unwrap().delta_seconds());
     }
@@ -573,19 +588,29 @@ fn process_input(
 
     let mut ctx = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
     let ev_cursor = resources.get::<Events<CursorMoved>>().unwrap();
-    let ev_keys = resources.get::<Events<KeyboardInput>>().unwrap();
+    let ev_received_character = resources.get::<Events<ReceivedCharacter>>().unwrap();
     let ev_resize = resources.get::<Events<WindowResized>>().unwrap();
     let mouse_button_input = resources.get::<Input<MouseButton>>().unwrap();
     let keyboard_input = resources.get::<Input<KeyCode>>().unwrap();
     let mut window_size = resources.get_mut::<WindowSize>().unwrap();
     let windows = resources.get::<Windows>().unwrap();
 
-    if *window_size == WindowSize::new(0.0, 0.0) {
+    if *window_size == WindowSize::new(0.0, 0.0, 0.0) {
         let window = windows.get_primary().unwrap();
-        *window_size = WindowSize::new(window.logical_width(), window.logical_height());
+        *window_size = WindowSize::new(
+            window.logical_width(),
+            window.logical_height(),
+            window.scale_factor() as f32,
+        );
     }
     if let Some(resize_event) = ctx.resize.latest(&ev_resize) {
-        *window_size = WindowSize::new(resize_event.width as f32, resize_event.height as f32);
+        let is_primary = windows
+            .get_primary()
+            .map_or(false, |window| window.id() == resize_event.id);
+        if is_primary {
+            window_size.width = resize_event.width;
+            window_size.height = resize_event.height;
+        }
     }
 
     if let Some(cursor_moved) = ctx.cursor.latest(&ev_cursor) {
@@ -607,102 +632,59 @@ fn process_input(
     let ctrl =
         keyboard_input.pressed(KeyCode::LControl) || keyboard_input.pressed(KeyCode::RControl);
 
-    for keyboard_input in ctx.keys.iter(&ev_keys) {
-        if let ElementState::Released = keyboard_input.state {
-            continue;
-        }
-
-        if let Some(pressed_char) = keyboard_input.key_code.and_then(keycode_to_char) {
-            let char_input = if shift {
-                pressed_char.to_ascii_uppercase()
-            } else {
-                pressed_char
-            };
-            if !ctrl {
-                ctx.ui.char_event(char_input, false, false);
-            }
+    for event in ctx.received_character.iter(&ev_received_character) {
+        if event.id.is_primary() && !event.char.is_control() {
+            ctx.ui.char_event(event.char, shift, ctrl);
         }
     }
 
-    if keyboard_input.just_pressed(KeyCode::Up) {
+    if keyboard_input.pressed(KeyCode::Up) {
         ctx.ui.key_down(megaui::KeyCode::Up, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::Down) {
+    if keyboard_input.pressed(KeyCode::Down) {
         ctx.ui.key_down(megaui::KeyCode::Down, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::Right) {
+    if keyboard_input.pressed(KeyCode::Right) {
         ctx.ui.key_down(megaui::KeyCode::Right, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::Left) {
+    if keyboard_input.pressed(KeyCode::Left) {
         ctx.ui.key_down(megaui::KeyCode::Left, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::Home) {
+    if keyboard_input.pressed(KeyCode::Home) {
         ctx.ui.key_down(megaui::KeyCode::Home, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::End) {
+    if keyboard_input.pressed(KeyCode::End) {
         ctx.ui.key_down(megaui::KeyCode::End, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::Delete) {
+    if keyboard_input.pressed(KeyCode::Delete) {
         ctx.ui.key_down(megaui::KeyCode::Delete, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::Back) {
+    if keyboard_input.pressed(KeyCode::Back) {
         ctx.ui.key_down(megaui::KeyCode::Backspace, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::Return) {
+    if keyboard_input.pressed(KeyCode::Return) {
         ctx.ui.key_down(megaui::KeyCode::Enter, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::Tab) {
+    if keyboard_input.pressed(KeyCode::Tab) {
         ctx.ui.key_down(megaui::KeyCode::Tab, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::Z) {
+    if keyboard_input.pressed(KeyCode::Z) {
         ctx.ui.key_down(megaui::KeyCode::Z, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::Y) {
+    if keyboard_input.pressed(KeyCode::Y) {
         ctx.ui.key_down(megaui::KeyCode::Y, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::C) {
+    if keyboard_input.pressed(KeyCode::C) {
         ctx.ui.key_down(megaui::KeyCode::C, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::X) {
+    if keyboard_input.pressed(KeyCode::X) {
         ctx.ui.key_down(megaui::KeyCode::X, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::V) {
+    if keyboard_input.pressed(KeyCode::V) {
         ctx.ui.key_down(megaui::KeyCode::V, shift, ctrl);
     }
-    if keyboard_input.just_pressed(KeyCode::A) {
+    if keyboard_input.pressed(KeyCode::A) {
         ctx.ui.key_down(megaui::KeyCode::A, shift, ctrl);
-    }
-}
-
-fn keycode_to_char(key_code: KeyCode) -> Option<char> {
-    match key_code {
-        KeyCode::A => Some('a'),
-        KeyCode::B => Some('b'),
-        KeyCode::C => Some('c'),
-        KeyCode::D => Some('d'),
-        KeyCode::E => Some('e'),
-        KeyCode::F => Some('f'),
-        KeyCode::G => Some('g'),
-        KeyCode::H => Some('h'),
-        KeyCode::I => Some('i'),
-        KeyCode::J => Some('j'),
-        KeyCode::K => Some('k'),
-        KeyCode::L => Some('l'),
-        KeyCode::M => Some('m'),
-        KeyCode::N => Some('n'),
-        KeyCode::O => Some('o'),
-        KeyCode::P => Some('p'),
-        KeyCode::Q => Some('q'),
-        KeyCode::R => Some('r'),
-        KeyCode::S => Some('s'),
-        KeyCode::T => Some('t'),
-        KeyCode::U => Some('u'),
-        KeyCode::V => Some('v'),
-        KeyCode::W => Some('w'),
-        KeyCode::X => Some('x'),
-        KeyCode::Y => Some('y'),
-        KeyCode::Z => Some('z'),
-        _ => None,
     }
 }
 

@@ -138,7 +138,19 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
     let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
     let mut ui_state = resources.get_mut::<UiState>().unwrap();
 
-    megaui::widgets::Window::new(hash!(), Vector2::new(0.0, 0.0), Vector2::new(300.0, 300.0))
+    megaui::widgets::Window::new(hash!(), Vector2::new(10., 10.), Vector2::new(50., 20.))
+        .titlebar(false)
+        .ui(&mut megaui_context.ui, |ui| {
+            ui.label(None, "Hello!");
+        });
+
+    // megaui::widgets::Window::new(hash!(), Vector2::new(10., 50.), Vector2::new(50., 20.))
+    //     .titlebar(false)
+    //     .ui(&mut megaui_context.ui, |ui| {
+    //         ui.label(None, "Hello!");
+    //     });
+
+    megaui::widgets::Window::new(hash!(), Vector2::new(0.0, 110.0), Vector2::new(300.0, 300.0))
         .label("TEST")
         .ui(&mut megaui_context.ui, |ui| {
             ui.tree_node(hash!(), "input", |ui| {
