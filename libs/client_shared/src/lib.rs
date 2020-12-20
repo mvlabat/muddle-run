@@ -1,4 +1,4 @@
-use crate::bevy_megaui::{MegaUiContext, MegaUiPlugin};
+use crate::bevy_megaui::{MegaUiContext, MegaUiPlugin, WindowParams};
 use bevy::{
     input::{keyboard::KeyboardInput, mouse::MouseButtonInput},
     prelude::*,
@@ -21,7 +21,6 @@ use bevy_rapier3d::{
 use megaui::{hash, Vector2};
 
 mod bevy_megaui;
-mod texture_node;
 mod transform_node;
 
 pub struct MuddlePlugin;
@@ -45,6 +44,7 @@ impl Plugin for MuddlePlugin {
             .init_resource::<WindowInnerSize>()
             .init_resource::<MousePosition>()
             // Startup systems,
+            .add_startup_system(load_assets)
             .add_startup_system(basic_scene)
             // Track input events.
             .init_resource::<TrackInputState>()
@@ -59,6 +59,8 @@ impl Plugin for MuddlePlugin {
 
 // Constants.
 const PLANE_SIZE: f32 = 10.0;
+
+const BEVY_TEXTURE_ID: u32 = 1;
 
 // Resources.
 #[derive(Default)]
@@ -138,21 +140,31 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
     let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
     let mut ui_state = resources.get_mut::<UiState>().unwrap();
 
-    megaui::widgets::Window::new(hash!(), Vector2::new(10., 10.), Vector2::new(50., 20.))
-        .titlebar(false)
-        .ui(&mut megaui_context.ui, |ui| {
+    megaui_context.draw_window(
+        hash!(),
+        Vector2::new(10., 10.),
+        Vector2::new(50., 20.),
+        WindowParams {
+            titlebar: false,
+            ..Default::default()
+        },
+        |ui| {
             ui.label(None, "Hello!");
-        });
+        },
+    );
 
-    // megaui::widgets::Window::new(hash!(), Vector2::new(10., 50.), Vector2::new(50., 20.))
-    //     .titlebar(false)
-    //     .ui(&mut megaui_context.ui, |ui| {
-    //         ui.label(None, "Hello!");
-    //     });
+    megaui_context.draw_window(
+        hash!(),
+        Vector2::new(0.0, 110.0),
+        Vector2::new(300.0, 300.0),
+        WindowParams {
+            label: "TEST".to_owned(),
+            ..Default::default()
+        },
+        |ui| {
+            ui.texture(BEVY_TEXTURE_ID, 256.0, 256.0);
+            ui.separator();
 
-    megaui::widgets::Window::new(hash!(), Vector2::new(0.0, 110.0), Vector2::new(300.0, 300.0))
-        .label("TEST")
-        .ui(&mut megaui_context.ui, |ui| {
             ui.tree_node(hash!(), "input", |ui| {
                 ui.label(None, "Some random text");
                 if ui.button(None, "click me") {
@@ -165,6 +177,9 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
                 if ui.button(None, "other button") {
                     println!("hi2");
                 }
+
+                // ui.separator();
+                // ui.texture(BEVY_TEXTURE_ID, 256.0, 256.0);
 
                 ui.separator();
 
@@ -200,7 +215,23 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
                     &mut ui_state.e2_input,
                 );
             });
-        });
+
+            // ui.separator();
+            // ui.texture(BEVY_TEXTURE_ID, 256.0, 256.0);
+        },
+    );
+}
+
+fn load_assets(
+    _world: &mut World,
+    resources: &mut Resources,
+) {
+    let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
+    let asset_server = resources.get::<AssetServer>().unwrap();
+
+    let texture_handle = asset_server.load("branding/icon.png");
+    megaui_context.set_megaui_texture(BEVY_TEXTURE_ID, texture_handle);
+    // megaui_context.remove_megaui_texture(BEVY_TEXTURE_ID);
 }
 
 fn basic_scene(

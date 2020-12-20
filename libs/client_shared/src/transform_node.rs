@@ -102,8 +102,8 @@ pub fn transform_node_system(
     };
 
     let transform_data: [f32; 4] = [
-        2.0 as f32 / window_size.width,
-        -2.0 as f32 / window_size.height, // scale
+        2.0 / window_size.width,
+        -2.0 / window_size.height, // scale
         -1.0,
         1.0, // translation
     ];

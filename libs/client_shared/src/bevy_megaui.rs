@@ -1,7 +1,7 @@
-use crate::{texture_node::MegaUiTextureNode, transform_node::MegaUiTransformNode};
+use crate::transform_node::MegaUiTransformNode;
 use bevy::{
     app::{stage, AppBuilder, EventReader, Events, Plugin},
-    asset::{AddAsset, Assets, Handle, HandleUntyped},
+    asset::{AssetEvent, Assets, Handle, HandleId, HandleUntyped},
     core::{AsBytes, Time},
     ecs::{Resources, World},
     input::{keyboard::KeyCode, mouse::MouseButton, Input},
@@ -25,13 +25,15 @@ use bevy::{
         },
         renderer::{
             BindGroup, BindGroupId, BufferId, BufferInfo, BufferUsage, RenderContext,
-            RenderResourceBindings, RenderResourceContext, RenderResourceType,
+            RenderResourceBinding, RenderResourceBindings, RenderResourceContext,
+            RenderResourceType, SamplerId, TextureId,
         },
         shader::{Shader, ShaderStage, ShaderStages},
-        texture::{Extent3d, Texture, TextureDimension, TextureFormat},
+        texture::{Extent3d, Texture, TextureDescriptor, TextureDimension, TextureFormat},
     },
     window::{CursorMoved, ReceivedCharacter, WindowResized, Windows},
 };
+use megaui::Vector2;
 use std::{borrow::Cow, collections::HashMap};
 
 pub const MEGAUI_PIPELINE_HANDLE: HandleUntyped =
@@ -45,8 +47,8 @@ pub struct MegaUiPlugin;
 pub struct MegaUiContext {
     pub ui: megaui::Ui,
     ui_draw_lists: Vec<megaui::DrawList>,
-    font_texture: Handle<MegaUiTexture>,
-    megaui_textures: HashMap<u32, Handle<MegaUiTexture>>,
+    font_texture: Handle<Texture>,
+    megaui_textures: HashMap<u32, Handle<Texture>>,
 
     mouse_position: (f32, f32),
     cursor: EventReader<CursorMoved>,
@@ -55,7 +57,7 @@ pub struct MegaUiContext {
 }
 
 impl MegaUiContext {
-    pub fn new(ui: megaui::Ui, font_texture: Handle<MegaUiTexture>) -> Self {
+    pub fn new(ui: megaui::Ui, font_texture: Handle<Texture>) -> Self {
         Self {
             ui,
             ui_draw_lists: Vec::new(),
@@ -65,6 +67,60 @@ impl MegaUiContext {
             cursor: Default::default(),
             received_character: Default::default(),
             resize: Default::default(),
+        }
+    }
+
+    pub fn draw_window(
+        &mut self,
+        id: megaui::Id,
+        position: Vector2,
+        size: Vector2,
+        params: impl Into<Option<WindowParams>>,
+        f: impl FnOnce(&mut megaui::Ui),
+    ) {
+        let params = params.into();
+
+        megaui::widgets::Window::new(id, position, size)
+            .label(params.as_ref().map_or("", |params| &params.label))
+            .titlebar(params.as_ref().map_or(true, |params| params.titlebar))
+            .movable(params.as_ref().map_or(true, |params| params.movable))
+            .close_button(params.as_ref().map_or(false, |params| params.close_button))
+            .ui(&mut self.ui, f);
+    }
+
+    pub fn set_megaui_texture(&mut self, id: u32, texture: Handle<Texture>) {
+        self.megaui_textures.insert(id, texture);
+    }
+
+    pub fn remove_megaui_texture(&mut self, id: u32) {
+        self.megaui_textures.remove(&id);
+    }
+
+    // Is called when we get an event that a texture asset is removed.
+    fn remove_texture(&mut self, texture_handle: &Handle<Texture>) {
+        self.megaui_textures = self
+            .megaui_textures
+            .iter()
+            .map(|(id, texture)| (*id, texture.clone()))
+            .filter(|(_, texture)| texture == texture_handle)
+            .collect();
+    }
+}
+
+pub struct WindowParams {
+    pub label: String,
+    pub movable: bool,
+    pub close_button: bool,
+    pub titlebar: bool,
+}
+
+impl Default for WindowParams {
+    fn default() -> WindowParams {
+        WindowParams {
+            label: "".to_string(),
+            movable: true,
+            close_button: false,
+            titlebar: true,
         }
     }
 }
@@ -95,28 +151,24 @@ impl MegaUiContext {
 
 pub mod node {
     pub const MEGAUI_PASS: &str = "megaui_pass";
-    pub const MEGAUI_TEXTURE: &str = "megaui_texture";
     pub const MEGAUI_TRANSFORM: &str = "megaui_transform";
 }
 
 impl Plugin for MegaUiPlugin {
     fn build(&self, app: &mut AppBuilder) {
-        app.add_system_to_stage(stage::PRE_UPDATE, process_input)
-            .add_asset::<MegaUiTexture>();
+        app.add_system_to_stage(stage::PRE_UPDATE, process_input);
 
         let resources = app.resources_mut();
 
         let ui = megaui::Ui::new();
         let font_texture = {
-            let mut assets = resources.get_mut::<Assets<MegaUiTexture>>().unwrap();
-            assets.add(MegaUiTexture {
-                texture: Texture::new(
-                    Extent3d::new(ui.font_atlas.texture.width, ui.font_atlas.texture.height, 1),
-                    TextureDimension::D2,
-                    ui.font_atlas.texture.data.clone(),
-                    TextureFormat::Rgba8Unorm,
-                ),
-            })
+            let mut assets = resources.get_mut::<Assets<Texture>>().unwrap();
+            assets.add(Texture::new(
+                Extent3d::new(ui.font_atlas.texture.width, ui.font_atlas.texture.height, 1),
+                TextureDimension::D2,
+                ui.font_atlas.texture.data.clone(),
+                TextureFormat::Rgba8Unorm,
+            ))
         };
         resources.insert(WindowSize::new(0.0, 0.0, 0.0));
         resources.insert_thread_local(MegaUiContext::new(ui, font_texture.clone()));
@@ -188,6 +240,7 @@ impl Plugin for MegaUiPlugin {
                 transform_bind_group,
                 texture_bind_group,
                 &msaa,
+                font_texture,
             ),
         );
         render_graph
@@ -232,12 +285,6 @@ impl Plugin for MegaUiPlugin {
         render_graph
             .add_node_edge(node::MEGAUI_TRANSFORM, node::MEGAUI_PASS)
             .unwrap();
-
-        // Textures.
-        render_graph.add_node(node::MEGAUI_TEXTURE, MegaUiTextureNode::new(font_texture));
-        render_graph
-            .add_node_edge(node::MEGAUI_TEXTURE, node::MEGAUI_PASS)
-            .unwrap();
     }
 }
 
@@ -265,12 +312,25 @@ pub struct MegaUiNode {
     color_resolve_target_indices: Vec<Option<usize>>,
     depth_stencil_attachment_input_index: Option<usize>,
     default_clear_color_inputs: Vec<usize>,
+
     transform_bind_group_descriptor: BindGroupDescriptor,
     transform_bind_group_id: Option<BindGroupId>,
+
+    font_texture: Handle<Texture>,
     texture_bind_group_descriptor: BindGroupDescriptor,
-    texture_bind_group_id: Option<BindGroupId>,
+    texture_resources: HashMap<Handle<Texture>, TextureResource>,
+    event_reader: EventReader<AssetEvent<Texture>>,
+
     vertex_buffer: Option<BufferId>,
     index_buffer: Option<BufferId>,
+}
+
+#[derive(Debug)]
+pub struct TextureResource {
+    descriptor: TextureDescriptor,
+    texture: TextureId,
+    sampler: SamplerId,
+    bind_group: BindGroupId,
 }
 
 impl MegaUiNode {
@@ -279,6 +339,7 @@ impl MegaUiNode {
         transform_bind_group_descriptor: BindGroupDescriptor,
         texture_bind_group_descriptor: BindGroupDescriptor,
         msaa: &Msaa,
+        font_texture: Handle<Texture>,
     ) -> Self {
         let color_attachments = vec![msaa.color_attachment_descriptor(
             TextureAttachment::Input("color_attachment".to_string()),
@@ -345,8 +406,10 @@ impl MegaUiNode {
             color_attachment_input_indices,
             transform_bind_group_descriptor,
             transform_bind_group_id: None,
+            font_texture,
             texture_bind_group_descriptor,
-            texture_bind_group_id: None,
+            texture_resources: Default::default(),
+            event_reader: Default::default(),
             vertex_buffer: None,
             index_buffer: None,
             color_resolve_target_indices,
@@ -356,9 +419,7 @@ impl MegaUiNode {
 
 struct DrawCommand {
     vertices_count: usize,
-    #[allow(dead_code)]
-    texture_handle: Handle<MegaUiTexture>,
-    #[allow(dead_code)]
+    texture_handle: Handle<Texture>,
     clipping_zone: Option<megaui::Rect>,
 }
 
@@ -375,8 +436,150 @@ impl Node for MegaUiNode {
         input: &ResourceSlots,
         _output: &mut ResourceSlots,
     ) {
+        self.process_attachments(input, resources);
+
         let window_size = resources.get::<WindowSize>().unwrap();
 
+        let render_resource_bindings = resources.get::<RenderResourceBindings>().unwrap();
+
+        self.init_transform_bind_group(render_context, &render_resource_bindings);
+
+        let texture_assets = resources.get_mut::<Assets<Texture>>().unwrap();
+        let asset_events = resources.get::<Events<AssetEvent<Texture>>>().unwrap();
+
+        let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
+
+        self.process_asset_events(
+            render_context,
+            &mut megaui_context,
+            &asset_events,
+            &texture_assets,
+        );
+        self.init_textures(render_context, &megaui_context, &texture_assets);
+
+        megaui_context.render_draw_lists();
+        let mut ui_draw_lists = Vec::new();
+
+        std::mem::swap(&mut ui_draw_lists, &mut megaui_context.ui_draw_lists);
+
+        let mut vertex_buffer = Vec::<u8>::new();
+        let mut index_buffer = Vec::new();
+        let mut draw_commands = Vec::new();
+        let mut index_offset = 0;
+
+        // log::info!("FRAME");
+        for draw_list in &ui_draw_lists {
+            let texture_handle = if let Some(texture) = draw_list.texture {
+                megaui_context
+                    .megaui_textures
+                    .get(&texture)
+                    .unwrap_or_else(|| panic!("No texture set with id {} (you might have forgotten to call `set_megaui_texture`)", texture))
+                    .clone()
+            } else {
+                megaui_context.font_texture.clone()
+            };
+
+            for vertex in &draw_list.vertices {
+                vertex_buffer.extend_from_slice(vertex.pos.as_bytes());
+                vertex_buffer.extend_from_slice(vertex.uv.as_bytes());
+                vertex_buffer.extend_from_slice(vertex.color.as_bytes());
+            }
+            let indices_with_offset = draw_list
+                .indices
+                .iter()
+                .map(|i| i + index_offset)
+                .collect::<Vec<_>>();
+            index_buffer.extend_from_slice(indices_with_offset.as_slice().as_bytes());
+            index_offset += draw_list.vertices.len() as u16;
+
+            // for index in &draw_list.indices {
+            //     let vertex = draw_list.vertices[*index as usize];
+            //     println!(
+            //         "idx: {}, pos: [{}, {}, {}]",
+            //         *index, vertex.pos[0], vertex.pos[1], vertex.pos[2]
+            //     );
+            // }
+
+            draw_commands.push(DrawCommand {
+                vertices_count: draw_list.indices.len(),
+                texture_handle,
+                clipping_zone: draw_list.clipping_zone,
+            });
+        }
+
+        self.update_buffers(render_context, &vertex_buffer, &index_buffer);
+
+        render_context.begin_pass(
+            &self.pass_descriptor,
+            &render_resource_bindings,
+            &mut |render_pass| {
+                render_pass.set_pipeline(&self.pipeline_descriptor);
+                render_pass.set_vertex_buffer(0, self.vertex_buffer.unwrap(), 0);
+                render_pass.set_index_buffer(self.index_buffer.unwrap(), 0);
+                render_pass.set_bind_group(
+                    0,
+                    self.transform_bind_group_descriptor.id,
+                    self.transform_bind_group_id.unwrap(),
+                    None,
+                );
+                let mut vertex_offset: u32 = 0;
+                for draw_command in &draw_commands {
+                    let texture_resource =
+                        match self.texture_resources.get(&draw_command.texture_handle) {
+                            Some(texture_resource) => texture_resource,
+                            None => {
+                                vertex_offset += draw_command.vertices_count as u32;
+                                continue;
+                            }
+                        };
+                    if draw_command.texture_handle != self.font_texture {
+                        // dbg!(&texture_resource);
+                        // log::debug!("hey");
+                        // dbg!(texture_resource.texture);
+                    }
+                    // dbg!(texture_resource.texture);
+
+                    render_pass.set_bind_group(
+                        1,
+                        self.texture_bind_group_descriptor.id,
+                        texture_resource.bind_group,
+                        None,
+                    );
+
+                    if let Some(clipping_zone) = draw_command.clipping_zone {
+                        render_pass.set_scissor_rect(
+                            (clipping_zone.x * window_size.scale_factor) as u32,
+                            (clipping_zone.y * window_size.scale_factor) as u32,
+                            (clipping_zone.w * window_size.scale_factor) as u32,
+                            (clipping_zone.h * window_size.scale_factor) as u32,
+                        );
+                    } else {
+                        render_pass.set_scissor_rect(
+                            0,
+                            0,
+                            (window_size.width * window_size.scale_factor) as u32,
+                            (window_size.height * window_size.scale_factor) as u32,
+                        );
+                    }
+                    render_pass.draw_indexed(
+                        vertex_offset..(vertex_offset + draw_command.vertices_count as u32),
+                        0,
+                        0..1,
+                    );
+                    vertex_offset += draw_command.vertices_count as u32;
+                }
+            },
+        );
+
+        std::mem::swap(&mut ui_draw_lists, &mut megaui_context.ui_draw_lists);
+        megaui_context
+            .ui
+            .new_frame(resources.get::<Time>().unwrap().delta_seconds());
+    }
+}
+
+impl MegaUiNode {
+    fn process_attachments(&mut self, input: &ResourceSlots, resources: &Resources) {
         if let Some(input_index) = self.depth_stencil_attachment_input_index {
             self.pass_descriptor
                 .depth_stencil_attachment
@@ -407,17 +610,13 @@ impl Node for MegaUiNode {
                 ));
             }
         }
+    }
 
-        let render_resources = render_context.resources_mut();
-        let render_resource_bindings = resources.get_mut::<RenderResourceBindings>().unwrap();
-
-        if let Some(vertex_buffer_id) = self.vertex_buffer.take() {
-            render_resources.remove_buffer(vertex_buffer_id);
-        }
-        if let Some(index_buffer_id) = self.index_buffer.take() {
-            render_resources.remove_buffer(index_buffer_id);
-        }
-
+    fn init_transform_bind_group(
+        &mut self,
+        render_context: &mut dyn RenderContext,
+        render_resource_bindings: &RenderResourceBindings,
+    ) {
         if self.transform_bind_group_id.is_none() {
             let transform_bindings = render_resource_bindings
                 .get(MEGAUI_TRANSFORM_RESOURCE_BINDING_NAME)
@@ -432,158 +631,210 @@ impl Node for MegaUiNode {
             );
             self.transform_bind_group_id = Some(transform_bind_group.id);
         }
+    }
 
-        if self.texture_bind_group_id.is_none() {
-            let texture_bindings = render_resource_bindings
-                .get(MEGAUI_TEXTURE_RESOURCE_BINDING_NAME)
-                .unwrap()
-                .clone();
-            let texture_sampler_bindings = render_resource_bindings
-                .get(MEGAUI_TEXTURE_SAMPLER_RESOURCE_BINDING_NAME)
-                .unwrap()
-                .clone();
-            let texture_bind_group = BindGroup::build()
-                .add_binding(0, texture_bindings)
-                .add_binding(1, texture_sampler_bindings)
-                .finish();
-            render_context
-                .resources()
-                .create_bind_group(self.texture_bind_group_descriptor.id, &texture_bind_group);
-            self.texture_bind_group_id = Some(texture_bind_group.id);
+    fn process_asset_events(
+        &mut self,
+        render_context: &mut dyn RenderContext,
+        megaui_context: &mut MegaUiContext,
+        asset_events: &Events<AssetEvent<Texture>>,
+        texture_assets: &Assets<Texture>,
+    ) {
+        let mut changed_assets: HashMap<Handle<Texture>, &Texture> = HashMap::new();
+        for event in self.event_reader.iter(asset_events) {
+            let handle = match event {
+                AssetEvent::Created { ref handle }
+                | AssetEvent::Modified { ref handle }
+                | AssetEvent::Removed { ref handle } => handle,
+            };
+            if !self.texture_resources.contains_key(handle) {
+                continue;
+            }
+            log::debug!("{:?}", event);
+
+            match event {
+                AssetEvent::Created { ref handle } => {
+                    // Don't have to do anything really, since we track uninitialized textures
+                    // via `MegaUiContext::set_megaui_texture` and `Self::init_textures`.
+                }
+                AssetEvent::Modified { ref handle } => {
+                    if let Some(asset) = texture_assets.get(handle) {
+                        changed_assets.insert(handle.clone(), asset);
+                    }
+                }
+                AssetEvent::Removed { ref handle } => {
+                    megaui_context.remove_texture(handle);
+                    self.remove_texture(render_context, handle);
+                    // If an asset was modified and removed in the same update, ignore the modification.
+                    changed_assets.remove(&handle);
+                }
+            }
+        }
+        for (texture_handle, texture) in changed_assets {
+            self.update_texture(render_context, texture, texture_handle);
+        }
+    }
+
+    fn init_textures(
+        &mut self,
+        render_context: &mut dyn RenderContext,
+        megaui_context: &MegaUiContext,
+        texture_assets: &Assets<Texture>,
+    ) {
+        self.create_texture(render_context, texture_assets, self.font_texture.clone());
+
+        for texture in megaui_context.megaui_textures.values() {
+            self.create_texture(render_context, texture_assets, texture.clone());
+        }
+    }
+
+    fn update_texture(
+        &mut self,
+        render_context: &mut dyn RenderContext,
+        texture_asset: &Texture,
+        texture_handle: Handle<Texture>,
+    ) {
+        let texture_resource = match self.texture_resources.get(&texture_handle) {
+            Some(texture_resource) => texture_resource,
+            None => return,
+        };
+        log::debug!("Updating a texture: ${:?}", texture_handle);
+
+        let texture_descriptor: TextureDescriptor = texture_asset.into();
+
+        if texture_descriptor != texture_resource.descriptor {
+            log::debug!(
+                "Removing an updated texture for it to be re-created later: {:?}",
+                texture_handle
+            );
+            // If a texture descriptor is updated, we'll re-create the texture in `init_textures`.
+            self.remove_texture(render_context, &texture_handle);
+            return;
+        }
+        Self::copy_texture(render_context, &texture_resource, texture_asset);
+    }
+
+    fn create_texture(
+        &mut self,
+        render_context: &mut dyn RenderContext,
+        texture_assets: &Assets<Texture>,
+        texture_handle: Handle<Texture>,
+    ) {
+        if self.texture_resources.contains_key(&texture_handle) {
+            return;
         }
 
-        let mut ctx = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
-        ctx.render_draw_lists();
-        let mut ui_draw_lists = Vec::new();
+        // If a texture is still loading, we skip it.
+        let texture_asset = match texture_assets.get(texture_handle.clone()) {
+            Some(texture_asset) => texture_asset,
+            None => return,
+        };
 
-        std::mem::swap(&mut ui_draw_lists, &mut ctx.ui_draw_lists);
+        log::info!("Creating a texture: ${:?}", texture_handle);
 
-        let mut vertex_buffer = Vec::<u8>::new();
-        let mut index_buffer = Vec::new();
-        let mut draw_commands = Vec::new();
-        let mut index_offset = 0;
+        let render_resource_context = render_context.resources();
 
-        // log::info!("FRAME");
-        for draw_list in &ui_draw_lists {
-            let texture_handle = if let Some(texture) = draw_list.texture {
-                ctx.megaui_textures.get(&texture).unwrap().clone()
-            } else {
-                ctx.font_texture.clone()
-            };
+        let texture_descriptor: TextureDescriptor = texture_asset.into();
+        let texture = render_resource_context.create_texture(texture_descriptor);
+        let sampler = render_resource_context.create_sampler(&texture_asset.sampler);
 
-            for vertex in &draw_list.vertices {
-                vertex_buffer.extend_from_slice(vertex.pos.as_bytes());
-                vertex_buffer.extend_from_slice(vertex.uv.as_bytes());
-                vertex_buffer.extend_from_slice(vertex.color.as_bytes());
-            }
-            let indices_with_offset = draw_list
-                .indices
-                .iter()
-                .map(|i| i + index_offset)
-                .collect::<Vec<_>>();
-            index_buffer.extend_from_slice(indices_with_offset.as_slice().as_bytes());
-            index_offset += draw_list.vertices.len() as u16;
+        let texture_bind_group = BindGroup::build()
+            .add_binding(0, RenderResourceBinding::Texture(texture))
+            .add_binding(1, RenderResourceBinding::Sampler(sampler))
+            .finish();
 
-            // for index in &draw_list.indices {
-            //     let vertex = draw_list.vertices[*index as usize];
-            //     println!(
-            //         "idx: {}, pos: [{}, {}, {}]",
-            //         *index, vertex.pos[0], vertex.pos[1], vertex.pos[2]
-            //     );
-            // }
+        render_resource_context
+            .create_bind_group(self.texture_bind_group_descriptor.id, &texture_bind_group);
 
-            draw_commands.push(DrawCommand {
-                vertices_count: draw_list.indices.len(),
-                texture_handle,
-                clipping_zone: draw_list.clipping_zone,
-            });
+        let texture_resource = TextureResource {
+            descriptor: texture_descriptor,
+            texture,
+            sampler,
+            bind_group: texture_bind_group.id,
+        };
+        Self::copy_texture(render_context, &texture_resource, texture_asset);
+        log::debug!("Texture created: {:?}", texture_resource);
+        self.texture_resources
+            .insert(texture_handle, texture_resource);
+    }
+
+    fn remove_texture(
+        &mut self,
+        render_context: &mut dyn RenderContext,
+        texture_handle: &Handle<Texture>,
+    ) {
+        let texture_resource = match self.texture_resources.remove(texture_handle) {
+            Some(texture_resource) => texture_resource,
+            None => return,
+        };
+        log::debug!("Removing a texture: ${:?}", texture_handle);
+
+        let render_resource_context = render_context.resources();
+        render_resource_context.remove_texture(texture_resource.texture);
+        render_resource_context.remove_sampler(texture_resource.sampler);
+    }
+
+    fn copy_texture(
+        render_context: &mut dyn RenderContext,
+        texture_resource: &TextureResource,
+        texture: &Texture,
+    ) {
+        let aligned_width = render_context
+            .resources()
+            .get_aligned_texture_size(texture.size.width as usize);
+        let format_size = texture.format.pixel_size();
+
+        let texture_buffer = render_context.resources().create_buffer_with_data(
+            BufferInfo {
+                buffer_usage: BufferUsage::COPY_SRC,
+                ..Default::default()
+            },
+            &texture.data,
+        );
+
+        render_context.copy_buffer_to_texture(
+            texture_buffer,
+            0,
+            (format_size * aligned_width) as u32,
+            texture_resource.texture,
+            [0, 0, 0],
+            0,
+            texture_resource.descriptor.size,
+        );
+        render_context.resources().remove_buffer(texture_buffer);
+    }
+
+    fn update_buffers(
+        &mut self,
+        render_context: &mut dyn RenderContext,
+        vertex_buffer: &[u8],
+        index_buffer: &[u8],
+    ) {
+        if let Some(vertex_buffer) = self.vertex_buffer.take() {
+            render_context.resources().remove_buffer(vertex_buffer);
+        }
+        if let Some(index_buffer) = self.index_buffer.take() {
+            render_context.resources().remove_buffer(index_buffer);
         }
         self.vertex_buffer = Some(render_context.resources().create_buffer_with_data(
             BufferInfo {
                 buffer_usage: BufferUsage::VERTEX,
                 ..Default::default()
             },
-            &vertex_buffer,
+            vertex_buffer,
         ));
         self.index_buffer = Some(render_context.resources().create_buffer_with_data(
             BufferInfo {
                 buffer_usage: BufferUsage::INDEX,
                 ..Default::default()
             },
-            &index_buffer,
+            index_buffer,
         ));
-
-        render_context.begin_pass(
-            &self.pass_descriptor,
-            &render_resource_bindings,
-            &mut |render_pass| {
-                render_pass.set_pipeline(&self.pipeline_descriptor);
-                render_pass.set_vertex_buffer(0, self.vertex_buffer.unwrap(), 0);
-                render_pass.set_index_buffer(self.index_buffer.unwrap(), 0);
-                render_pass.set_bind_group(
-                    0,
-                    self.transform_bind_group_descriptor.id,
-                    self.transform_bind_group_id.unwrap(),
-                    None,
-                );
-                let mut vertex_offset: u32 = 0;
-                for draw_command in &draw_commands {
-                    if draw_command.texture_handle != ctx.font_texture {
-                        panic!("Textures other than the font atlas are not supported yet");
-                    }
-                    render_pass.set_bind_group(
-                        1,
-                        self.texture_bind_group_descriptor.id,
-                        self.texture_bind_group_id.unwrap(),
-                        None,
-                    );
-
-                    if let Some(clipping_zone) = draw_command.clipping_zone {
-                        render_pass.set_scissor_rect(
-                            (clipping_zone.x * window_size.scale_factor) as u32,
-                            (clipping_zone.y * window_size.scale_factor) as u32,
-                            (clipping_zone.w * window_size.scale_factor) as u32,
-                            (clipping_zone.h * window_size.scale_factor) as u32,
-                        );
-                    } else {
-                        render_pass.set_scissor_rect(
-                            0,
-                            0,
-                            (window_size.width * window_size.scale_factor) as u32,
-                            (window_size.height * window_size.scale_factor) as u32,
-                        );
-                    }
-                    render_pass.draw_indexed(
-                        vertex_offset..(vertex_offset + draw_command.vertices_count as u32),
-                        0,
-                        0..1,
-                    );
-                    vertex_offset += draw_command.vertices_count as u32;
-                }
-            },
-        );
-        std::mem::swap(&mut ui_draw_lists, &mut ctx.ui_draw_lists);
-        ctx.ui
-            .new_frame(resources.get::<Time>().unwrap().delta_seconds());
     }
 }
 
-#[derive(Debug, TypeUuid)]
-#[uuid = "03b67fa3-bae5-4da3-8ffd-a1d696d9caf2"]
-pub struct MegaUiTexture {
-    pub texture: Texture,
-}
-
 // Is a thread local system, because `megaui::Ui` (`MegaUiContext`) doesn't implement Send + Sync.
-fn process_input(
-    _world: &mut World,
-    resources: &mut Resources,
-    // ctx: Local<MegaUiContext>,
-    // ev_cursor: Res<Events<CursorMoved>>,
-    // ev_keys: Res<Events<KeyboardInput>>,
-    // mouse_button_input: Res<Input<MouseButton>>,
-    // keyboard_input: Res<Input<KeyCode>>,
-) {
+fn process_input(_world: &mut World, resources: &mut Resources) {
     use megaui::InputHandler;
 
     let mut ctx = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
