@@ -1,7 +1,7 @@
 use crate::transform_node::MegaUiTransformNode;
 use bevy::{
     app::{stage, AppBuilder, EventReader, Events, Plugin},
-    asset::{AssetEvent, Assets, Handle, HandleId, HandleUntyped},
+    asset::{AssetEvent, Assets, Handle, HandleUntyped},
     core::{AsBytes, Time},
     ecs::{Resources, World},
     input::{keyboard::KeyCode, mouse::MouseButton, Input},
@@ -40,7 +40,6 @@ pub const MEGAUI_PIPELINE_HANDLE: HandleUntyped =
     HandleUntyped::weak_from_u64(PipelineDescriptor::TYPE_UUID, 9404026720151354217);
 pub const MEGAUI_TRANSFORM_RESOURCE_BINDING_NAME: &str = "MegaUiTransform";
 pub const MEGAUI_TEXTURE_RESOURCE_BINDING_NAME: &str = "MegaUiTexture_texture";
-pub const MEGAUI_TEXTURE_SAMPLER_RESOURCE_BINDING_NAME: &str = "MegaUiTexture_texture_sampler";
 
 pub struct MegaUiPlugin;
 
@@ -522,6 +521,18 @@ impl Node for MegaUiNode {
                     self.transform_bind_group_id.unwrap(),
                     None,
                 );
+
+                // This is a pretty weird kludge, but we need to bind all our groups at least once,
+                // so they don't get garbage collected by `remove_stale_bind_groups`.
+                for texture_resource in self.texture_resources.values() {
+                    render_pass.set_bind_group(
+                        1,
+                        self.texture_bind_group_descriptor.id,
+                        texture_resource.bind_group,
+                        None,
+                    );
+                }
+
                 let mut vertex_offset: u32 = 0;
                 for draw_command in &draw_commands {
                     let texture_resource =
@@ -532,12 +543,6 @@ impl Node for MegaUiNode {
                                 continue;
                             }
                         };
-                    if draw_command.texture_handle != self.font_texture {
-                        // dbg!(&texture_resource);
-                        // log::debug!("hey");
-                        // dbg!(texture_resource.texture);
-                    }
-                    // dbg!(texture_resource.texture);
 
                     render_pass.set_bind_group(
                         1,
@@ -653,7 +658,7 @@ impl MegaUiNode {
             log::debug!("{:?}", event);
 
             match event {
-                AssetEvent::Created { ref handle } => {
+                AssetEvent::Created { .. } => {
                     // Don't have to do anything really, since we track uninitialized textures
                     // via `MegaUiContext::set_megaui_texture` and `Self::init_textures`.
                 }
