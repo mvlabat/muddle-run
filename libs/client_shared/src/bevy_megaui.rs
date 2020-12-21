@@ -69,6 +69,8 @@ impl MegaUiContext {
         }
     }
 
+    /// A helper function to draw a megaui window.
+    /// You may as well use `megaui::widgets::Window::new` if you prefer a builder pattern.
     pub fn draw_window(
         &mut self,
         id: megaui::Id,
@@ -87,21 +89,32 @@ impl MegaUiContext {
             .ui(&mut self.ui, f);
     }
 
+    /// Can accept either a strong or a weak handle.
+    ///
+    /// You may want to pass a weak handle if you control removing texture assets manually in
+    /// your application and you don't want to bother with cleaning up textures in megaui.
+    ///
+    /// You'll want to pass a strong handle if a texture is used only in megaui and there's no
+    /// handle copies stored anywhere else.
     pub fn set_megaui_texture(&mut self, id: u32, texture: Handle<Texture>) {
+        log::debug!("Set megaui texture: {:?}", texture);
         self.megaui_textures.insert(id, texture);
     }
 
+    /// Removes a texture handle associated with the id.
     pub fn remove_megaui_texture(&mut self, id: u32) {
-        self.megaui_textures.remove(&id);
+        let texture_handle = self.megaui_textures.remove(&id);
+        log::debug!("Remove megaui texture: {:?}", texture_handle);
     }
 
     // Is called when we get an event that a texture asset is removed.
     fn remove_texture(&mut self, texture_handle: &Handle<Texture>) {
+        log::debug!("Removing megaui handles: {:?}", texture_handle);
         self.megaui_textures = self
             .megaui_textures
             .iter()
             .map(|(id, texture)| (*id, texture.clone()))
-            .filter(|(_, texture)| texture == texture_handle)
+            .filter(|(_, texture)| texture != texture_handle)
             .collect();
     }
 }
@@ -418,7 +431,7 @@ impl MegaUiNode {
 
 struct DrawCommand {
     vertices_count: usize,
-    texture_handle: Handle<Texture>,
+    texture_handle: Option<Handle<Texture>>,
     clipping_zone: Option<megaui::Rect>,
 }
 
@@ -466,16 +479,11 @@ impl Node for MegaUiNode {
         let mut draw_commands = Vec::new();
         let mut index_offset = 0;
 
-        // log::info!("FRAME");
         for draw_list in &ui_draw_lists {
             let texture_handle = if let Some(texture) = draw_list.texture {
-                megaui_context
-                    .megaui_textures
-                    .get(&texture)
-                    .unwrap_or_else(|| panic!("No texture set with id {} (you might have forgotten to call `set_megaui_texture`)", texture))
-                    .clone()
+                megaui_context.megaui_textures.get(&texture).cloned()
             } else {
-                megaui_context.font_texture.clone()
+                Some(megaui_context.font_texture.clone())
             };
 
             for vertex in &draw_list.vertices {
@@ -490,14 +498,6 @@ impl Node for MegaUiNode {
                 .collect::<Vec<_>>();
             index_buffer.extend_from_slice(indices_with_offset.as_slice().as_bytes());
             index_offset += draw_list.vertices.len() as u16;
-
-            // for index in &draw_list.indices {
-            //     let vertex = draw_list.vertices[*index as usize];
-            //     println!(
-            //         "idx: {}, pos: [{}, {}, {}]",
-            //         *index, vertex.pos[0], vertex.pos[1], vertex.pos[2]
-            //     );
-            // }
 
             draw_commands.push(DrawCommand {
                 vertices_count: draw_list.indices.len(),
@@ -535,14 +535,17 @@ impl Node for MegaUiNode {
 
                 let mut vertex_offset: u32 = 0;
                 for draw_command in &draw_commands {
-                    let texture_resource =
-                        match self.texture_resources.get(&draw_command.texture_handle) {
-                            Some(texture_resource) => texture_resource,
-                            None => {
-                                vertex_offset += draw_command.vertices_count as u32;
-                                continue;
-                            }
-                        };
+                    let texture_resource = match draw_command
+                        .texture_handle
+                        .as_ref()
+                        .and_then(|texture_handle| self.texture_resources.get(texture_handle))
+                    {
+                        Some(texture_resource) => texture_resource,
+                        None => {
+                            vertex_offset += draw_command.vertices_count as u32;
+                            continue;
+                        }
+                    };
 
                     render_pass.set_bind_group(
                         1,
@@ -689,7 +692,7 @@ impl MegaUiNode {
         self.create_texture(render_context, texture_assets, self.font_texture.clone());
 
         for texture in megaui_context.megaui_textures.values() {
-            self.create_texture(render_context, texture_assets, texture.clone());
+            self.create_texture(render_context, texture_assets, texture.clone_weak());
         }
     }
 

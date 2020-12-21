@@ -132,6 +132,7 @@ pub struct UiState {
     slider2: f32,
     e1_input: String,
     e2_input: String,
+    inverted: bool,
 }
 
 fn test_ui(_world: &mut World, resources: &mut Resources) {
@@ -139,32 +140,52 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
 
     let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
     let mut ui_state = resources.get_mut::<UiState>().unwrap();
+    let mut load = false;
+    let mut remove = false;
+    let mut invert = false;
 
     megaui_context.draw_window(
         hash!(),
-        Vector2::new(10., 10.),
-        Vector2::new(50., 20.),
+        Vector2::new(360.0, 30.0),
+        Vector2::new(300.0, 300.0),
         WindowParams {
-            titlebar: false,
+            label: "Custom textures".to_owned(),
             ..Default::default()
         },
         |ui| {
-            ui.label(None, "Hello!");
+            load = ui.button(None, "Load");
+            remove = ui.button(Vector2::new(60.0, 1.0), "Remove");
+            invert = ui.button(Vector2::new(135.0, 1.0), "Invert");
+            ui.separator();
+            ui.texture(BEVY_TEXTURE_ID, 256.0, 256.0);
         },
     );
 
+    if invert {
+        ui_state.inverted = !ui_state.inverted;
+    }
+    if load || invert {
+        let asset_server = resources.get::<AssetServer>().unwrap();
+        let texture_handle = if ui_state.inverted {
+            asset_server.load("branding/icon_inverted.png")
+        } else {
+            asset_server.load("branding/icon.png")
+        };
+        megaui_context.set_megaui_texture(BEVY_TEXTURE_ID, texture_handle);
+    }
+    if remove {
+        megaui_context.remove_megaui_texture(BEVY_TEXTURE_ID);
+    }
+
     megaui_context.draw_window(
         hash!(),
-        Vector2::new(0.0, 110.0),
+        Vector2::new(30.0, 30.0),
         Vector2::new(300.0, 300.0),
         WindowParams {
-            label: "TEST".to_owned(),
+            label: "UI Showcase".to_owned(),
             ..Default::default()
         },
         |ui| {
-            ui.texture(BEVY_TEXTURE_ID, 256.0, 256.0);
-            ui.separator();
-
             ui.tree_node(hash!(), "input", |ui| {
                 ui.label(None, "Some random text");
                 if ui.button(None, "click me") {
@@ -177,9 +198,6 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
                 if ui.button(None, "other button") {
                     println!("hi2");
                 }
-
-                // ui.separator();
-                // ui.texture(BEVY_TEXTURE_ID, 256.0, 256.0);
 
                 ui.separator();
 
@@ -215,17 +233,11 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
                     &mut ui_state.e2_input,
                 );
             });
-
-            // ui.separator();
-            // ui.texture(BEVY_TEXTURE_ID, 256.0, 256.0);
         },
     );
 }
 
-fn load_assets(
-    _world: &mut World,
-    resources: &mut Resources,
-) {
+fn load_assets(_world: &mut World, resources: &mut Resources) {
     let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
     let asset_server = resources.get::<AssetServer>().unwrap();
 
