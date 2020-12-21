@@ -11,6 +11,7 @@ fn main() {
             height: 768,
             ..Default::default()
         })
+        .add_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
         .add_plugin(MuddlePlugin)
         .run();

@@ -187,8 +187,12 @@ impl Plugin for MegaUiPlugin {
 
         let mut pipelines = resources.get_mut::<Assets<PipelineDescriptor>>().unwrap();
         let mut shaders = resources.get_mut::<Assets<Shader>>().unwrap();
+        let msaa = resources.get::<Msaa>().unwrap();
 
-        pipelines.set_untracked(MEGAUI_PIPELINE_HANDLE, build_megaui_pipeline(&mut shaders));
+        pipelines.set_untracked(
+            MEGAUI_PIPELINE_HANDLE,
+            build_megaui_pipeline(&mut shaders, msaa.samples),
+        );
         let pipeline_descriptor_handle = {
             let render_resource_context =
                 resources.get::<Box<dyn RenderResourceContext>>().unwrap();
@@ -229,6 +233,7 @@ impl Plugin for MegaUiPlugin {
                         attributes,
                     },
                     index_format: IndexFormat::Uint16,
+                    sample_count: msaa.samples,
                     ..PipelineSpecialization::default()
                 },
             )
@@ -240,8 +245,6 @@ impl Plugin for MegaUiPlugin {
                 .unwrap();
         let texture_bind_group =
             find_bind_group_by_binding_name(layout, MEGAUI_TEXTURE_RESOURCE_BINDING_NAME).unwrap();
-
-        let msaa = resources.get::<Msaa>().unwrap();
 
         let mut render_graph = resources.get_mut::<RenderGraph>().unwrap();
 
@@ -947,7 +950,10 @@ fn process_input(_world: &mut World, resources: &mut Resources) {
     }
 }
 
-pub fn build_megaui_pipeline(shaders: &mut Assets<Shader>) -> PipelineDescriptor {
+pub fn build_megaui_pipeline(
+    shaders: &mut Assets<Shader>,
+    sample_count: u32,
+) -> PipelineDescriptor {
     PipelineDescriptor {
         rasterization_state: Some(RasterizationStateDescriptor {
             front_face: FrontFace::Cw,
@@ -983,6 +989,7 @@ pub fn build_megaui_pipeline(shaders: &mut Assets<Shader>) -> PipelineDescriptor
             write_mask: ColorWrite::ALL,
         }],
         index_format: IndexFormat::Uint16,
+        sample_count,
         ..PipelineDescriptor::new(ShaderStages {
             vertex: shaders.add(Shader::from_glsl(
                 ShaderStage::Vertex,
