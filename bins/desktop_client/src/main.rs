@@ -7,8 +7,8 @@ fn main() {
         // Window and rendering.
         .add_resource(WindowDescriptor {
             title: "Muddle Run".to_owned(),
-            width: 1024,
-            height: 768,
+            width: 1024.0,
+            height: 768.0,
             ..Default::default()
         })
         .add_resource(Msaa { samples: 4 })

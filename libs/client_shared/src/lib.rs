@@ -1,8 +1,12 @@
-use crate::bevy_megaui::{MegaUiContext, MegaUiPlugin, WindowParams};
 use bevy::{
     input::{keyboard::KeyboardInput, mouse::MouseButtonInput},
+    log,
     prelude::*,
     render::camera::CameraProjection,
+};
+use bevy_megaui::{
+    megaui::{self, hash},
+    MegaUiContext, MegaUiPlugin, WindowParams,
 };
 use bevy_rapier3d::{
     physics::{
@@ -18,10 +22,6 @@ use bevy_rapier3d::{
         na,
     },
 };
-use megaui::{hash, Vector2};
-
-mod bevy_megaui;
-mod transform_node;
 
 pub struct MuddlePlugin;
 
@@ -44,23 +44,20 @@ impl Plugin for MuddlePlugin {
             .init_resource::<WindowInnerSize>()
             .init_resource::<MousePosition>()
             // Startup systems,
-            .add_startup_system(load_assets)
-            .add_startup_system(basic_scene)
+            .add_startup_system(basic_scene.system())
             // Track input events.
             .init_resource::<TrackInputState>()
-            .add_system(track_input_events)
+            .add_system(track_input_events.system())
             // Game systems.
-            .add_system(move_controllable_object)
-            .add_system(detect_collisions)
+            .add_system(move_controllable_object.system())
+            .add_system(detect_collisions.system())
             // Megaui.
-            .add_system(test_ui);
+            .add_system(test_ui.system());
     }
 }
 
 // Constants.
 const PLANE_SIZE: f32 = 10.0;
-
-const BEVY_TEXTURE_ID: u32 = 1;
 
 // Resources.
 #[derive(Default)]
@@ -132,7 +129,6 @@ pub struct UiState {
     slider2: f32,
     e1_input: String,
     e2_input: String,
-    inverted: bool,
 }
 
 fn test_ui(_world: &mut World, resources: &mut Resources) {
@@ -140,47 +136,24 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
 
     let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
     let mut ui_state = resources.get_mut::<UiState>().unwrap();
-    let mut load = false;
-    let mut remove = false;
-    let mut invert = false;
 
     megaui_context.draw_window(
         hash!(),
-        Vector2::new(360.0, 30.0),
-        Vector2::new(300.0, 300.0),
+        megaui::Vector2::new(0.0, 0.0),
+        megaui::Vector2::new(100.0, 50.0),
         WindowParams {
-            label: "Custom textures".to_owned(),
+            label: "UI Showcase".to_owned(),
             ..Default::default()
         },
         |ui| {
-            load = ui.button(None, "Load");
-            remove = ui.button(Vector2::new(60.0, 1.0), "Remove");
-            invert = ui.button(Vector2::new(135.0, 1.0), "Invert");
-            ui.separator();
-            ui.texture(BEVY_TEXTURE_ID, 256.0, 256.0);
+            ui.label(None, "Hello world");
         },
     );
 
-    if invert {
-        ui_state.inverted = !ui_state.inverted;
-    }
-    if load || invert {
-        let asset_server = resources.get::<AssetServer>().unwrap();
-        let texture_handle = if ui_state.inverted {
-            asset_server.load("branding/icon_inverted.png")
-        } else {
-            asset_server.load("branding/icon.png")
-        };
-        megaui_context.set_megaui_texture(BEVY_TEXTURE_ID, texture_handle);
-    }
-    if remove {
-        megaui_context.remove_megaui_texture(BEVY_TEXTURE_ID);
-    }
-
     megaui_context.draw_window(
         hash!(),
-        Vector2::new(30.0, 30.0),
-        Vector2::new(300.0, 300.0),
+        megaui::Vector2::new(30.0, 30.0),
+        megaui::Vector2::new(300.0, 300.0),
         WindowParams {
             label: "UI Showcase".to_owned(),
             ..Default::default()
@@ -201,8 +174,8 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
 
                 ui.separator();
 
-                ui.input_field(hash!(), "<- input text 1", &mut ui_state.input1);
-                ui.input_field(hash!(), "<- input text 2", &mut ui_state.input2);
+                ui.input_text(hash!(), "<- input text 1", &mut ui_state.input1);
+                ui.input_text(hash!(), "<- input text 2", &mut ui_state.input2);
                 ui.label(
                     None,
                     &format!(
@@ -237,15 +210,6 @@ fn test_ui(_world: &mut World, resources: &mut Resources) {
     );
 }
 
-fn load_assets(_world: &mut World, resources: &mut Resources) {
-    let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
-    let asset_server = resources.get::<AssetServer>().unwrap();
-
-    let texture_handle = asset_server.load("branding/icon.png");
-    megaui_context.set_megaui_texture(BEVY_TEXTURE_ID, texture_handle);
-    // megaui_context.remove_megaui_texture(BEVY_TEXTURE_ID);
-}
-
 fn basic_scene(
     commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -262,7 +226,7 @@ fn basic_scene(
         })
         // Cube.
         .spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+            mesh: meshes.add(Mesh::from(shape::Cube { size: 2.0 })),
             material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
             ..Default::default()
         })
@@ -270,7 +234,7 @@ fn basic_scene(
         .with(ColliderBuilder::cuboid(1.0, 1.0, 1.0))
         // Controllable cube.
         .spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Cube { size: 0.5 })),
+            mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
             material: material_handles.normal.clone(),
             ..Default::default()
         })
@@ -379,7 +343,7 @@ fn move_controllable_object(
         .iter_mut()
         .next()
         .expect("expected a controllable object");
-    let mut rigid_body = rigid_body_set
+    let rigid_body = rigid_body_set
         .get_mut(rigid_body_handle.handle())
         .expect("expected a rigid body");
     let collider = collider_set
@@ -398,10 +362,10 @@ fn move_controllable_object(
     );
 
     if let Some(intersection_point) = intersect_ray_plane(&mouse_ray, PLANE_SIZE) {
-        let mut new_position = rigid_body.position;
+        let mut new_position = *rigid_body.position();
         new_position.translation.x = intersection_point.x;
         new_position.translation.z = intersection_point.z;
-        rigid_body.set_position(new_position);
+        rigid_body.set_position(new_position, true);
         collider.set_position_debug(new_position);
     }
 }
