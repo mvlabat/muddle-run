@@ -1,7 +1,12 @@
 use bevy::{
     input::{keyboard::KeyboardInput, mouse::MouseButtonInput},
+    log,
     prelude::*,
     render::camera::CameraProjection,
+};
+use bevy_megaui::{
+    megaui::{self, hash},
+    MegaUiContext, MegaUiPlugin, WindowParams,
 };
 use bevy_rapier3d::{
     physics::{
@@ -23,6 +28,7 @@ pub struct MuddlePlugin;
 impl Plugin for MuddlePlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
+            .add_plugin(MegaUiPlugin)
             // Physics.
             .add_resource(MouseRay(Ray::new(
                 na::Point3::new(0.0, 0.0, 0.0),
@@ -34,25 +40,19 @@ impl Plugin for MuddlePlugin {
                     .contact_filter(PairFilter)
                     .proximity_filter(PairFilter),
             )
-            // Window and rendering.
-            .add_resource(WindowDescriptor {
-                title: "Muddle Run".to_owned(),
-                width: 1280,
-                height: 1024,
-                ..Default::default()
-            })
-            .add_resource(Msaa { samples: 4 })
             .add_plugin(MaterialsPlugin)
             .init_resource::<WindowInnerSize>()
             .init_resource::<MousePosition>()
             // Startup systems,
-            .add_startup_system(basic_scene)
+            .add_startup_system(basic_scene.system())
             // Track input events.
             .init_resource::<TrackInputState>()
-            .add_system(track_input_events)
+            .add_system(track_input_events.system())
             // Game systems.
-            .add_system(move_controllable_object)
-            .add_system(detect_collisions);
+            .add_system(move_controllable_object.system())
+            .add_system(detect_collisions.system())
+            // Megaui.
+            .add_system(test_ui.system());
     }
 }
 
@@ -121,6 +121,95 @@ impl ProximityPairFilter for PairFilter {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct UiState {
+    input1: String,
+    input2: String,
+    slider1: f32,
+    slider2: f32,
+    e1_input: String,
+    e2_input: String,
+}
+
+fn test_ui(_world: &mut World, resources: &mut Resources) {
+    resources.get_or_insert_with(UiState::default);
+
+    let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
+    let mut ui_state = resources.get_mut::<UiState>().unwrap();
+
+    megaui_context.draw_window(
+        hash!(),
+        megaui::Vector2::new(0.0, 0.0),
+        megaui::Vector2::new(100.0, 50.0),
+        WindowParams {
+            label: "UI Showcase".to_owned(),
+            ..Default::default()
+        },
+        |ui| {
+            ui.label(None, "Hello world");
+        },
+    );
+
+    megaui_context.draw_window(
+        hash!(),
+        megaui::Vector2::new(30.0, 30.0),
+        megaui::Vector2::new(300.0, 300.0),
+        WindowParams {
+            label: "UI Showcase".to_owned(),
+            ..Default::default()
+        },
+        |ui| {
+            ui.tree_node(hash!(), "input", |ui| {
+                ui.label(None, "Some random text");
+                if ui.button(None, "click me") {
+                    println!("hi");
+                }
+
+                ui.separator();
+
+                ui.label(None, "Some other random text");
+                if ui.button(None, "other button") {
+                    println!("hi2");
+                }
+
+                ui.separator();
+
+                ui.input_text(hash!(), "<- input text 1", &mut ui_state.input1);
+                ui.input_text(hash!(), "<- input text 2", &mut ui_state.input2);
+                ui.label(
+                    None,
+                    &format!(
+                        "Text entered: \"{}\" and \"{}\"",
+                        ui_state.input1, ui_state.input2
+                    ),
+                );
+
+                ui.separator();
+            });
+            ui.tree_node(hash!(), "sliders", |ui| {
+                ui.slider(hash!(), "[-10 .. 10]", -10f32..10f32, &mut ui_state.slider1);
+                ui.slider(hash!(), "[0 .. 100]", 0f32..100f32, &mut ui_state.slider2);
+            });
+            ui.tree_node(hash!(), "editbox 1", |ui| {
+                ui.label(None, "This is editbox!");
+                ui.editbox(
+                    hash!(),
+                    megaui::Vector2::new(285., 165.),
+                    &mut ui_state.e1_input,
+                );
+            });
+            ui.tree_node(hash!(), "editbox 2", |ui| {
+                ui.label(None, "This is editbox!");
+                ui.editbox(
+                    hash!(),
+                    megaui::Vector2::new(285., 165.),
+                    &mut ui_state.e2_input,
+                );
+            });
+        },
+    );
+}
+
 fn basic_scene(
     commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -137,7 +226,7 @@ fn basic_scene(
         })
         // Cube.
         .spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+            mesh: meshes.add(Mesh::from(shape::Cube { size: 2.0 })),
             material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
             ..Default::default()
         })
@@ -145,7 +234,7 @@ fn basic_scene(
         .with(ColliderBuilder::cuboid(1.0, 1.0, 1.0))
         // Controllable cube.
         .spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Cube { size: 0.5 })),
+            mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
             material: material_handles.normal.clone(),
             ..Default::default()
         })
@@ -254,7 +343,7 @@ fn move_controllable_object(
         .iter_mut()
         .next()
         .expect("expected a controllable object");
-    let mut rigid_body = rigid_body_set
+    let rigid_body = rigid_body_set
         .get_mut(rigid_body_handle.handle())
         .expect("expected a rigid body");
     let collider = collider_set
@@ -273,10 +362,10 @@ fn move_controllable_object(
     );
 
     if let Some(intersection_point) = intersect_ray_plane(&mouse_ray, PLANE_SIZE) {
-        let mut new_position = rigid_body.position;
+        let mut new_position = *rigid_body.position();
         new_position.translation.x = intersection_point.x;
         new_position.translation.z = intersection_point.z;
-        rigid_body.set_position(new_position);
+        rigid_body.set_position(new_position, true);
         collider.set_position_debug(new_position);
     }
 }

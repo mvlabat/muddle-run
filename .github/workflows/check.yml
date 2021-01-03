@@ -20,7 +20,7 @@ on:
       - '.rustfmt.toml'
       - '.cargo/config'
 
-name: Check with rustfmt and clippy
+name: CI
 
 jobs:
   rustfmt:

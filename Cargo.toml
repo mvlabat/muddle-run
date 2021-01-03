@@ -7,8 +7,10 @@ members = [
 ]
 
 [patch.crates-io]
-bevy = { git = "https://github.com/bevyengine/bevy//" }
-bevy_rapier3d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
+#bevy = { git = "https://github.com/bevyengine/bevy//" }
+#bevy_rapier3d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
+#bevy_megaui = { path = "../bevy_megaui" }
+#bevy_webgl2 = { path = "../bevy_webgl2" }
 
-[patch.'https://github.com/bevyengine/bevy']
-bevy = { git = "https://github.com/bevyengine/bevy//" }
+#[patch.'https://github.com/bevyengine/bevy']
+#bevy = { git = "https://github.com/bevyengine/bevy//" }
