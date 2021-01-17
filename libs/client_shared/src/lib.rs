@@ -1,4 +1,4 @@
-use bevy::{log, prelude::*, render::camera::CameraProjection};
+use bevy::{log, prelude::*, render::camera::CameraProjection, diagnostic::FrameTimeDiagnosticsPlugin};
 use bevy_egui::EguiPlugin;
 use bevy_rapier3d::{
     physics::{
@@ -24,6 +24,7 @@ pub struct MuddlePlugin;
 impl Plugin for MuddlePlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
+            .add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(EguiPlugin)
             // Physics.
             .add_resource(MouseRay(Ray::new(
