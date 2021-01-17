@@ -1,13 +1,5 @@
-use bevy::{
-    input::{keyboard::KeyboardInput, mouse::MouseButtonInput},
-    log,
-    prelude::*,
-    render::camera::CameraProjection,
-};
-use bevy_megaui::{
-    megaui::{self, hash},
-    MegaUiContext, MegaUiPlugin, WindowParams,
-};
+use bevy::{log, prelude::*, render::camera::CameraProjection};
+use bevy_egui::EguiPlugin;
 use bevy_rapier3d::{
     physics::{
         ColliderHandleComponent, EventQueue, InteractionPairFilters, RapierPhysicsPlugin,
@@ -23,12 +15,16 @@ use bevy_rapier3d::{
     },
 };
 
+mod helpers;
+mod input;
+mod ui;
+
 pub struct MuddlePlugin;
 
 impl Plugin for MuddlePlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
-            .add_plugin(MegaUiPlugin)
+            .add_plugin(EguiPlugin)
             // Physics.
             .add_resource(MouseRay(Ray::new(
                 na::Point3::new(0.0, 0.0, 0.0),
@@ -42,17 +38,20 @@ impl Plugin for MuddlePlugin {
             )
             .add_plugin(MaterialsPlugin)
             .init_resource::<WindowInnerSize>()
-            .init_resource::<MousePosition>()
+            .init_resource::<input::MousePosition>()
             // Startup systems,
             .add_startup_system(basic_scene.system())
             // Track input events.
-            .init_resource::<TrackInputState>()
-            .add_system(track_input_events.system())
+            .init_resource::<input::TrackInputState>()
+            .add_system(input::track_input_events.system())
             // Game systems.
             .add_system(move_controllable_object.system())
             .add_system(detect_collisions.system())
-            // Megaui.
-            .add_system(test_ui.system());
+            // Egui.
+            .add_system(ui::debug_ui::debug_ui.system());
+
+        let resources = builder.resources_mut();
+        resources.get_or_insert_with(ui::debug_ui::DebugUiState::default);
     }
 }
 
@@ -73,16 +72,6 @@ struct MaterialHandles {
 
 struct MainCameraEntity(pub Entity);
 
-#[derive(Default)]
-struct TrackInputState {
-    pub keys: EventReader<KeyboardInput>,
-    pub cursor: EventReader<CursorMoved>,
-    pub mouse_button: EventReader<MouseButtonInput>,
-}
-
-#[derive(Default)]
-struct MousePosition(pub Vec2);
-
 struct MouseRay(Ray);
 
 // Components.
@@ -91,8 +80,8 @@ struct ControllableObjectTag;
 struct MaterialsPlugin;
 
 impl Plugin for MaterialsPlugin {
-    fn build(&self, app: &mut AppBuilder) {
-        let mut materials = app
+    fn build(&self, builder: &mut AppBuilder) {
+        let mut materials = builder
             .resources_mut()
             .get_mut::<Assets<StandardMaterial>>()
             .expect("expected materials resource");
@@ -102,8 +91,8 @@ impl Plugin for MaterialsPlugin {
 
         drop(materials);
 
-        app.resources_mut()
-            .insert(MaterialHandles { normal, contacting });
+        let resources = builder.resources_mut();
+        resources.insert(MaterialHandles { normal, contacting });
     }
 }
 
@@ -119,95 +108,6 @@ impl ProximityPairFilter for PairFilter {
     fn filter_proximity_pair(&self, _context: &PairFilterContext) -> bool {
         true
     }
-}
-
-#[derive(Debug, Default)]
-pub struct UiState {
-    input1: String,
-    input2: String,
-    slider1: f32,
-    slider2: f32,
-    e1_input: String,
-    e2_input: String,
-}
-
-fn test_ui(_world: &mut World, resources: &mut Resources) {
-    resources.get_or_insert_with(UiState::default);
-
-    let mut megaui_context = resources.get_thread_local_mut::<MegaUiContext>().unwrap();
-    let mut ui_state = resources.get_mut::<UiState>().unwrap();
-
-    megaui_context.draw_window(
-        hash!(),
-        megaui::Vector2::new(0.0, 0.0),
-        megaui::Vector2::new(100.0, 50.0),
-        WindowParams {
-            label: "UI Showcase".to_owned(),
-            ..Default::default()
-        },
-        |ui| {
-            ui.label(None, "Hello world");
-        },
-    );
-
-    megaui_context.draw_window(
-        hash!(),
-        megaui::Vector2::new(30.0, 30.0),
-        megaui::Vector2::new(300.0, 300.0),
-        WindowParams {
-            label: "UI Showcase".to_owned(),
-            ..Default::default()
-        },
-        |ui| {
-            ui.tree_node(hash!(), "input", |ui| {
-                ui.label(None, "Some random text");
-                if ui.button(None, "click me") {
-                    println!("hi");
-                }
-
-                ui.separator();
-
-                ui.label(None, "Some other random text");
-                if ui.button(None, "other button") {
-                    println!("hi2");
-                }
-
-                ui.separator();
-
-                ui.input_text(hash!(), "<- input text 1", &mut ui_state.input1);
-                ui.input_text(hash!(), "<- input text 2", &mut ui_state.input2);
-                ui.label(
-                    None,
-                    &format!(
-                        "Text entered: \"{}\" and \"{}\"",
-                        ui_state.input1, ui_state.input2
-                    ),
-                );
-
-                ui.separator();
-            });
-            ui.tree_node(hash!(), "sliders", |ui| {
-                ui.slider(hash!(), "[-10 .. 10]", -10f32..10f32, &mut ui_state.slider1);
-                ui.slider(hash!(), "[0 .. 100]", 0f32..100f32, &mut ui_state.slider2);
-            });
-            ui.tree_node(hash!(), "editbox 1", |ui| {
-                ui.label(None, "This is editbox!");
-                ui.editbox(
-                    hash!(),
-                    megaui::Vector2::new(285., 165.),
-                    &mut ui_state.e1_input,
-                );
-            });
-            ui.tree_node(hash!(), "editbox 2", |ui| {
-                ui.label(None, "This is editbox!");
-                ui.editbox(
-                    hash!(),
-                    megaui::Vector2::new(285., 165.),
-                    &mut ui_state.e2_input,
-                );
-            });
-        },
-    );
 }
 
 fn basic_scene(
@@ -256,76 +156,9 @@ fn basic_scene(
     commands.insert_resource(MainCameraEntity(main_camera_entity));
 }
 
-fn track_input_events(
-    mut state: ResMut<TrackInputState>,
-    mut mouse_position: ResMut<MousePosition>,
-    ev_keys: Res<Events<KeyboardInput>>,
-    ev_cursor: Res<Events<CursorMoved>>,
-    ev_mouse_button: Res<Events<MouseButtonInput>>,
-) {
-    // Keyboard input.
-    for ev in state.keys.iter(&ev_keys) {
-        if ev.state.is_pressed() {
-            log::info!("Just pressed key: {:?}", ev.key_code);
-        } else {
-            log::info!("Just released key: {:?}", ev.key_code);
-        }
-    }
-
-    // Absolute cursor position (in window coordinates).
-    if let Some(ev) = state.cursor.latest(&ev_cursor) {
-        mouse_position.0 = ev.position;
-    }
-
-    // Mouse buttons.
-    for ev in state.mouse_button.iter(&ev_mouse_button) {
-        if ev.state.is_pressed() {
-            log::info!("Just pressed mouse button: {:?}", ev.button);
-        } else {
-            log::info!("Just released mouse button: {:?}", ev.button);
-        }
-    }
-}
-
-// Heavily inspired by https://github.com/bevyengine/bevy/pull/432/.
-fn cursor_pos_to_ray(
-    cursor_viewport: &Vec2,
-    window: &Window,
-    camera_transform: &Mat4,
-    camera_perspective: &Mat4,
-) -> Ray {
-    // Calculate the cursor pos in NDC space [(-1,-1), (1,1)].
-    let cursor_ndc = Vec4::from((
-        (cursor_viewport.x / window.width() as f32) * 2.0 - 1.0,
-        (cursor_viewport.y / window.height() as f32) * 2.0 - 1.0,
-        -1.0, // let the cursor be on the far clipping plane
-        1.0,
-    ));
-
-    let object_to_world = camera_transform;
-    let object_to_ndc = camera_perspective;
-
-    // Transform the cursor position into object/camera space. This also turns the cursor into
-    // a vector that's pointing from the camera center onto the far plane.
-    let mut ray_camera = object_to_ndc.inverse().mul_vec4(cursor_ndc);
-    ray_camera.z = -1.0;
-    ray_camera.w = 0.0; // treat the vector as a direction (0 = Direction, 1 = Position)
-
-    // Transform the cursor into world space.
-    let ray_world = object_to_world.mul_vec4(ray_camera);
-    let ray_world = ray_world.truncate();
-
-    let camera_pos = camera_transform.w_axis.truncate();
-    let camera_pos = na::Point3::new(camera_pos.x, camera_pos.y, camera_pos.z);
-    Ray::new(
-        camera_pos,
-        na::Vector3::from_row_slice(ray_world.normalize().as_ref()),
-    )
-}
-
 fn move_controllable_object(
     windows: Res<Windows>,
-    mouse_position: Res<MousePosition>,
+    mouse_position: Res<input::MousePosition>,
     main_camera_entity: Res<MainCameraEntity>,
     mut rigid_body_set: ResMut<RigidBodySet>,
     mut collider_set: ResMut<ColliderSet>,
@@ -354,46 +187,20 @@ fn move_controllable_object(
     let (camera_transform, _camera, camera_projection) = cameras
         .get(main_camera_entity.0)
         .expect("expected a main camera");
-    let mouse_ray = cursor_pos_to_ray(
+    let mouse_ray = helpers::cursor_pos_to_ray(
         &mouse_position.0,
         window,
         &camera_transform.compute_matrix(),
         &camera_projection.get_projection_matrix(),
     );
 
-    if let Some(intersection_point) = intersect_ray_plane(&mouse_ray, PLANE_SIZE) {
+    if let Some(intersection_point) = helpers::intersect_ray_plane(&mouse_ray, PLANE_SIZE) {
         let mut new_position = *rigid_body.position();
         new_position.translation.x = intersection_point.x;
         new_position.translation.z = intersection_point.z;
         rigid_body.set_position(new_position, true);
         collider.set_position_debug(new_position);
     }
-}
-
-fn intersect_ray_plane(ray: &Ray, size: f32) -> Option<Vec3> {
-    let plane_normal = Vec3::new(0.0, 1.0, 0.0);
-    let ray_origin = Vec3::new(ray.origin.x, ray.origin.y, ray.origin.z);
-    let ray_direction = Vec3::new(ray.dir.x, ray.dir.y, ray.dir.z);
-
-    let denominator = plane_normal.dot(ray_direction);
-    if denominator.abs() > f32::EPSILON {
-        let t = (-ray_origin).dot(plane_normal) / denominator;
-        if t >= f32::EPSILON {
-            return Some(ray_origin + t * ray_direction).and_then(|intersection_point| {
-                // Checks that the intersection point is within the plane. Assumes plane's origin
-                // at zero coordinates.
-                if intersection_point.y.abs() <= f32::EPSILON
-                    && intersection_point.x.abs() <= size / 2.0
-                    && intersection_point.z.abs() <= size / 2.0
-                {
-                    Some(intersection_point)
-                } else {
-                    None
-                }
-            });
-        }
-    }
-    None
 }
 
 fn detect_collisions(
