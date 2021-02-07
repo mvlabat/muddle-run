@@ -1,15 +1,16 @@
 [workspace]
 members = [
-    "libs/client_shared",
+    "libs/client_lib",
+    "libs/server_lib",
+    "libs/shared_lib",
     "bins/desktop_client",
-    "bins/web_client",
+#    "bins/web_client",
     "bins/server",
 ]
 
 [patch.crates-io]
 #bevy = { git = "https://github.com/bevyengine/bevy//" }
 #bevy_rapier3d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
-#bevy_megaui = { path = "../bevy_megaui" }
 #bevy_webgl2 = { path = "../bevy_webgl2" }
 
 #[patch.'https://github.com/bevyengine/bevy']
