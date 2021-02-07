@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use mr_client_shared::MuddlePlugin;
+use mr_client_lib::MuddleClientPlugin;
 
 fn main() {
     env_logger::init();
@@ -13,6 +13,6 @@ fn main() {
         })
         .add_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
-        .add_plugin(MuddlePlugin)
+        .add_plugin(MuddleClientPlugin)
         .run();
 }
