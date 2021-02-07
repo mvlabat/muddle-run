@@ -1,3 +1,5 @@
+#![feature(generic_associated_types)]
+
 use crate::net::{initiate_connection, process_network_events, send_network_updates};
 use bevy::{
     diagnostic::FrameTimeDiagnosticsPlugin, log, prelude::*, render::camera::CameraProjection,

@@ -8,14 +8,18 @@ use crate::{
 };
 use bevy::{ecs::SystemParam, prelude::*};
 use std::marker::PhantomData;
+use bevy::ecs::FetchSystemParam;
 
-pub trait Spawner<'a> {
-    type Dependencies;
+pub trait SpawnerSystemParam<'a>: SystemParam {
+}
+
+pub trait Spawner {
+    type Dependencies<'a>;
     type Input;
 
-    fn spawn(
+    fn spawn<'a>(
         commands: &mut Commands,
-        _deps: &mut Self::Dependencies,
+        _deps: &mut Self::Dependencies<'a>,
         _input: &Self::Input,
     ) -> Entity {
         commands.spawn(());
@@ -28,12 +32,12 @@ pub struct EmptySpawner<I = ()> {
     _input: PhantomData<I>,
 }
 
-impl<'a, I> Spawner<'a> for EmptySpawner<I> {
-    type Dependencies = ();
+impl<I> Spawner for EmptySpawner<I> {
+    type Dependencies<'a> = ();
     type Input = I;
 }
 
-pub fn spawn_player<'a, D: SystemParam, S: Spawner<'a, Dependencies = D, Input = ()>>(
+pub fn spawn_player<D: SystemParam, S: Spawner<Dependencies = D, Input = ()>>(
     commands: &mut Commands,
     mut dependencies: D,
     mut spawn_player_commands: ResMut<GameCommands<SpawnPlayer>>,
@@ -48,7 +52,7 @@ pub fn spawn_player<'a, D: SystemParam, S: Spawner<'a, Dependencies = D, Input =
 pub fn spawn_level_objects<
     'a,
     PlaneSpawnerDeps: SystemParam,
-    PlaneSpawner: Spawner<'a, Dependencies = PlaneSpawnerDeps, Input = PlaneDesc>,
+    PlaneSpawner: Spawner<Dependencies = PlaneSpawnerDeps, Input = PlaneDesc>,
 >(
     commands: &mut Commands,
     mut dependencies: PlaneSpawnerDeps,

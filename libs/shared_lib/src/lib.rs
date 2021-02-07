@@ -1,6 +1,7 @@
 #![feature(step_trait)]
 #![feature(step_trait_ext)]
 #![feature(trait_alias)]
+#![feature(generic_associated_types)]
 
 use crate::{
     framebuffer::FrameNumber,
@@ -16,8 +17,8 @@ use bevy::{
     ecs::{FetchSystemParam, FuncSystem, SystemParam},
     prelude::*,
 };
-use std::marker::PhantomData;
 use derivative::Derivative;
+use std::marker::PhantomData;
 
 pub mod framebuffer;
 pub mod game;
@@ -40,17 +41,25 @@ pub struct MuddleSharedPlugin<PlayerSpawnerDeps, PlayerSpawner, PlaneSpawnerDeps
     _plane_spawner: PhantomData<PlaneSpawner>,
 }
 
+unsafe impl<PlayerSpawnerDeps, PlayerSpawner, PlaneSpawnerDeps, PlaneSpawner> Sync
+    for MuddleSharedPlugin<PlayerSpawnerDeps, PlayerSpawner, PlaneSpawnerDeps, PlaneSpawner>
+{
+}
+
+unsafe impl<PlayerSpawnerDeps, PlayerSpawner, PlaneSpawnerDeps, PlaneSpawner> Send
+    for MuddleSharedPlugin<PlayerSpawnerDeps, PlayerSpawner, PlaneSpawnerDeps, PlaneSpawner>
+{
+}
+
 impl<PlayerSpawnerDeps, PlayerSpawner, PlaneSpawnerDeps, PlaneSpawner> Plugin
     for MuddleSharedPlugin<PlayerSpawnerDeps, PlayerSpawner, PlaneSpawnerDeps, PlaneSpawner>
 where
-    PlayerSpawnerDeps: SystemParam + Send + Sync + 'static,
-    for<'a> PlayerSpawner:
-        Spawner<'a, Dependencies = PlayerSpawnerDeps, Input = ()> + Send + Sync + 'static,
+    PlayerSpawnerDeps: SystemParam + 'static,
+    PlayerSpawner: Spawner<Dependencies = PlayerSpawnerDeps, Input = ()> + 'static,
     for<'a> <PlayerSpawnerDeps as SystemParam>::Fetch:
         FetchSystemParam<'a, Item = PlayerSpawnerDeps>,
-    PlaneSpawnerDeps: SystemParam + Send + Sync + 'static,
-    for<'a> PlaneSpawner:
-        Spawner<'a, Dependencies = PlaneSpawnerDeps, Input = PlaneDesc> + Send + Sync + 'static,
+    PlaneSpawnerDeps: SystemParam + 'static,
+    PlaneSpawner: Spawner<Dependencies = PlaneSpawnerDeps, Input = PlaneDesc> + 'static,
     for<'a> <PlaneSpawnerDeps as SystemParam>::Fetch: FetchSystemParam<'a, Item = PlaneSpawnerDeps>,
 {
     fn build(&self, builder: &mut AppBuilder) {

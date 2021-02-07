@@ -13,13 +13,13 @@ pub struct SpawnerPbrDeps<'a> {
 #[derive(Default)]
 pub struct PlayerSpawner;
 
-impl<'a> Spawner<'a> for PlayerSpawner {
-    type Dependencies = SpawnerPbrDeps<'a>;
+impl Spawner for PlayerSpawner {
+    type Dependencies<'a> = SpawnerPbrDeps<'a>;
     type Input = ();
 
-    fn spawn(
+    fn spawn<'a>(
         commands: &mut Commands,
-        _deps: &mut Self::Dependencies,
+        _deps: &mut Self::Dependencies<'a>,
         _input: &Self::Input,
     ) -> Entity {
         // commands.spawn(PbrBundle {
@@ -34,13 +34,13 @@ impl<'a> Spawner<'a> for PlayerSpawner {
 #[derive(Default)]
 pub struct PlaneSpawner;
 
-impl<'a> Spawner<'a> for PlaneSpawner {
-    type Dependencies = SpawnerPbrDeps<'a>;
+impl Spawner for PlaneSpawner {
+    type Dependencies<'a> = SpawnerPbrDeps<'a>;
     type Input = PlaneDesc;
 
-    fn spawn(
+    fn spawn<'a>(
         commands: &mut Commands,
-        _deps: &mut Self::Dependencies,
+        _deps: &mut Self::Dependencies<'a>,
         _input: &Self::Input,
     ) -> Entity {
         // commands.spawn(PbrBundle {
