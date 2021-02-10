@@ -1,21 +1,21 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use bevy::{log, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 
-use mr_shared_lib::net::{deserialize, serialize, ClientMessage, PlayerInput, ServerMessage};
-use mr_shared_lib::framebuffer::FrameNumber;
+use mr_shared_lib::{
+    framebuffer::FrameNumber,
+    net::{deserialize, serialize, ClientMessage, PlayerInput, ServerMessage},
+};
 
-const SERVER_PORT: u16 = 3455;
+const DEFAULT_SERVER_PORT: u16 = 3455;
 
 pub fn initiate_connection(mut net: ResMut<NetworkResource>) {
     if net.connections.is_empty() {
-        // TODO: pass from command-line.
-        let server_ip_addr = bevy_networking_turbulence::find_my_ip_address()
-            .expect("cannot find current ip address");
-        let socket_address: SocketAddr = SocketAddr::new(server_ip_addr, SERVER_PORT);
+        let server_socket_addr = server_addr().expect("cannot find current ip address");
+
         log::info!("Starting the client");
-        net.connect(socket_address);
+        net.connect(server_socket_addr);
     }
 }
 
@@ -75,4 +75,29 @@ pub fn send_network_updates(mut net: ResMut<NetworkResource>) {
             err
         );
     }
+}
+
+fn server_addr() -> Option<SocketAddr> {
+    let server_port = std::env::var("MUDDLE_SERVER_PORT")
+        .ok()
+        .or_else(|| std::option_env!("MUDDLE_SERVER_PORT").map(str::to_owned))
+        .map(|port| port.parse::<u16>().expect("invalid port"))
+        .unwrap_or(DEFAULT_SERVER_PORT);
+
+    let env_ip_addr = std::env::var("MUDDLE_SERVER_PORT")
+        .ok()
+        .or_else(|| std::option_env!("MUDDLE_SERVER_IP_ADDR").map(str::to_owned));
+    if let Some(env_addr) = env_ip_addr {
+        return Some(SocketAddr::new(
+            env_addr.parse::<IpAddr>().expect("invalid socket address"),
+            server_port,
+        ));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(addr) = bevy_networking_turbulence::find_my_ip_address() {
+        return Some(SocketAddr::new(addr, server_port));
+    }
+
+    None
 }

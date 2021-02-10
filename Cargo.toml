@@ -4,7 +4,7 @@ members = [
     "libs/server_lib",
     "libs/shared_lib",
     "bins/desktop_client",
-    "bins/web_client",
+#    "bins/web_client",
     "bins/server",
 ]
 
