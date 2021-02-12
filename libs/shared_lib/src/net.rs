@@ -1,4 +1,4 @@
-use crate::{framebuffer::FrameNumber, registry::IncrementId};
+use crate::{framebuffer::FrameNumber, game::commands::SpawnLevelObject, registry::IncrementId};
 use bevy::math::Vec2;
 use serde::{Deserialize, Serialize};
 
@@ -6,8 +6,10 @@ use serde::{Deserialize, Serialize};
 pub struct MessageId(pub u16);
 
 impl IncrementId for MessageId {
-    fn increment(&mut self) {
+    fn increment(&mut self) -> Self {
+        let old = *self;
         self.0 += 1;
+        old
     }
 }
 
@@ -15,8 +17,10 @@ impl IncrementId for MessageId {
 pub struct EntityNetId(pub u16);
 
 impl IncrementId for EntityNetId {
-    fn increment(&mut self) {
+    fn increment(&mut self) -> Self {
+        let old = *self;
         self.0 += 1;
+        old
     }
 }
 
@@ -24,8 +28,10 @@ impl IncrementId for EntityNetId {
 pub struct PlayerNetId(pub u16);
 
 impl IncrementId for PlayerNetId {
-    fn increment(&mut self) {
+    fn increment(&mut self) -> Self {
+        let old = *self;
         self.0 += 1;
+        old
     }
 }
 
@@ -36,7 +42,23 @@ pub enum ClientMessage {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ServerMessage {
+    StartGame(StartGame),
+    NewPlayer(NewPlayer),
     DeltaUpdate(DeltaUpdate),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct StartGame {
+    // TODO: Make player data to be a part of another handshake message.
+    pub net_id: PlayerNetId,
+    pub nickname: String,
+    pub objects: Vec<SpawnLevelObject>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct NewPlayer {
+    pub net_id: PlayerNetId,
+    pub nickname: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -47,7 +69,7 @@ pub struct DeltaUpdate {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct PlayerState {
-    pub player_net_id: PlayerNetId,
+    pub net_id: PlayerNetId,
     pub position: Vec2,
     pub inputs: Vec<PlayerInput>,
 }

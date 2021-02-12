@@ -75,36 +75,36 @@ jobs:
           command: clippy
           args: -p mr_desktop_client --release -- -D warnings
 
-  mr_web_client:
-    name: Check mr_web_client
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          target: wasm32-unknown-unknown
-          override: true
-          components: clippy
-      - uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cache-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cache-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-            cache-${{ runner.os }}-cargo
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -p mr_web_client --release --target wasm32-unknown-unknown -- -D warnings
+#  mr_web_client:
+#    name: Check mr_web_client
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        os: [ubuntu-latest]
+#    steps:
+#      - uses: actions/checkout@v2
+#      - uses: actions-rs/toolchain@v1
+#        with:
+#          profile: minimal
+#          toolchain: nightly
+#          target: wasm32-unknown-unknown
+#          override: true
+#          components: clippy
+#      - uses: actions/cache@v2
+#        with:
+#          path: |
+#            ~/.cargo/registry
+#            ~/.cargo/git
+#            target
+#          key: cache-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+#          restore-keys: |
+#            cache-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+#            cache-${{ runner.os }}-cargo
+#      - uses: actions-rs/cargo@v1
+#        with:
+#          command: clippy
+#          args: -p mr_web_client --release --target wasm32-unknown-unknown -- -D warnings
 
   mr_server:
     name: Check mr_server

@@ -118,7 +118,12 @@ impl<T> Framebuffer<Option<T>> {
             .skip(skip.value() as usize)
             .enumerate()
             .find(|(_, v)| v.is_some())
-            .map(|(i, v)| (frame_number - FrameNumber::new(i as u16), v.as_ref().unwrap()))
+            .map(|(i, v)| {
+                (
+                    frame_number - FrameNumber::new(i as u16),
+                    v.as_ref().unwrap(),
+                )
+            })
     }
 
     pub fn iter_with_interpolation(&self) -> impl Iterator<Item = (FrameNumber, &T)> {
@@ -272,7 +277,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "Inserting for a frame FrameNumber(0) would remove future history (start_frame: FrameNumber(3), limit: FrameNumber(3), len: FrameNumber(1))"
+        expected = "Inserting for a frame 0 would remove future history (start_frame: 3, limit: 3, len: 1)"
     )]
     fn test_insert_back_panic() {
         let mut buffer = Framebuffer::<usize>::new(FrameNumber::new(3), 3);

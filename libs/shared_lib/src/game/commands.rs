@@ -1,7 +1,5 @@
-use crate::{
-    game::level_objects::*,
-    net::{EntityNetId, PlayerNetId},
-};
+use crate::{game::level::LevelObject, net::PlayerNetId};
+use serde::{Deserialize, Serialize};
 
 pub struct GameCommands<T> {
     commands: Vec<T>,
@@ -25,15 +23,12 @@ impl<T> GameCommands<T> {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SpawnPlayer {
     pub net_id: PlayerNetId,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SpawnLevelObject {
-    pub net_id: EntityNetId,
-    pub desc: SpawnLevelObjectDesc,
-}
-
-pub enum SpawnLevelObjectDesc {
-    Plane(PlaneDesc),
+    pub object: LevelObject,
 }

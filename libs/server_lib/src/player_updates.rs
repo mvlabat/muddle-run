@@ -5,7 +5,7 @@ use mr_shared_lib::{
     net::{DeltaUpdate, PlayerInput, PlayerNetId, PlayerState},
     GameTime,
 };
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 pub struct DeferredUpdates<T> {
     updates: HashMap<PlayerNetId, Vec<T>>,
@@ -103,7 +103,7 @@ pub fn prepare_client_updates(
                     inputs.push(player_input.clone());
                 }
                 PlayerState {
-                    player_net_id,
+                    net_id: player_net_id,
                     position: Default::default(), // TODO: position
                     inputs,
                 }

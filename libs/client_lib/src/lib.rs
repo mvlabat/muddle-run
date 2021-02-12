@@ -2,7 +2,7 @@ use crate::net::{initiate_connection, process_network_events, send_network_updat
 use bevy::{diagnostic::FrameTimeDiagnosticsPlugin, prelude::*};
 use bevy_egui::EguiPlugin;
 use bevy_networking_turbulence::NetworkingPlugin;
-use mr_shared_lib::MuddleSharedPlugin;
+use mr_shared_lib::{net::PlayerNetId, MuddleSharedPlugin};
 
 mod helpers;
 mod input;
@@ -36,6 +36,7 @@ impl Plugin for MuddleClientPlugin {
 
         let resources = builder.resources_mut();
         resources.get_or_insert_with(ui::debug_ui::DebugUiState::default);
+        resources.get_or_insert_with(CurrentPlayerNetId::default);
     }
 }
 
@@ -45,6 +46,9 @@ pub struct WindowInnerSize {
     pub width: usize,
     pub height: usize,
 }
+
+#[derive(Default)]
+pub struct CurrentPlayerNetId(pub Option<PlayerNetId>);
 
 struct MainCameraEntity(pub Entity);
 

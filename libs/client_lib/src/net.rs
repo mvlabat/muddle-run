@@ -3,10 +3,14 @@ use std::net::{IpAddr, SocketAddr};
 use bevy::{log, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 
+use crate::CurrentPlayerNetId;
 use mr_shared_lib::{
     framebuffer::FrameNumber,
-    net::{deserialize, serialize, ClientMessage, PlayerInput, ServerMessage},
+    game::commands::{GameCommands, SpawnLevelObject, SpawnPlayer},
+    net::{deserialize, serialize, ClientMessage, PlayerInput, PlayerNetId, ServerMessage},
+    player::Player,
 };
+use std::collections::HashMap;
 
 const DEFAULT_SERVER_PORT: u16 = 3455;
 
@@ -28,6 +32,10 @@ pub fn process_network_events(
     _net: Res<NetworkResource>,
     mut state: Local<NetworkReader>,
     network_events: Res<Events<NetworkEvent>>,
+    mut current_player_net_id: ResMut<CurrentPlayerNetId>,
+    mut players: ResMut<HashMap<PlayerNetId, Player>>,
+    mut spawn_player_commands: ResMut<GameCommands<SpawnPlayer>>,
+    mut spawn_level_object_commands: ResMut<GameCommands<SpawnLevelObject>>,
 ) {
     for event in state.network_events.iter(&network_events) {
         match event {
@@ -44,7 +52,37 @@ pub fn process_network_events(
                     }
                 };
 
-                log::info!("Got packet on [{}]: {:?}", handle, message);
+                log::trace!("Got packet on [{}]: {:?}", handle, message);
+
+                match message {
+                    ServerMessage::StartGame(start_game) => {
+                        log::info!("Starting the game");
+                        log::debug!("{:?}", start_game);
+                        current_player_net_id.0 = Some(start_game.net_id);
+                        players.insert(
+                            start_game.net_id,
+                            Player {
+                                nickname: start_game.nickname,
+                                connected_at: Default::default(),
+                            },
+                        );
+                        for spawn_level_object in start_game.objects {
+                            spawn_level_object_commands.push(spawn_level_object);
+                        }
+                    }
+                    ServerMessage::NewPlayer(new_player) => {
+                        players.insert(
+                            new_player.net_id,
+                            Player {
+                                nickname: new_player.nickname,
+                                connected_at: Default::default(),
+                            },
+                        );
+                    }
+                    ServerMessage::DeltaUpdate(_update) => {
+                        // TODO: apply delta updates.
+                    }
+                }
             }
             NetworkEvent::Connected(handle) => {
                 log::info!("Connected: {}", handle);

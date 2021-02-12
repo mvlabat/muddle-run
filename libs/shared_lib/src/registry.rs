@@ -10,8 +10,7 @@ pub struct Registry<K: Copy + Hash + IncrementId + Eq, V: Copy + Hash> {
 
 impl<K: Copy + Hash + IncrementId + Eq, V: Copy + Hash + Eq> Registry<K, V> {
     pub fn register(&mut self, value: V) -> K {
-        let net_id = self.counter;
-        self.counter.increment();
+        let net_id = self.counter.increment();
         self.value_by_id.insert(net_id, value);
         self.id_by_value.insert(value, net_id);
         net_id
@@ -43,7 +42,8 @@ impl<K: Copy + Hash + IncrementId + Eq, V: Copy + Hash + Eq> Registry<K, V> {
 }
 
 pub trait IncrementId {
-    fn increment(&mut self);
+    /// Returns the initial value.
+    fn increment(&mut self) -> Self;
 }
 
 #[derive(Default)]
