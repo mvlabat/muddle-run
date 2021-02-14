@@ -1,4 +1,4 @@
-use crate::{game::level_objects::PlaneDesc, net::EntityNetId};
+use crate::{game::level_objects::PlaneDesc, messages::EntityNetId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Default)]

@@ -2,7 +2,7 @@ use crate::net::PlayerConnections;
 use bevy::{log, prelude::*};
 use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
-    net::{DeltaUpdate, PlayerInput, PlayerNetId, PlayerState},
+    messages::{DeltaUpdate, PlayerInput, PlayerNetId, PlayerState},
     GameTime,
 };
 use std::collections::HashMap;
@@ -114,6 +114,7 @@ pub fn prepare_client_updates(
             DeltaUpdate {
                 frame_number: time.game_frame,
                 players,
+                confirmed_actions: Vec::new(),
             },
         );
     }

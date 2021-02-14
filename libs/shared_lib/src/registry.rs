@@ -16,16 +16,20 @@ impl<K: Copy + Hash + IncrementId + Eq, V: Copy + Hash + Eq> Registry<K, V> {
         net_id
     }
 
-    pub fn remove_by_value(&mut self, value: V) {
+    pub fn remove_by_value(&mut self, value: V) -> Option<K> {
         if let Some(id) = self.id_by_value.remove(&value) {
             self.value_by_id.remove(&id);
+            return Some(id);
         }
+        None
     }
 
-    pub fn remove_by_id(&mut self, id: K) {
+    pub fn remove_by_id(&mut self, id: K) -> Option<V> {
         if let Some(value) = self.value_by_id.remove(&id) {
             self.id_by_value.remove(&value);
+            return Some(value);
         }
+        None
     }
 
     pub fn get_value(&self, id: K) -> Option<V> {

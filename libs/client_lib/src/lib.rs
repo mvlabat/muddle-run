@@ -2,7 +2,7 @@ use crate::net::{initiate_connection, process_network_events, send_network_updat
 use bevy::{diagnostic::FrameTimeDiagnosticsPlugin, prelude::*};
 use bevy_egui::EguiPlugin;
 use bevy_networking_turbulence::NetworkingPlugin;
-use mr_shared_lib::{net::PlayerNetId, MuddleSharedPlugin};
+use mr_shared_lib::{messages::PlayerNetId, MuddleSharedPlugin};
 
 mod helpers;
 mod input;

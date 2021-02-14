@@ -1,4 +1,8 @@
-use crate::{game::level::LevelObject, net::PlayerNetId};
+use crate::{
+    framebuffer::FrameNumber,
+    game::level::LevelObject,
+    messages::{EntityNetId, PlayerNetId},
+};
 use serde::{Deserialize, Serialize};
 
 pub struct GameCommands<T> {
@@ -29,6 +33,18 @@ pub struct SpawnPlayer {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct DespawnPlayer {
+    pub net_id: PlayerNetId,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SpawnLevelObject {
     pub object: LevelObject,
+    pub frame_number: FrameNumber,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct DespawnLevelObject {
+    pub net_id: EntityNetId,
+    pub frame_number: FrameNumber,
 }

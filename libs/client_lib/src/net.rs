@@ -1,16 +1,20 @@
-use std::net::{IpAddr, SocketAddr};
-
-use bevy::{log, prelude::*};
-use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
-
 use crate::CurrentPlayerNetId;
+use bevy::{ecs::SystemParam, log, prelude::*};
+use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
-    game::commands::{GameCommands, SpawnLevelObject, SpawnPlayer},
-    net::{deserialize, serialize, ClientMessage, PlayerInput, PlayerNetId, ServerMessage},
+    game::commands::{
+        DespawnLevelObject, DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer,
+    },
+    messages::{
+        ClientMessage, PlayerInput, PlayerNetId, ReliableServerMessage, UnreliableServerMessage,
+    },
     player::Player,
 };
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    net::{IpAddr, SocketAddr},
+};
 
 const DEFAULT_SERVER_PORT: u16 = 3455;
 
@@ -28,90 +32,165 @@ pub struct NetworkReader {
     network_events: EventReader<NetworkEvent>,
 }
 
+#[derive(SystemParam)]
+pub struct UpdateParams<'a> {
+    spawn_level_object_commands: ResMut<'a, GameCommands<SpawnLevelObject>>,
+    despawn_level_object_commands: ResMut<'a, GameCommands<DespawnLevelObject>>,
+    spawn_player_commands: ResMut<'a, GameCommands<SpawnPlayer>>,
+    despawn_player_commands: ResMut<'a, GameCommands<DespawnPlayer>>,
+}
+
 pub fn process_network_events(
-    _net: Res<NetworkResource>,
+    mut net: ResMut<NetworkResource>,
     mut state: Local<NetworkReader>,
     network_events: Res<Events<NetworkEvent>>,
     mut current_player_net_id: ResMut<CurrentPlayerNetId>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
-    mut spawn_player_commands: ResMut<GameCommands<SpawnPlayer>>,
-    mut spawn_level_object_commands: ResMut<GameCommands<SpawnLevelObject>>,
+    mut update_params: UpdateParams,
 ) {
     for event in state.network_events.iter(&network_events) {
         match event {
-            NetworkEvent::Packet(handle, packet) => {
-                let message: ServerMessage = match deserialize(packet) {
-                    Ok(message) => message,
-                    Err(err) => {
-                        log::warn!(
-                            "Failed to deserialize message (from [{}]): {:?}",
-                            handle,
-                            err
-                        );
-                        continue;
-                    }
-                };
-
-                log::trace!("Got packet on [{}]: {:?}", handle, message);
-
-                match message {
-                    ServerMessage::StartGame(start_game) => {
-                        log::info!("Starting the game");
-                        log::debug!("{:?}", start_game);
-                        current_player_net_id.0 = Some(start_game.net_id);
-                        players.insert(
-                            start_game.net_id,
-                            Player {
-                                nickname: start_game.nickname,
-                                connected_at: Default::default(),
-                            },
-                        );
-                        for spawn_level_object in start_game.objects {
-                            spawn_level_object_commands.push(spawn_level_object);
-                        }
-                    }
-                    ServerMessage::NewPlayer(new_player) => {
-                        players.insert(
-                            new_player.net_id,
-                            Player {
-                                nickname: new_player.nickname,
-                                connected_at: Default::default(),
-                            },
-                        );
-                    }
-                    ServerMessage::DeltaUpdate(_update) => {
-                        // TODO: apply delta updates.
-                    }
-                }
-            }
             NetworkEvent::Connected(handle) => {
                 log::info!("Connected: {}", handle);
             }
             NetworkEvent::Disconnected(handle) => {
                 log::info!("Disconnected: {}", handle);
             }
+            _ => {}
+        }
+    }
+
+    for (handle, connection) in net.connections.iter_mut() {
+        let channels = connection.channels().unwrap();
+
+        while let Some(message) = channels.recv::<UnreliableServerMessage>() {
+            log::trace!(
+                "UnreliableServerMessage received on [{}]: {:?}",
+                handle,
+                message
+            );
+
+            match message {
+                UnreliableServerMessage::DeltaUpdate(_update) => {
+                    // TODO: apply delta updates.
+                }
+            }
+        }
+
+        while let Some(message) = channels.recv::<ReliableServerMessage>() {
+            log::trace!(
+                "ReliableServerMessage received on [{}]: {:?}",
+                handle,
+                message
+            );
+
+            match message {
+                ReliableServerMessage::StartGame(start_game) => {
+                    if current_player_net_id.0 == Some(start_game.net_id) {
+                        continue;
+                    }
+                    log::info!("Starting the game");
+                    log::debug!("{:?}", start_game);
+                    current_player_net_id.0 = Some(start_game.net_id);
+                    players.insert(
+                        start_game.net_id,
+                        Player {
+                            nickname: start_game.nickname,
+                            connected_at: start_game.game_state.frame_number,
+                        },
+                    );
+                    update_params.spawn_player_commands.push(SpawnPlayer {
+                        net_id: start_game.net_id,
+                    });
+                    for player in start_game.players {
+                        players.insert(
+                            player.net_id,
+                            Player {
+                                nickname: player.nickname,
+                                connected_at: player.connected_at,
+                            },
+                        );
+                        update_params.spawn_player_commands.push(SpawnPlayer {
+                            net_id: player.net_id,
+                        });
+                    }
+                    for spawn_level_object in start_game.objects {
+                        update_params
+                            .spawn_level_object_commands
+                            .push(spawn_level_object);
+                    }
+                }
+                ReliableServerMessage::ConnectedPlayer(connected_player) => {
+                    if !players.contains_key(&connected_player.net_id) {
+                        log::info!(
+                            "A new player ({}) connected: {}",
+                            connected_player.net_id.0,
+                            connected_player.nickname
+                        );
+                        players.insert(
+                            connected_player.net_id,
+                            Player {
+                                nickname: connected_player.nickname,
+                                connected_at: connected_player.connected_at,
+                            },
+                        );
+                        update_params.spawn_player_commands.push(SpawnPlayer {
+                            net_id: connected_player.net_id,
+                        });
+                    } else {
+                        log::error!("Player ({}) is already spawned", connected_player.net_id.0);
+                    }
+                }
+                ReliableServerMessage::DisconnectedPlayer(disconnected_player) => {
+                    if let Some(player) = players.remove(&disconnected_player.net_id) {
+                        log::info!(
+                            "A player ({}) disconnected: {}",
+                            disconnected_player.net_id.0,
+                            player.nickname
+                        );
+                        update_params.despawn_player_commands.push(DespawnPlayer {
+                            net_id: disconnected_player.net_id,
+                        });
+                    } else {
+                        log::error!(
+                            "Unknown player with net id {}",
+                            disconnected_player.net_id.0
+                        );
+                    }
+                }
+                ReliableServerMessage::SpawnLevelObject(spawn_level_object) => {
+                    update_params
+                        .spawn_level_object_commands
+                        .push(spawn_level_object);
+                }
+                ReliableServerMessage::DespawnLevelObject(despawn_level_object) => {
+                    update_params
+                        .despawn_level_object_commands
+                        .push(despawn_level_object);
+                }
+            }
+        }
+
+        while channels.recv::<ClientMessage>().is_some() {
+            log::error!("Unexpected ClientMessage received on [{}]", handle);
         }
     }
 }
 
 pub fn send_network_updates(mut net: ResMut<NetworkResource>) {
-    let (_handle, connection) = match net.connections.iter_mut().next() {
-        Some(connection) => connection,
+    let (connection_handle, address) = match net.connections.iter_mut().next() {
+        Some((&handle, connection)) => (handle, connection.remote_address()),
         None => return,
     };
-    if let Err(err) = connection.send(
-        serialize(&ClientMessage::PlayerInput(PlayerInput {
+    let result = net.send_message(
+        connection_handle,
+        ClientMessage::PlayerInput(PlayerInput {
             frame_number: FrameNumber::new(0),
             direction: Vec2::new(0.0, 0.0),
-        }))
-        .unwrap()
-        .into(),
-    ) {
-        log::error!(
-            "Failed to send message to {:?}: {:?}",
-            connection.remote_address(),
-            err
-        );
+        }),
+    );
+    if let Err(err) = result {
+        log::error!("Failed to send a message to {:?}: {:?}", address, err);
     }
 }
 

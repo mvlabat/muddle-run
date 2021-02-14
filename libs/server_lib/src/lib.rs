@@ -7,12 +7,13 @@ use crate::{
 use bevy::prelude::*;
 use bevy_networking_turbulence::NetworkingPlugin;
 use mr_shared_lib::{
+    framebuffer::FrameNumber,
     game::{
         commands::{GameCommands, SpawnLevelObject},
         level::{LevelObject, LevelObjectDesc},
         level_objects::PlaneDesc,
     },
-    net::{EntityNetId, PlayerInput, PlayerNetId},
+    messages::{EntityNetId, PlayerInput, PlayerNetId},
     registry::IncrementId,
     MuddleSharedPlugin, PLANE_SIZE,
 };
@@ -58,6 +59,7 @@ pub fn init_level(
     mut spawn_level_object_commands: ResMut<GameCommands<SpawnLevelObject>>,
 ) {
     spawn_level_object_commands.push(SpawnLevelObject {
+        frame_number: FrameNumber::new(0),
         object: LevelObject {
             net_id: entity_net_id_counter.increment(),
             desc: LevelObjectDesc::Plane(PlaneDesc { size: PLANE_SIZE }),

@@ -1,91 +1,75 @@
-use crate::{framebuffer::FrameNumber, game::commands::SpawnLevelObject, registry::IncrementId};
-use bevy::math::Vec2;
-use serde::{Deserialize, Serialize};
+use crate::{
+    framebuffer::FrameNumber,
+    game::commands::{DespawnLevelObject, DespawnPlayer, SpawnLevelObject, SpawnPlayer},
+    messages::{ClientMessage, ReliableServerMessage, UnreliableServerMessage},
+    registry::IncrementId,
+};
+use bevy::{ecs::ResMut, math::Vec2};
+use bevy_networking_turbulence::{
+    ConnectionChannelsBuilder, MessageChannelMode, MessageChannelSettings, NetworkResource,
+    ReliableChannelSettings,
+};
+use std::time::Duration;
 
-#[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct MessageId(pub u16);
-
-impl IncrementId for MessageId {
-    fn increment(&mut self) -> Self {
-        let old = *self;
-        self.0 += 1;
-        old
-    }
+pub fn network_setup(mut net: ResMut<NetworkResource>) {
+    net.set_channels_builder(|builder: &mut ConnectionChannelsBuilder| {
+        builder
+            .register::<ClientMessage>(CLIENT_INPUT_MESSAGE_SETTINGS)
+            .unwrap();
+        builder
+            .register::<ReliableServerMessage>(SERVER_RELIABLE_MESSAGE_SETTINGS)
+            .unwrap();
+        builder
+            .register::<UnreliableServerMessage>(SERVER_DELTA_UPDATE_MESSAGE_SETTINGS)
+            .unwrap();
+    });
 }
 
-#[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct EntityNetId(pub u16);
+const CLIENT_INPUT_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
+    channel: 0,
+    channel_mode: MessageChannelMode::Reliable {
+        reliability_settings: ReliableChannelSettings {
+            bandwidth: 4096,
+            recv_window_size: 1024,
+            send_window_size: 1024,
+            burst_bandwidth: 1024,
+            init_send: 512,
+            wakeup_time: Duration::from_millis(100),
+            initial_rtt: Duration::from_millis(200),
+            max_rtt: Duration::from_secs(2),
+            rtt_update_factor: 0.1,
+            rtt_resend_factor: 1.5,
+        },
+        max_message_len: 1024,
+    },
+    message_buffer_size: 8,
+    packet_buffer_size: 8,
+};
 
-impl IncrementId for EntityNetId {
-    fn increment(&mut self) -> Self {
-        let old = *self;
-        self.0 += 1;
-        old
-    }
-}
+const SERVER_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
+    channel: 1,
+    channel_mode: MessageChannelMode::Reliable {
+        reliability_settings: ReliableChannelSettings {
+            bandwidth: 4096,
+            recv_window_size: 1024,
+            send_window_size: 1024,
+            burst_bandwidth: 1024,
+            init_send: 512,
+            wakeup_time: Duration::from_millis(100),
+            initial_rtt: Duration::from_millis(200),
+            max_rtt: Duration::from_secs(2),
+            rtt_update_factor: 0.1,
+            rtt_resend_factor: 1.5,
+        },
+        max_message_len: 1024,
+    },
+    message_buffer_size: 8,
+    packet_buffer_size: 8,
+};
 
-#[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct PlayerNetId(pub u16);
-
-impl IncrementId for PlayerNetId {
-    fn increment(&mut self) -> Self {
-        let old = *self;
-        self.0 += 1;
-        old
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum ClientMessage {
-    PlayerInput(PlayerInput),
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum ServerMessage {
-    StartGame(StartGame),
-    NewPlayer(NewPlayer),
-    DeltaUpdate(DeltaUpdate),
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct StartGame {
-    // TODO: Make player data to be a part of another handshake message.
-    pub net_id: PlayerNetId,
-    pub nickname: String,
-    pub objects: Vec<SpawnLevelObject>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct NewPlayer {
-    pub net_id: PlayerNetId,
-    pub nickname: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct DeltaUpdate {
-    pub frame_number: FrameNumber,
-    pub players: Vec<PlayerState>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct PlayerState {
-    pub net_id: PlayerNetId,
-    pub position: Vec2,
-    pub inputs: Vec<PlayerInput>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct PlayerInput {
-    pub frame_number: FrameNumber,
-    pub direction: Vec2,
-}
-
-pub fn serialize<T: ?Sized + serde::Serialize>(message: &T) -> bincode::Result<Vec<u8>> {
-    bincode::serialize(message)
-}
-
-pub fn deserialize<'a, T: ?Sized + serde::Deserialize<'a>>(
-    message: &'a [u8],
-) -> bincode::Result<T> {
-    bincode::deserialize(message)
-}
+const SERVER_DELTA_UPDATE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
+    channel: 2,
+    channel_mode: MessageChannelMode::Unreliable,
+    message_buffer_size: 8,
+    packet_buffer_size: 8,
+};

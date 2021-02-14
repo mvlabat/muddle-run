@@ -1,6 +1,5 @@
-use std::collections::VecDeque;
-
 use crate::looped_counter::WrappedCounter;
+use std::collections::VecDeque;
 
 pub type FrameNumber = WrappedCounter<u16>;
 
@@ -218,7 +217,7 @@ mod tests {
         assert_eq!(buffer.buffer.len(), 0);
         assert_eq!(buffer.start_frame, FrameNumber::new(0));
         assert_eq!(buffer.limit, FrameNumber::new(1));
-        assert_eq!(buffer.iter().collect::<Vec<_>>(), vec![]);
+        assert_eq!(buffer.iter().collect::<Vec<_>>(), Vec::new());
     }
 
     #[test]
