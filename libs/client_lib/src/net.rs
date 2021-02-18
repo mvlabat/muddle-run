@@ -7,12 +7,14 @@ use mr_shared_lib::{
         DespawnLevelObject, DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer,
     },
     messages::{
-        ClientMessage, PlayerInput, PlayerNetId, ReliableServerMessage, UnreliableServerMessage,
+        ClientMessage, ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, PlayerInput, PlayerNetId,
+        ReliableServerMessage, StartGame, UnreliableServerMessage,
     },
     player::Player,
+    GameTime,
 };
 use std::{
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     net::{IpAddr, SocketAddr},
 };
 
@@ -90,73 +92,26 @@ pub fn process_network_events(
                         continue;
                     }
                     log::info!("Starting the game");
-                    log::debug!("{:?}", start_game);
-                    current_player_net_id.0 = Some(start_game.net_id);
-                    players.insert(
-                        start_game.net_id,
-                        Player {
-                            nickname: start_game.nickname,
-                            connected_at: start_game.game_state.frame_number,
-                        },
+                    process_start_game_message(
+                        start_game,
+                        &mut current_player_net_id,
+                        &mut players,
+                        &mut update_params,
                     );
-                    update_params.spawn_player_commands.push(SpawnPlayer {
-                        net_id: start_game.net_id,
-                    });
-                    for player in start_game.players {
-                        players.insert(
-                            player.net_id,
-                            Player {
-                                nickname: player.nickname,
-                                connected_at: player.connected_at,
-                            },
-                        );
-                        update_params.spawn_player_commands.push(SpawnPlayer {
-                            net_id: player.net_id,
-                        });
-                    }
-                    for spawn_level_object in start_game.objects {
-                        update_params
-                            .spawn_level_object_commands
-                            .push(spawn_level_object);
-                    }
                 }
                 ReliableServerMessage::ConnectedPlayer(connected_player) => {
-                    if !players.contains_key(&connected_player.net_id) {
-                        log::info!(
-                            "A new player ({}) connected: {}",
-                            connected_player.net_id.0,
-                            connected_player.nickname
-                        );
-                        players.insert(
-                            connected_player.net_id,
-                            Player {
-                                nickname: connected_player.nickname,
-                                connected_at: connected_player.connected_at,
-                            },
-                        );
-                        update_params.spawn_player_commands.push(SpawnPlayer {
-                            net_id: connected_player.net_id,
-                        });
-                    } else {
-                        log::error!("Player ({}) is already spawned", connected_player.net_id.0);
-                    }
+                    process_connected_player_message(
+                        connected_player,
+                        &mut players,
+                        &mut update_params,
+                    );
                 }
                 ReliableServerMessage::DisconnectedPlayer(disconnected_player) => {
-                    if let Some(player) = players.remove(&disconnected_player.net_id) {
-                        log::info!(
-                            "A player ({}) disconnected: {}",
-                            disconnected_player.net_id.0,
-                            player.nickname
-                        );
-                        update_params.despawn_player_commands.push(DespawnPlayer {
-                            net_id: disconnected_player.net_id,
-                        });
-                    } else {
-                        log::error!(
-                            "Unknown player with net id {}",
-                            disconnected_player.net_id.0
-                        );
-                    }
+                    process_disconnected_player_message(
+                        disconnected_player,
+                        &mut players,
+                        &mut update_params,
+                    );
                 }
                 ReliableServerMessage::SpawnLevelObject(spawn_level_object) => {
                     update_params
@@ -177,7 +132,8 @@ pub fn process_network_events(
     }
 }
 
-pub fn send_network_updates(mut net: ResMut<NetworkResource>) {
+pub fn send_network_updates(time: Res<GameTime>, mut net: ResMut<NetworkResource>) {
+    log::trace!("Broadcast updates for frame {}", time.game_frame);
     let (connection_handle, address) = match net.connections.iter_mut().next() {
         Some((&handle, connection)) => (handle, connection.remote_address()),
         None => return,
@@ -192,6 +148,113 @@ pub fn send_network_updates(mut net: ResMut<NetworkResource>) {
     if let Err(err) = result {
         log::error!("Failed to send a message to {:?}: {:?}", address, err);
     }
+}
+
+fn process_start_game_message(
+    start_game: StartGame,
+    current_player_net_id: &mut CurrentPlayerNetId,
+    players: &mut HashMap<PlayerNetId, Player>,
+    update_params: &mut UpdateParams,
+) {
+    if let Some(start_position) = player_start_position(start_game.net_id, &start_game.game_state) {
+        current_player_net_id.0 = Some(start_game.net_id);
+        players.insert(
+            start_game.net_id,
+            Player {
+                nickname: start_game.nickname,
+                connected_at: start_game.game_state.frame_number,
+            },
+        );
+        update_params.spawn_player_commands.push(SpawnPlayer {
+            net_id: start_game.net_id,
+            start_position,
+        });
+    } else {
+        log::error!("Player's position isn't found in the game state");
+    }
+
+    for player in start_game.players {
+        if let Some(start_position) = player_start_position(player.net_id, &start_game.game_state) {
+            players.insert(
+                player.net_id,
+                Player {
+                    nickname: player.nickname,
+                    connected_at: player.connected_at,
+                },
+            );
+            update_params.spawn_player_commands.push(SpawnPlayer {
+                net_id: player.net_id,
+                start_position,
+            });
+        } else {
+            log::error!(
+                "Player ({}) position isn't found in the game state",
+                player.net_id.0
+            );
+        }
+    }
+    for spawn_level_object in start_game.objects {
+        update_params
+            .spawn_level_object_commands
+            .push(spawn_level_object);
+    }
+}
+
+fn process_connected_player_message(
+    connected_player: ConnectedPlayer,
+    players: &mut HashMap<PlayerNetId, Player>,
+    update_params: &mut UpdateParams,
+) {
+    let player_entry = players.entry(connected_player.net_id);
+    if let Entry::Occupied(_) = player_entry {
+        log::error!("Player ({}) is already spawned", connected_player.net_id.0);
+    }
+    player_entry.or_insert_with(|| {
+        log::info!(
+            "A new player ({}) connected: {}",
+            connected_player.net_id.0,
+            connected_player.nickname
+        );
+        // TODO: spawn a player only when getting a delta update with it.
+        update_params.spawn_player_commands.push(SpawnPlayer {
+            net_id: connected_player.net_id,
+            start_position: Vec2::zero(),
+        });
+        Player {
+            nickname: connected_player.nickname,
+            connected_at: connected_player.connected_at,
+        }
+    });
+}
+
+fn process_disconnected_player_message(
+    disconnected_player: DisconnectedPlayer,
+    players: &mut HashMap<PlayerNetId, Player>,
+    update_params: &mut UpdateParams,
+) {
+    if let Some(player) = players.remove(&disconnected_player.net_id) {
+        log::info!(
+            "A player ({}) disconnected: {}",
+            disconnected_player.net_id.0,
+            player.nickname
+        );
+        update_params.despawn_player_commands.push(DespawnPlayer {
+            net_id: disconnected_player.net_id,
+        });
+    } else {
+        log::error!(
+            "Unknown player with net id {}",
+            disconnected_player.net_id.0
+        );
+    }
+}
+
+fn player_start_position(player_net_id: PlayerNetId, delta_update: &DeltaUpdate) -> Option<Vec2> {
+    delta_update
+        .players
+        .iter()
+        .find(|player_state| player_state.net_id == player_net_id)
+        .map(|player_state| player_state.position)
 }
 
 fn server_addr() -> Option<SocketAddr> {

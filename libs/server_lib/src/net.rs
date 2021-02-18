@@ -1,18 +1,19 @@
 use crate::player_updates::DeferredUpdates;
 use bevy::{ecs::SystemParam, log, prelude::*};
-use bevy_networking_turbulence::{NetworkEvent, NetworkResource, Packet};
+use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use mr_shared_lib::{
     game::{
         commands::{DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer},
+        components::Position,
         level::LevelState,
     },
     messages::{
-        ClientMessage, ConnectedPlayer, DeltaUpdate, PlayerInput, PlayerNetId,
+        ClientMessage, ConnectedPlayer, DeltaUpdate, PlayerInput, PlayerNetId, PlayerState,
         ReliableServerMessage, StartGame, UnreliableServerMessage,
     },
     player::{random_name, Player},
-    registry::Registry,
-    GameTime,
+    registry::{EntityRegistry, Registry},
+    GameTime, TICKS_PER_NETWORK_BROADCAST,
 };
 use std::{
     collections::HashMap,
@@ -65,7 +66,15 @@ pub fn process_network_events(
                 );
                 update_params.spawn_player_commands.push(SpawnPlayer {
                     net_id: player_net_id,
+                    start_position: Vec2::zero(),
                 });
+                update_params.deferred_player_updates.push(
+                    player_net_id,
+                    PlayerInput {
+                        frame_number: time.game_frame,
+                        direction: Vec2::zero(),
+                    },
+                );
             }
             NetworkEvent::Disconnected(handle) => {
                 log::info!("Disconnected: {}", handle);
@@ -109,10 +118,10 @@ pub fn process_network_events(
             }
         }
 
-        while let Some(_) = channels.recv::<ReliableServerMessage>() {
+        while channels.recv::<ReliableServerMessage>().is_some() {
             log::error!("Unexpected ReliableServerMessage received on [{}]", handle);
         }
-        while let Some(_) = channels.recv::<UnreliableServerMessage>() {
+        while channels.recv::<UnreliableServerMessage>().is_some() {
             log::error!(
                 "Unexpected UnreliableServerMessage received on [{}]",
                 handle
@@ -127,15 +136,33 @@ pub fn send_network_updates(
     player_connections: Res<PlayerConnections>,
     level_state: Res<LevelState>,
     players: Res<HashMap<PlayerNetId, Player>>,
+    player_positions: Query<(Entity, &Position)>,
+    players_registry: Res<EntityRegistry<PlayerNetId>>,
 ) {
     for (&connection_player_net_id, &connection_handle) in player_connections.iter() {
         for (&player_net_id, player) in players.iter() {
-            if player.connected_at != time.game_frame {
+            if (time.game_frame - player.connected_at).value() < TICKS_PER_NETWORK_BROADCAST {
                 continue;
             }
 
             if connection_player_net_id == player_net_id {
                 // TODO: prepare the update in another system.
+                let mut players_state = player_positions
+                    .iter()
+                    .map(|(entity, position)| PlayerState {
+                        net_id: players_registry.get_id(entity).unwrap_or_else(|| {
+                            panic!("Player entity ({:?}) is not registered", entity)
+                        }),
+                        position: *position.buffer.get(time.game_frame).unwrap(),
+                        inputs: Vec::new(),
+                    })
+                    .collect::<Vec<_>>();
+                players_state.push(PlayerState {
+                    net_id: connection_player_net_id,
+                    position: Vec2::zero(),
+                    inputs: Vec::new(),
+                });
+
                 let result = net.send_message(
                     connection_handle,
                     ReliableServerMessage::StartGame(StartGame {
@@ -149,9 +176,16 @@ pub fn send_network_updates(
                                 frame_number: time.game_frame,
                             })
                             .collect(),
-                        players: Vec::new(),
+                        players: players
+                            .iter()
+                            .map(|(&net_id, player)| ConnectedPlayer {
+                                net_id,
+                                connected_at: player.connected_at,
+                                nickname: player.nickname.clone(),
+                            })
+                            .collect(),
                         game_state: DeltaUpdate {
-                            players: Vec::new(),
+                            players: players_state,
                             confirmed_actions: Vec::new(),
                             frame_number: time.game_frame,
                         },

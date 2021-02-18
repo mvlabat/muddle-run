@@ -1,4 +1,6 @@
 use crate::game::level_objects::PlaneDesc;
+#[cfg(feature = "render")]
+use crate::PLAYER_SIZE;
 use bevy::{ecs::SystemParam, prelude::*};
 
 pub trait ClientFactory<'a> {
@@ -28,7 +30,9 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
         _input: &Self::Input,
     ) -> Entity {
         commands.spawn(PbrBundle {
-            mesh: deps.meshes.add(Mesh::from(shape::Cube { size: 2.0 })),
+            mesh: deps
+                .meshes
+                .add(Mesh::from(shape::Cube { size: PLAYER_SIZE })),
             material: deps.materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
             ..Default::default()
         });

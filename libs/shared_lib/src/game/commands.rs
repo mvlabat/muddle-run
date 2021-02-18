@@ -3,6 +3,7 @@ use crate::{
     game::level::LevelObject,
     messages::{EntityNetId, PlayerNetId},
 };
+use bevy::math::Vec2;
 use serde::{Deserialize, Serialize};
 
 pub struct GameCommands<T> {
@@ -30,6 +31,7 @@ impl<T> GameCommands<T> {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SpawnPlayer {
     pub net_id: PlayerNetId,
+    pub start_position: Vec2,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

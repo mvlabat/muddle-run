@@ -4,20 +4,21 @@ use crate::{
             ClientFactory, PbrClientParams, PlaneClientFactory, PlayerClientFactory,
         },
         commands::{GameCommands, SpawnLevelObject, SpawnPlayer},
+        components::{PlayerDirection, Position},
         level::{LevelObjectDesc, LevelState},
     },
     messages::{EntityNetId, PlayerNetId},
-    player::Player,
     registry::EntityRegistry,
+    GameTime, PLAYER_SIZE,
 };
 use bevy::{log, prelude::*};
-use std::collections::HashMap;
+use bevy_rapier3d::rapier::{dynamics::RigidBodyBuilder, geometry::ColliderBuilder};
 
 pub fn spawn_players(
     commands: &mut Commands,
+    time: Res<GameTime>,
     mut pbr_client_params: PbrClientParams,
     mut spawn_player_commands: ResMut<GameCommands<SpawnPlayer>>,
-    mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
 ) {
     for command in spawn_player_commands.drain() {
@@ -29,8 +30,21 @@ pub fn spawn_players(
             continue;
         }
 
-        log::info!("Spawning a new player: {}", command.net_id.0);
+        log::info!(
+            "Spawning a new player (frame {}): {}",
+            time.game_frame,
+            command.net_id.0
+        );
         let player_entity = PlayerClientFactory::create(commands, &mut pbr_client_params, &());
+        commands
+            .with(RigidBodyBuilder::new_dynamic().translation(0.0, PLAYER_SIZE / 2.0, 0.0))
+            .with(ColliderBuilder::cuboid(
+                PLAYER_SIZE,
+                PLAYER_SIZE,
+                PLAYER_SIZE,
+            ))
+            .with(Position::new(command.start_position, time.game_frame))
+            .with(PlayerDirection::new(Vec2::zero(), time.game_frame));
         player_entities.register(command.net_id, player_entity);
     }
 }

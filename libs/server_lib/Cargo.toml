@@ -14,7 +14,7 @@ version = "0.4"
 default-features = false
 
 [dependencies.bevy_networking_turbulence]
-version = "0.1.0"
+version = "0.2.0"
 features = ["use-udp"]
 default-features = false
 

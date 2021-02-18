@@ -2,10 +2,9 @@ use crate::{
     net::{
         process_network_events, send_network_updates, startup, NetworkReader, PlayerConnections,
     },
-    player_updates::{AcknowledgedInputs, DeferredUpdates},
+    player_updates::{process_player_input_updates, AcknowledgedInputs, DeferredUpdates},
 };
 use bevy::prelude::*;
-use bevy_networking_turbulence::NetworkingPlugin;
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -33,16 +32,20 @@ impl Plugin for MuddleServerPlugin {
         builder.add_plugin(bevy::diagnostic::DiagnosticsPlugin::default());
         builder.add_plugin(bevy::app::ScheduleRunnerPlugin::default());
 
-        // Networking.
-        builder.add_plugin(NetworkingPlugin);
-
         builder.add_startup_system(init_level.system());
         builder.add_startup_system(startup.system());
-        builder.add_system(process_network_events.system());
-        builder.add_system(send_network_updates.system());
+
+        let input_stage = SystemStage::serial()
+            .with_system(process_network_events.system())
+            .with_system(process_player_input_updates.system());
+        let broadcast_updates_stage =
+            SystemStage::parallel().with_system(send_network_updates.system());
 
         // Game.
-        builder.add_plugin(MuddleSharedPlugin::default());
+        builder.add_plugin(MuddleSharedPlugin::new(
+            input_stage,
+            broadcast_updates_stage,
+        ));
 
         let resources = builder.resources_mut();
         resources.get_or_insert_with(EntityNetId::default);

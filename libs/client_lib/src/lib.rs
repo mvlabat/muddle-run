@@ -1,7 +1,6 @@
 use crate::net::{initiate_connection, process_network_events, send_network_updates};
 use bevy::{diagnostic::FrameTimeDiagnosticsPlugin, prelude::*};
 use bevy_egui::EguiPlugin;
-use bevy_networking_turbulence::NetworkingPlugin;
 use mr_shared_lib::{messages::PlayerNetId, MuddleSharedPlugin};
 
 mod helpers;
@@ -13,6 +12,13 @@ pub struct MuddleClientPlugin;
 
 impl Plugin for MuddleClientPlugin {
     fn build(&self, builder: &mut AppBuilder) {
+        let input_stage = SystemStage::parallel()
+            .with_system(initiate_connection.system())
+            .with_system(process_network_events.system())
+            .with_system(input::track_input_events.system());
+        let broadcast_updates_stage =
+            SystemStage::parallel().with_system(send_network_updates.system());
+
         builder
             .add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(EguiPlugin)
@@ -21,16 +27,14 @@ impl Plugin for MuddleClientPlugin {
             // Startup systems,
             .add_startup_system(basic_scene.system())
             // Networking.
-            .add_plugin(NetworkingPlugin)
-            .add_system(initiate_connection.system())
-            .add_system(process_network_events.system())
+            .add_startup_system(initiate_connection.system())
             // Track input events.
             .init_resource::<input::TrackInputState>()
-            .add_system(input::track_input_events.system())
             // Game.
-            .add_plugin(MuddleSharedPlugin::default())
-            // Write network updates.
-            .add_system(send_network_updates.system())
+            .add_plugin(MuddleSharedPlugin::new(
+                input_stage,
+                broadcast_updates_stage,
+            ))
             // Egui.
             .add_system(ui::debug_ui::debug_ui.system());
 

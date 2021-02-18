@@ -3,9 +3,12 @@ use bevy::{log, prelude::*};
 use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
     messages::{DeltaUpdate, PlayerInput, PlayerNetId, PlayerState},
+    player::PlayerUpdates,
     GameTime,
 };
 use std::collections::HashMap;
+
+pub const SERVER_UPDATES_LIMIT: u16 = 32;
 
 pub struct DeferredUpdates<T> {
     updates: HashMap<PlayerNetId, Vec<T>>,
@@ -30,10 +33,6 @@ impl<T> DeferredUpdates<T> {
     }
 }
 
-pub struct PlayerUpdates {
-    pub updates: HashMap<PlayerNetId, Framebuffer<Option<PlayerInput>>>,
-}
-
 #[derive(Default)]
 pub struct AcknowledgedInputs {
     /// Stores server frame number for each client update.
@@ -55,11 +54,12 @@ pub fn process_player_input_updates(
         let inputs = acknowledged_inputs
             .inputs
             .entry(player_net_id)
-            .or_insert_with(|| Framebuffer::new(player_update.frame_number, 32));
-        let updates = updates
-            .updates
-            .entry(player_net_id)
-            .or_insert_with(|| Framebuffer::new(player_update.frame_number, 32));
+            .or_insert_with(|| Framebuffer::new(player_update.frame_number, SERVER_UPDATES_LIMIT));
+        let updates = updates.get_mut(
+            player_net_id,
+            player_update.frame_number,
+            SERVER_UPDATES_LIMIT,
+        );
         for player_update in player_updates {
             if inputs.get(time.game_frame).is_none()
                 && inputs.can_insert(player_update.frame_number)
@@ -71,7 +71,7 @@ pub fn process_player_input_updates(
                 && inputs.can_insert(player_update.frame_number)
             {
                 // TODO: input correction (allow 200ms latency max).
-                updates.insert(player_update.frame_number, Some(player_update));
+                updates.insert(player_update.frame_number, Some(player_update.direction));
             } else {
                 log::warn!(
                     "Ignoring player {:?} input for frame {}",
@@ -99,8 +99,10 @@ pub fn prepare_client_updates(
                 if let Some((frame_number, player_input)) =
                     updates_buffer.get_with_interpolation(time.game_frame)
                 {
-                    assert_eq!(frame_number, player_input.frame_number);
-                    inputs.push(player_input.clone());
+                    inputs.push(PlayerInput {
+                        frame_number,
+                        direction: *player_input,
+                    });
                 }
                 PlayerState {
                     net_id: player_net_id,

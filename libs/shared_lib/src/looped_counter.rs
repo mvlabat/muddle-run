@@ -63,18 +63,27 @@ where
     u8: AsPrimitive<T>,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: 'static + Integer> std::cmp::Ord for WrappedCounter<T>
+where
+    u8: AsPrimitive<T>,
+{
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let (d1, o1) = self.0.overflowing_sub(&other.0);
         let (d2, _) = other.0.overflowing_sub(&self.0);
         if o1 {
             if d2 > T::max_value() / 2u8.as_() {
-                Some(std::cmp::Ordering::Greater)
+                std::cmp::Ordering::Greater
             } else {
-                Some(std::cmp::Ordering::Less)
+                std::cmp::Ordering::Less
             }
         } else if d1 > T::max_value() / 2u8.as_() {
-            Some(std::cmp::Ordering::Less)
+            std::cmp::Ordering::Less
         } else {
-            self.0.partial_cmp(&other.0)
+            self.0.cmp(&other.0)
         }
     }
 }

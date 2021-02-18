@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 
 pub type FrameNumber = WrappedCounter<u16>;
 
+#[derive(Debug)]
 pub struct Framebuffer<T> {
     start_frame: FrameNumber,
     /// Stores a frame number as the first element of the tuple.
@@ -17,7 +18,7 @@ impl<T> Framebuffer<T> {
         }
         Self {
             start_frame,
-            buffer: VecDeque::new(),
+            buffer: VecDeque::with_capacity(limit as usize),
             limit: FrameNumber::new(limit),
         }
     }
@@ -109,6 +110,24 @@ impl<T> Framebuffer<Option<T>> {
         let end_frame = self.start_frame + FrameNumber::new(self.buffer.len() as u16 - 1);
         if frame_number > end_frame {
             return None;
+        }
+        self.get_with_extrapolation(frame_number)
+    }
+
+    /// If the value is `None`, looks behind to find the closest existing value.
+    /// If `frame_number` is out of possible range in regards to current start_frame, returns `None`.
+    /// Returns a corresponding `FrameNumber` as the first tuple element.
+    pub fn get_with_extrapolation(
+        &self,
+        mut frame_number: FrameNumber,
+    ) -> Option<(FrameNumber, &T)> {
+        let max_frame = self.start_frame + self.limit - FrameNumber::new(1);
+        if frame_number > max_frame {
+            return None;
+        }
+        let end_frame = self.start_frame + FrameNumber::new(self.buffer.len() as u16 - 1);
+        if frame_number > end_frame {
+            frame_number = end_frame;
         }
         let skip = end_frame - frame_number;
         self.buffer
@@ -388,6 +407,59 @@ mod tests {
                 (FrameNumber::new(3), &0usize),
                 (FrameNumber::new(4), &5usize)
             ]
+        );
+    }
+
+    #[test]
+    fn test_get_with_interpolation() {
+        let mut buffer = Framebuffer::<Option<usize>>::new(FrameNumber::new(0), 5);
+        buffer.push(Some(1));
+        buffer.push(None);
+        buffer.push(Some(2));
+
+        assert_eq!(
+            buffer.get_with_interpolation(FrameNumber::new(1)),
+            Some((FrameNumber::new(0), &1usize))
+        );
+        assert_eq!(
+            buffer.get_with_interpolation(FrameNumber::new(2)),
+            Some((FrameNumber::new(2), &2usize))
+        );
+    }
+
+    #[test]
+    fn test_get_with_interpolation_outside_limit() {
+        let mut buffer = Framebuffer::<Option<usize>>::new(FrameNumber::new(0), 5);
+        buffer.push(Some(1));
+
+        assert_eq!(buffer.get_with_interpolation(FrameNumber::new(1)), None);
+    }
+
+    #[test]
+    fn test_get_with_extrapolation() {
+        let mut buffer = Framebuffer::<Option<usize>>::new(FrameNumber::new(0), 5);
+        buffer.push(Some(1));
+        buffer.push(None);
+        buffer.push(Some(2));
+
+        assert_eq!(
+            buffer.get_with_extrapolation(FrameNumber::new(1)),
+            Some((FrameNumber::new(0), &1usize))
+        );
+        assert_eq!(
+            buffer.get_with_extrapolation(FrameNumber::new(2)),
+            Some((FrameNumber::new(2), &2usize))
+        );
+    }
+
+    #[test]
+    fn test_get_with_extrapolation_outside_limit() {
+        let mut buffer = Framebuffer::<Option<usize>>::new(FrameNumber::new(0), 5);
+        buffer.push(Some(1));
+
+        assert_eq!(
+            buffer.get_with_extrapolation(FrameNumber::new(1)),
+            Some((FrameNumber::new(0), &1usize))
         );
     }
 

@@ -1,6 +1,6 @@
 use crate::{
     framebuffer::FrameNumber,
-    game::commands::{DespawnLevelObject, DespawnPlayer, SpawnLevelObject, SpawnPlayer},
+    game::commands::{DespawnLevelObject, SpawnLevelObject},
     registry::IncrementId,
 };
 use bevy::math::Vec2;
