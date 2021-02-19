@@ -619,7 +619,8 @@ dependencies = [
 [[package]]
 name = "bevy_networking_turbulence"
 version = "0.2.0"
-source = "git+https://github.com/smokku/bevy_networking_turbulence.git#f1c021cb0a99c3c0128dadd5a9326ad4a7094af4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53df3a4ac9ff0d757916cc26d61b1d6a6e277c06e9a36252cbd9267fffaf5a37"
 dependencies = [
  "bevy_app",
  "bevy_ecs",

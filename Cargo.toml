@@ -16,7 +16,7 @@ opt-level = 3
 #bevy = { git = "https://github.com/bevyengine/bevy//" }
 #bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
 #bevy_webgl2 = { path = "../bevy_webgl2" }
-bevy_networking_turbulence = { git = "https://github.com/smokku/bevy_networking_turbulence.git" }
+#bevy_networking_turbulence = { git = "https://github.com/smokku/bevy_networking_turbulence.git" }
 
 #[patch.'https://github.com/bevyengine/bevy']
 #bevy = { git = "https://github.com/bevyengine/bevy//" }

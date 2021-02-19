@@ -21,9 +21,8 @@ use bevy::{
     ecs::{ArchetypeComponent, ShouldRun, SystemId, ThreadLocalExecution, TypeAccess},
     log,
     prelude::*,
-    tasks::IoTaskPool,
 };
-use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
+use bevy_networking_turbulence::NetworkingPlugin;
 use bevy_rapier3d::{
     physics,
     physics::{
@@ -52,8 +51,8 @@ pub mod registry;
 
 // Constants.
 pub mod stage {
-    pub const SCHEDULE: &str = "mr_shared_schedule";
     pub const INPUT: &str = "mr_shared_input";
+    pub const SCHEDULE: &str = "mr_shared_schedule";
     pub const SPAWN: &str = "mr_shared_spawn";
     pub const PRE_GAME: &str = "mr_shared_pre_game";
     pub const GAME: &str = "mr_shared_game";
@@ -84,6 +83,9 @@ impl MuddleSharedPlugin {
 impl Plugin for MuddleSharedPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder.add_plugin(RapierResourcesPlugin);
+        builder.add_plugin(NetworkingPlugin {
+            link_conditioner: None,
+        });
 
         let mut input_stage = self
             .input_stage
@@ -94,28 +96,8 @@ impl Plugin for MuddleSharedPlugin {
             .lock()
             .expect("Can't initialize the plugin more than once");
 
-        let task_pool = builder
-            .resources()
-            .get::<IoTaskPool>()
-            .expect("IoTaskPool resource not found")
-            .0
-            .clone();
-
-        // We don't use the default bevy_networking_turbulence plugin to control
-        // flushing NetworkEvent manually. We do that in the POST_GAME stage.
-        builder
-            .add_resource(NetworkResource::new(task_pool, None))
-            .add_resource(Events::<NetworkEvent>::default())
-            .add_system(bevy_networking_turbulence::receive_packets.system());
-
         let schedule = Schedule::default()
             .with_run_criteria(FixedTimestep::steps_per_second(120.0))
-            .with_stage(
-                stage::INPUT,
-                input_stage
-                    .take()
-                    .expect("Can't initialize the plugin more than once"),
-            )
             .with_stage(
                 stage::SPAWN,
                 SystemStage::parallel()
@@ -153,12 +135,16 @@ impl Plugin for MuddleSharedPlugin {
             )
             .with_stage(
                 stage::POST_GAME,
-                SystemStage::parallel()
-                    .with_system(tick.system())
-                    // Flush network events.
-                    .with_system(Events::<NetworkEvent>::update_system.system()),
+                SystemStage::parallel().with_system(tick.system()),
             );
         builder.add_stage_before(bevy::app::stage::UPDATE, stage::SCHEDULE, schedule);
+        builder.add_stage_before(
+            stage::SCHEDULE,
+            stage::INPUT,
+            input_stage
+                .take()
+                .expect("Can't initialize the plugin more than once"),
+        );
 
         builder.add_startup_system(network_setup.system());
 

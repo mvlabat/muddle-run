@@ -54,7 +54,7 @@ fn graph(
 ) -> egui::Response {
     use egui::*;
 
-    let graph_top_value = 360.0;
+    let graph_top_value = 720.0;
 
     // TODO (from Egui): we should not use `slider_width` as default graph width.
     let height = ui.style().spacing.slider_width;
