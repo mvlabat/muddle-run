@@ -3,7 +3,6 @@ use std::collections::VecDeque;
 
 pub type FrameNumber = WrappedCounter<u16>;
 
-#[derive(Debug)]
 pub struct Framebuffer<T> {
     start_frame: FrameNumber,
     /// Stores a frame number as the first element of the tuple.
@@ -21,6 +20,22 @@ impl<T> Framebuffer<T> {
             buffer: VecDeque::with_capacity(limit as usize),
             limit: FrameNumber::new(limit),
         }
+    }
+
+    pub fn start_frame(&self) -> FrameNumber {
+        self.start_frame
+    }
+
+    pub fn end_frame(&self) -> FrameNumber {
+        self.start_frame + FrameNumber::new(self.len()) - FrameNumber::new(1)
+    }
+
+    pub fn len(&self) -> u16 {
+        self.buffer.len() as u16
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
     }
 
     pub fn limit(&self) -> u16 {
@@ -51,7 +66,11 @@ impl<T> Framebuffer<T> {
             .get((frame_number - self.start_frame).value() as usize)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (FrameNumber, &T)> {
+    pub fn last(&self) -> Option<&T> {
+        self.buffer.back()
+    }
+
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (FrameNumber, &T)> {
         let start_frame = self.start_frame;
         self.buffer
             .iter()
@@ -107,8 +126,7 @@ impl<T> Framebuffer<Option<T>> {
     /// If `frame_number` is out of the stored range, returns `None`.
     /// Returns a corresponding `FrameNumber` as the first tuple element.
     pub fn get_with_interpolation(&self, frame_number: FrameNumber) -> Option<(FrameNumber, &T)> {
-        let end_frame = self.start_frame + FrameNumber::new(self.buffer.len() as u16 - 1);
-        if frame_number > end_frame {
+        if frame_number > self.end_frame() {
             return None;
         }
         self.get_with_extrapolation(frame_number)
@@ -125,11 +143,10 @@ impl<T> Framebuffer<Option<T>> {
         if frame_number > max_frame {
             return None;
         }
-        let end_frame = self.start_frame + FrameNumber::new(self.buffer.len() as u16 - 1);
-        if frame_number > end_frame {
-            frame_number = end_frame;
+        if frame_number > self.end_frame() {
+            frame_number = self.end_frame();
         }
-        let skip = end_frame - frame_number;
+        let skip = self.end_frame() - frame_number;
         self.buffer
             .iter()
             .rev()

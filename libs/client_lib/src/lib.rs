@@ -1,4 +1,7 @@
-use crate::net::{initiate_connection, process_network_events, send_network_updates};
+use crate::{
+    input::MouseRay,
+    net::{initiate_connection, process_network_events, send_network_updates},
+};
 use bevy::{diagnostic::FrameTimeDiagnosticsPlugin, prelude::*};
 use bevy_egui::EguiPlugin;
 use mr_shared_lib::{messages::PlayerNetId, MuddleSharedPlugin};
@@ -12,10 +15,11 @@ pub struct MuddleClientPlugin;
 
 impl Plugin for MuddleClientPlugin {
     fn build(&self, builder: &mut AppBuilder) {
-        let input_stage = SystemStage::parallel()
+        let input_stage = SystemStage::serial()
             .with_system(initiate_connection.system())
             .with_system(process_network_events.system())
-            .with_system(input::track_input_events.system());
+            .with_system(input::track_input_events.system())
+            .with_system(input::cast_mouse_ray.system());
         let broadcast_updates_stage =
             SystemStage::parallel().with_system(send_network_updates.system());
 
@@ -28,19 +32,20 @@ impl Plugin for MuddleClientPlugin {
             .add_startup_system(basic_scene.system())
             // Networking.
             .add_startup_system(initiate_connection.system())
-            // Track input events.
-            .init_resource::<input::TrackInputState>()
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
                 input_stage,
                 broadcast_updates_stage,
             ))
             // Egui.
-            .add_system(ui::debug_ui::debug_ui.system());
+            .add_system(ui::debug_ui::update_ui_scale_factor.system())
+            .add_system(ui::debug_ui::debug_ui.system())
+            .add_system(ui::debug_ui::inspect_object.system());
 
         let resources = builder.resources_mut();
         resources.get_or_insert_with(ui::debug_ui::DebugUiState::default);
         resources.get_or_insert_with(CurrentPlayerNetId::default);
+        resources.get_or_insert_with(MouseRay::default);
     }
 }
 
@@ -54,7 +59,7 @@ pub struct WindowInnerSize {
 #[derive(Default)]
 pub struct CurrentPlayerNetId(pub Option<PlayerNetId>);
 
-struct MainCameraEntity(pub Entity);
+pub struct MainCameraEntity(pub Entity);
 
 fn basic_scene(commands: &mut Commands) {
     // Add entities to the scene.

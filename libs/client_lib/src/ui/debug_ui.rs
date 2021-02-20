@@ -1,9 +1,30 @@
+use crate::{input::MouseRay, ui::MuddleInspectable};
 use bevy::{
     diagnostic::{DiagnosticMeasurement, Diagnostics, FrameTimeDiagnosticsPlugin},
+    ecs::SystemParam,
     prelude::*,
 };
-use bevy_egui::{egui, EguiContext};
-use std::collections::VecDeque;
+use bevy_egui::{egui, EguiContext, EguiSettings};
+use bevy_rapier3d::{
+    physics::ColliderHandleComponent,
+    rapier::{
+        geometry::{ColliderSet, InteractionGroups},
+        pipeline::QueryPipeline,
+    },
+};
+use mr_shared_lib::{
+    game::components::{PlayerDirection, Position},
+    messages::PlayerNetId,
+    player::Player,
+    registry::EntityRegistry,
+};
+use std::collections::{HashMap, VecDeque};
+
+pub fn update_ui_scale_factor(mut egui_settings: ResMut<EguiSettings>, windows: Res<Windows>) {
+    if let Some(window) = windows.get_primary() {
+        egui_settings.scale_factor = 1.0 / window.scale_factor();
+    }
+}
 
 #[derive(Default)]
 pub struct DebugUiState {
@@ -43,6 +64,75 @@ pub fn debug_ui(
                         debug_ui_state.fps_history_len,
                     );
                 });
+        });
+    }
+}
+
+pub struct InspectableObject {
+    entity: Option<Entity>,
+}
+
+impl Default for InspectableObject {
+    fn default() -> Self {
+        Self { entity: None }
+    }
+}
+
+#[derive(SystemParam)]
+pub struct InspectObjectQueries<'a> {
+    players: Res<'a, HashMap<PlayerNetId, Player>>,
+    player_registry: Res<'a, EntityRegistry<PlayerNetId>>,
+    colliders: Query<'a, (Entity, &'a ColliderHandleComponent)>,
+    positions: Query<'a, (Entity, &'a Position)>,
+    player_directions: Query<'a, (Entity, &'a PlayerDirection)>,
+}
+
+pub fn inspect_object(
+    mut egui_context: ResMut<EguiContext>,
+    mut inspectable_object: Local<InspectableObject>,
+    mouse_input: Res<Input<MouseButton>>,
+    mouse_ray: Res<MouseRay>,
+    query_pipeline: Res<QueryPipeline>,
+    collider_set: Res<ColliderSet>,
+    queries: InspectObjectQueries,
+) {
+    let ctx = &mut egui_context.ctx;
+    if mouse_input.just_pressed(MouseButton::Left) && !ctx.is_mouse_over_area() {
+        if let Some((collider, _)) = query_pipeline.cast_ray(
+            &collider_set,
+            &mouse_ray.0,
+            f32::MAX,
+            true,
+            InteractionGroups::all(),
+        ) {
+            let (entity, _) = queries
+                .colliders
+                .iter()
+                .find(|(_, collider_component)| collider_component.handle() == collider)
+                .unwrap();
+
+            inspectable_object.entity = Some(entity);
+        } else {
+            inspectable_object.entity = None;
+        }
+    }
+
+    if let Some(entity) = inspectable_object.entity {
+        egui::Window::new("Inspect").show(ctx, |ui| {
+            if let Some(player_name) = queries
+                .player_registry
+                .get_id(entity)
+                .and_then(|player_net_id| queries.players.get(&player_net_id))
+                .map(|player| player.nickname.clone())
+            {
+                ui.label(format!("Player name: {}", player_name));
+            }
+            if let Ok((_, position)) = queries.positions.get(entity) {
+                position.inspect(ui);
+            }
+            if let Ok((_, player_direction)) = queries.player_directions.get(entity) {
+                player_direction.inspect(ui);
+            }
         });
     }
 }

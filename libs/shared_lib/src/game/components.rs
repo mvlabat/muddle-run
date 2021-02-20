@@ -5,7 +5,6 @@ use crate::{
 use bevy::math::Vec2;
 
 /// Represents Player's input (not an actual direction of entity's movement).
-#[derive(Debug)]
 pub struct PlayerDirection {
     /// `None` indicates a missing network input.
     pub buffer: Framebuffer<Option<Vec2>>,
@@ -19,7 +18,6 @@ impl PlayerDirection {
     }
 }
 
-#[derive(Debug)]
 pub struct Position {
     pub buffer: Framebuffer<Vec2>,
 }

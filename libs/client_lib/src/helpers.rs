@@ -6,7 +6,7 @@ use bevy_rapier3d::rapier::{geometry::Ray, na};
 
 // Heavily inspired by https://github.com/bevyengine/bevy/pull/432/.
 pub fn cursor_pos_to_ray(
-    cursor_viewport: &Vec2,
+    cursor_viewport: Vec2,
     window: &Window,
     camera_transform: &Mat4,
     camera_perspective: &Mat4,
