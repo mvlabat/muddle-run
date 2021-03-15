@@ -4,7 +4,7 @@ use crate::{
 };
 use bevy::{diagnostic::FrameTimeDiagnosticsPlugin, prelude::*};
 use bevy_egui::EguiPlugin;
-use mr_shared_lib::{messages::PlayerNetId, MuddleSharedPlugin};
+use mr_shared_lib::{messages::PlayerNetId, net::ConnectionState, MuddleSharedPlugin};
 
 mod helpers;
 mod input;
@@ -16,7 +16,6 @@ pub struct MuddleClientPlugin;
 impl Plugin for MuddleClientPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         let input_stage = SystemStage::serial()
-            .with_system(initiate_connection.system())
             .with_system(process_network_events.system())
             .with_system(input::track_input_events.system())
             .with_system(input::cast_mouse_ray.system());
@@ -45,6 +44,7 @@ impl Plugin for MuddleClientPlugin {
         let resources = builder.resources_mut();
         resources.get_or_insert_with(ui::debug_ui::DebugUiState::default);
         resources.get_or_insert_with(CurrentPlayerNetId::default);
+        resources.get_or_insert_with(ConnectionState::default);
         resources.get_or_insert_with(MouseRay::default);
     }
 }

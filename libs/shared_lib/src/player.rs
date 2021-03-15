@@ -25,9 +25,19 @@ impl PlayerUpdates {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum PlayerConnectionState {
+    /// From the server's perspective it means that a StartGame message hasn't been sent yet.
+    /// From the client's one - a client received a DeltaUpdate about a player that it doesn't know
+    /// about.
+    Connecting,
+    Playing,
+}
+
+#[derive(Clone)]
 pub struct Player {
     pub nickname: String,
-    pub connected_at: FrameNumber,
+    pub state: PlayerConnectionState,
 }
 
 pub fn random_name() -> String {

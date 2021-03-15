@@ -1,4 +1,5 @@
 use crate::looped_counter::WrappedCounter;
+use bevy::log;
 use std::collections::VecDeque;
 
 pub type FrameNumber = WrappedCounter<u16>;
@@ -141,13 +142,24 @@ impl<T> Framebuffer<Option<T>> {
     ) -> Option<(FrameNumber, &T)> {
         let max_frame = self.start_frame + self.limit - FrameNumber::new(1);
         if frame_number > max_frame {
+            log::warn!(
+                "Requested frame {} is larger than max frame: {}",
+                frame_number.value(),
+                max_frame.value()
+            );
             return None;
         }
         if frame_number > self.end_frame() {
             frame_number = self.end_frame();
         }
         let skip = self.end_frame() - frame_number;
-        self.buffer
+        log::trace!(
+            "Skipping {} frames to look for an extrapolated value (requested frame: {})",
+            skip.value(),
+            frame_number.value()
+        );
+        let result = self
+            .buffer
             .iter()
             .rev()
             .skip(skip.value() as usize)
@@ -158,7 +170,14 @@ impl<T> Framebuffer<Option<T>> {
                     frame_number - FrameNumber::new(i as u16),
                     v.as_ref().unwrap(),
                 )
-            })
+            });
+        if result.is_none() {
+            log::error!(
+                "No value found to extrapolate for frame {}",
+                frame_number.value()
+            );
+        }
+        result
     }
 
     pub fn iter_with_interpolation(&self) -> impl Iterator<Item = (FrameNumber, &T)> {

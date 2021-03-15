@@ -63,6 +63,7 @@ pub mod stage {
 }
 pub const PLAYER_SIZE: f32 = 1.0;
 pub const PLANE_SIZE: f32 = 10.0;
+pub const SIMULATIONS_PER_SECOND: u16 = 120;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
 pub const TICKS_PER_NETWORK_BROADCAST: u16 = 2;
 
@@ -97,7 +98,9 @@ impl Plugin for MuddleSharedPlugin {
             .expect("Can't initialize the plugin more than once");
 
         let schedule = Schedule::default()
-            .with_run_criteria(FixedTimestep::steps_per_second(120.0))
+            .with_run_criteria(FixedTimestep::steps_per_second(
+                SIMULATIONS_PER_SECOND as f64,
+            ))
             .with_stage(
                 stage::SPAWN,
                 SystemStage::parallel()
@@ -188,14 +191,16 @@ impl Plugin for RapierResourcesPlugin {
 
 #[derive(Default, Debug)]
 pub struct GameTime {
-    /// Simulation frame.
+    pub generation: usize,
+    pub simulation_frame: FrameNumber,
     pub game_frame: FrameNumber,
 }
 
 pub struct TickRunCriteria {
     system_id: SystemId,
     ticks_per_step: FrameNumber,
-    last_tick: Option<FrameNumber>,
+    last_generation: Option<usize>,
+    last_tick: FrameNumber,
     resource_access: TypeAccess<TypeId>,
     archetype_access: TypeAccess<ArchetypeComponent>,
 }
@@ -205,19 +210,21 @@ impl TickRunCriteria {
         Self {
             system_id: SystemId::new(),
             ticks_per_step: FrameNumber::new(ticks_per_step),
-            last_tick: None,
+            last_generation: None,
+            last_tick: FrameNumber::new(0),
             resource_access: Default::default(),
             archetype_access: Default::default(),
         }
     }
 
     pub fn update(&mut self, time: &GameTime) -> ShouldRun {
-        if self.last_tick.is_none() {
-            self.last_tick = Some(time.game_frame);
+        if self.last_generation != Some(time.generation) {
+            self.last_generation = Some(time.generation);
+            self.last_tick = time.game_frame - self.ticks_per_step;
         }
 
-        if self.last_tick.unwrap() + self.ticks_per_step <= time.game_frame {
-            *self.last_tick.as_mut().unwrap() += self.ticks_per_step;
+        if self.last_tick + self.ticks_per_step <= time.game_frame {
+            self.last_tick += self.ticks_per_step;
             ShouldRun::YesAndLoop
         } else {
             ShouldRun::No

@@ -13,9 +13,11 @@ use mr_shared_lib::{
         level_objects::PlaneDesc,
     },
     messages::{EntityNetId, PlayerInput, PlayerNetId},
+    net::ConnectionState,
     registry::IncrementId,
     MuddleSharedPlugin, PLANE_SIZE,
 };
+use std::collections::HashMap;
 
 mod net;
 mod player_updates;
@@ -52,6 +54,7 @@ impl Plugin for MuddleServerPlugin {
         resources.get_or_insert_with(PlayerNetId::default);
         resources.get_or_insert_with(NetworkReader::default);
         resources.get_or_insert_with(PlayerConnections::default);
+        resources.get_or_insert_with(HashMap::<u32, ConnectionState>::default);
         resources.get_or_insert_with(DeferredUpdates::<PlayerInput>::default);
         resources.get_or_insert_with(AcknowledgedInputs::default);
     }

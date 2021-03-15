@@ -8,7 +8,7 @@ use mr_shared_lib::{
 };
 use std::collections::HashMap;
 
-pub const SERVER_UPDATES_LIMIT: u16 = 32;
+pub const SERVER_UPDATES_LIMIT: u16 = 64;
 
 pub struct DeferredUpdates<T> {
     updates: HashMap<PlayerNetId, Vec<T>>,
@@ -61,6 +61,7 @@ pub fn process_player_input_updates(
             SERVER_UPDATES_LIMIT,
         );
         for player_update in player_updates {
+            // TODO: wtf is this? :) I should remember the idea behind this.
             if inputs.get(time.game_frame).is_none()
                 && inputs.can_insert(player_update.frame_number)
             {
@@ -68,7 +69,7 @@ pub fn process_player_input_updates(
             }
 
             if updates.get(time.game_frame).is_none()
-                && inputs.can_insert(player_update.frame_number)
+                && updates.can_insert(player_update.frame_number)
             {
                 // TODO: input correction (allow 200ms latency max).
                 updates.insert(player_update.frame_number, Some(player_update.direction));
@@ -115,6 +116,7 @@ pub fn prepare_client_updates(
             connection_player_net_id,
             DeltaUpdate {
                 frame_number: time.game_frame,
+                acknowledgments: (None, 0), // to fill in the `send_network_updates` system
                 players,
                 confirmed_actions: Vec::new(),
             },

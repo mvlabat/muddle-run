@@ -26,11 +26,14 @@ pub fn read_movement_updates(
             .get_id(entity)
             .expect("Expected a registered player");
 
+        // TODO: we miss all updates if a player is at least 1 frame behind. We need to implement lag compensation.
         let direction = player_updates
             .updates
             .get(&player_net_id)
             .unwrap()
             .get(time.game_frame);
+        // TODO: make sure that we don't leave all buffer filled with `None` (i.e. disconnect a player earlier).
+        //  Document the implemented guarantees.
         player_direction
             .buffer
             .insert(time.game_frame, direction.and_then(|direction| *direction));

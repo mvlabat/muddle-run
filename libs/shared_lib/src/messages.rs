@@ -40,8 +40,13 @@ impl IncrementId for ActionNetId {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum ClientMessage {
-    PlayerInput(PlayerInput),
+pub enum UnreliableClientMessage {
+    PlayerUpdate(PlayerUpdate),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum ReliableClientMessage {
+    Handshake,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -51,6 +56,13 @@ pub enum ReliableServerMessage {
     DisconnectedPlayer(DisconnectedPlayer),
     SpawnLevelObject(SpawnLevelObject),
     DespawnLevelObject(DespawnLevelObject),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PlayerUpdate {
+    pub frame_number: FrameNumber,
+    pub acknowledgments: (Option<FrameNumber>, u64),
+    pub inputs: Vec<PlayerInput>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -71,7 +83,6 @@ pub struct StartGame {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ConnectedPlayer {
     pub net_id: PlayerNetId,
-    pub connected_at: FrameNumber,
     pub nickname: String,
 }
 
@@ -82,14 +93,16 @@ pub struct DisconnectedPlayer {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DeltaUpdate {
+    pub frame_number: FrameNumber,
+    pub acknowledgments: (Option<FrameNumber>, u64),
     pub players: Vec<PlayerState>,
     pub confirmed_actions: Vec<ConfirmedAction>,
-    pub frame_number: FrameNumber,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct PlayerState {
     pub net_id: PlayerNetId,
+    /// Contains the initial position, so that applying all inputs renders a player in its actual position on server.
     pub position: Vec2,
     pub inputs: Vec<PlayerInput>,
 }

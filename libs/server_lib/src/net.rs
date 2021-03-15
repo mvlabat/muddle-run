@@ -4,20 +4,22 @@ use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use mr_shared_lib::{
     game::{
         commands::{DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer},
-        components::Position,
+        components::{PlayerDirection, Position},
         level::LevelState,
     },
     messages::{
-        ClientMessage, ConnectedPlayer, DeltaUpdate, PlayerInput, PlayerNetId, PlayerState,
-        ReliableServerMessage, StartGame, UnreliableServerMessage,
+        ConnectedPlayer, DeltaUpdate, PlayerInput, PlayerNetId, PlayerState, ReliableServerMessage,
+        StartGame, UnreliableClientMessage, UnreliableServerMessage,
     },
-    player::{random_name, Player},
+    net::ConnectionState,
+    player::{random_name, Player, PlayerConnectionState},
     registry::{EntityRegistry, Registry},
-    GameTime, TICKS_PER_NETWORK_BROADCAST,
+    GameTime,
 };
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
+    time::Instant,
 };
 
 const SERVER_PORT: u16 = 3455;
@@ -42,26 +44,33 @@ pub struct UpdateParams<'a> {
     despawn_player_commands: ResMut<'a, GameCommands<DespawnPlayer>>,
 }
 
+#[derive(SystemParam)]
+pub struct NetworkParams<'a> {
+    net: ResMut<'a, NetworkResource>,
+    connection_states: ResMut<'a, HashMap<u32, ConnectionState>>,
+    player_connections: ResMut<'a, PlayerConnections>,
+}
+
 pub fn process_network_events(
-    mut net: ResMut<NetworkResource>,
     time: Res<GameTime>,
+    mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut state: ResMut<NetworkReader>,
     network_events: Res<Events<NetworkEvent>>,
-    mut player_connections: ResMut<PlayerConnections>,
-    mut players: ResMut<HashMap<PlayerNetId, Player>>,
+    mut network_params: NetworkParams,
     mut update_params: UpdateParams,
 ) {
     for event in state.network_events.iter(&network_events) {
         match event {
             NetworkEvent::Connected(handle) => {
                 log::info!("New connection: {}", handle);
-                let player_net_id = player_connections.register(*handle);
+                let player_net_id = network_params.player_connections.register(*handle);
+                network_params.connection_states.entry(*handle).or_default();
                 let nickname = random_name();
                 players.insert(
                     player_net_id,
                     Player {
                         nickname,
-                        connected_at: time.game_frame,
+                        state: PlayerConnectionState::Connecting,
                     },
                 );
                 update_params.spawn_player_commands.push(SpawnPlayer {
@@ -78,7 +87,10 @@ pub fn process_network_events(
             }
             NetworkEvent::Disconnected(handle) => {
                 log::info!("Disconnected: {}", handle);
-                if let Some(player_net_id) = player_connections.remove_by_value(*handle) {
+                network_params.connection_states.remove(&handle);
+                if let Some(player_net_id) =
+                    network_params.player_connections.remove_by_value(*handle)
+                {
                     update_params.despawn_player_commands.push(DespawnPlayer {
                         net_id: player_net_id,
                     });
@@ -94,27 +106,51 @@ pub fn process_network_events(
         }
     }
 
-    for (handle, connection) in net.connections.iter_mut() {
+    for (handle, connection) in network_params.net.connections.iter_mut() {
         let channels = connection.channels().unwrap();
-        while let Some(client_message) = channels.recv::<ClientMessage>() {
+        while let Some(client_message) = channels.recv::<UnreliableClientMessage>() {
             log::trace!(
                 "ClientMessage received on [{}]: {:?}",
                 handle,
                 client_message
             );
 
-            let player_net_id = match player_connections.get_id(*handle) {
-                Some(id) => id,
-                None => {
+            let (player_net_id, connection_state) = match (
+                network_params.player_connections.get_id(*handle),
+                network_params.connection_states.get_mut(handle),
+            ) {
+                (Some(id), Some(connection_state)) => (id, connection_state),
+                _ => {
                     log::error!("A player for handle {} is not registered", handle);
                     break;
                 }
             };
 
             match client_message {
-                ClientMessage::PlayerInput(update) => update_params
-                    .deferred_player_updates
-                    .push(player_net_id, update),
+                UnreliableClientMessage::PlayerUpdate(update) => {
+                    if let Err(err) = connection_state.acknowledge_incoming(update.frame_number) {
+                        // TODO: disconnect players.
+                        log::error!("Failed to acknowledge an incoming packet: {:?}", err);
+                        break;
+                    }
+                    if let (Some(frame_number), ack_bit_set) = update.acknowledgments {
+                        if let Err(err) = connection_state
+                            .apply_outcoming_acknowledgements(frame_number, ack_bit_set)
+                        {
+                            // TODO: disconnect players.
+                            log::error!(
+                                "Failed to apply outcoming packet acknowledgments: {:?}",
+                                err
+                            );
+                            break;
+                        }
+                    }
+                    for input in update.inputs {
+                        update_params
+                            .deferred_player_updates
+                            .push(player_net_id, input);
+                    }
+                }
             }
         }
 
@@ -131,30 +167,99 @@ pub fn process_network_events(
 }
 
 pub fn send_network_updates(
-    mut net: ResMut<NetworkResource>,
+    mut network_params: NetworkParams,
     time: Res<GameTime>,
-    player_connections: Res<PlayerConnections>,
     level_state: Res<LevelState>,
-    players: Res<HashMap<PlayerNetId, Player>>,
-    player_positions: Query<(Entity, &Position)>,
+    mut players: ResMut<HashMap<PlayerNetId, Player>>,
+    player_entities: Query<(Entity, &Position, &PlayerDirection)>,
     players_registry: Res<EntityRegistry<PlayerNetId>>,
 ) {
-    for (&connection_player_net_id, &connection_handle) in player_connections.iter() {
-        for (&player_net_id, player) in players.iter() {
-            if (time.game_frame - player.connected_at).value() < TICKS_PER_NETWORK_BROADCAST {
+    for (&connection_player_net_id, &connection_handle) in network_params.player_connections.iter()
+    {
+        let connection_state = network_params
+            .connection_states
+            .get_mut(&connection_handle)
+            .expect("Expected a connection state for a connected player");
+
+        // Broadcasting delta updates.
+        let player = players.get(&connection_player_net_id).unwrap();
+        // Checks that a player hasn't just connected.
+        if let PlayerConnectionState::Playing = player.state {
+            if let Err(err) = network_params.net.send_message(
+                connection_handle,
+                UnreliableServerMessage::DeltaUpdate(DeltaUpdate {
+                    frame_number: time.game_frame,
+                    acknowledgments: connection_state.incoming_acknowledgments(),
+                    players: players
+                        .iter()
+                        .map(|(&player_net_id, _player)| {
+                            let entity =
+                                players_registry
+                                    .get_entity(player_net_id)
+                                    .unwrap_or_else(|| {
+                                        panic!(
+                                            "Player entity ({:?}) is not registered",
+                                            player_net_id
+                                        )
+                                    });
+                            create_player_state(
+                                player_net_id,
+                                &time,
+                                connection_state,
+                                entity,
+                                &player_entities,
+                            )
+                        })
+                        .collect(),
+                    confirmed_actions: vec![],
+                }),
+            ) {
+                log::error!("Failed to send a message: {:?}", err);
+            }
+
+            if let Err(err) = connection_state.add_outcoming_packet(time.game_frame, Instant::now())
+            {
+                // TODO: disconnect players.
+                log::error!("Failed to add an outcoming packet: {:?}", err);
+                continue;
+            }
+        }
+
+        // Broadcasting updates about new connected players.
+        for (&connected_player_net_id, player) in players.iter() {
+            // Checks that a player hasn't just connected.
+            if let PlayerConnectionState::Playing = player.state {
                 continue;
             }
 
-            if connection_player_net_id == player_net_id {
+            // If a player has just connected, we need to send `StartGame` message to the connected
+            // player and broadcast `ConnectedPlayer` to everyone else.
+
+            if connection_player_net_id == connected_player_net_id {
                 // TODO: prepare the update in another system.
-                let mut players_state = player_positions
+                let mut players_state = players
                     .iter()
-                    .map(|(entity, position)| PlayerState {
-                        net_id: players_registry.get_id(entity).unwrap_or_else(|| {
-                            panic!("Player entity ({:?}) is not registered", entity)
-                        }),
-                        position: *position.buffer.get(time.game_frame).unwrap(),
-                        inputs: Vec::new(),
+                    .map(|(&iter_player_net_id, _player)| {
+                        let entity = players_registry
+                            .get_entity(iter_player_net_id)
+                            .unwrap_or_else(|| {
+                                panic!("Player entity ({:?}) is not registered", iter_player_net_id)
+                            });
+                        if connected_player_net_id == iter_player_net_id {
+                            PlayerState {
+                                net_id: connection_player_net_id,
+                                position: Vec2::zero(),
+                                inputs: Vec::new(),
+                            }
+                        } else {
+                            create_player_state(
+                                iter_player_net_id,
+                                &time,
+                                connection_state,
+                                entity,
+                                &player_entities,
+                            )
+                        }
                     })
                     .collect::<Vec<_>>();
                 players_state.push(PlayerState {
@@ -163,7 +268,7 @@ pub fn send_network_updates(
                     inputs: Vec::new(),
                 });
 
-                let result = net.send_message(
+                let result = network_params.net.send_message(
                     connection_handle,
                     ReliableServerMessage::StartGame(StartGame {
                         net_id: connection_player_net_id,
@@ -180,14 +285,14 @@ pub fn send_network_updates(
                             .iter()
                             .map(|(&net_id, player)| ConnectedPlayer {
                                 net_id,
-                                connected_at: player.connected_at,
                                 nickname: player.nickname.clone(),
                             })
                             .collect(),
                         game_state: DeltaUpdate {
+                            frame_number: time.game_frame,
+                            acknowledgments: connection_state.incoming_acknowledgments(),
                             players: players_state,
                             confirmed_actions: Vec::new(),
-                            frame_number: time.game_frame,
                         },
                     }),
                 );
@@ -196,17 +301,61 @@ pub fn send_network_updates(
                 }
             } else {
                 broadcast_message_to_others(
-                    &mut net,
-                    &player_connections,
+                    &mut network_params.net,
+                    &network_params.player_connections,
                     connection_handle,
                     &ReliableServerMessage::ConnectedPlayer(ConnectedPlayer {
                         net_id: connection_player_net_id,
-                        connected_at: time.game_frame,
                         nickname: player.nickname.clone(),
                     }),
                 );
             }
         }
+    }
+
+    for player in players.values_mut() {
+        player.state = PlayerConnectionState::Playing;
+    }
+}
+
+fn create_player_state(
+    net_id: PlayerNetId,
+    time: &GameTime,
+    connection_state: &ConnectionState,
+    entity: Entity,
+    player_entities: &Query<(Entity, &Position, &PlayerDirection)>,
+) -> PlayerState {
+    let updates_start_frame = if connection_state.packet_loss() > 0.0 {
+        // TODO: avoid doing the same searches when gathering updates for every player?
+        connection_state
+            .first_unacknowledged_outcoming_packet()
+            .unwrap_or(time.game_frame)
+    } else {
+        time.game_frame
+    };
+
+    let (_, position, player_direction) = player_entities.get(entity).unwrap();
+
+    // TODO: deduplicate updates (the same code is written for client).
+    let mut inputs: Vec<PlayerInput> = Vec::new();
+    for (frame_number, &direction) in player_direction
+        .buffer
+        // TODO: avoid iterating from the beginning?
+        .iter_with_interpolation()
+        .skip_while(|(frame_number, _)| *frame_number < updates_start_frame)
+    {
+        if Some(direction) != inputs.last().map(|i| i.direction) {
+            inputs.push(PlayerInput {
+                frame_number,
+                direction,
+            });
+        }
+    }
+
+    PlayerState {
+        net_id,
+        position: *position.buffer.get(updates_start_frame).unwrap(),
+        inputs,
     }
 }
 

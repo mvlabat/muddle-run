@@ -2,20 +2,26 @@ use crate::CurrentPlayerNetId;
 use bevy::{ecs::SystemParam, log, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use mr_shared_lib::{
-    framebuffer::FrameNumber,
-    game::commands::{
-        DespawnLevelObject, DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer,
+    game::{
+        commands::{
+            DespawnLevelObject, DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer,
+        },
+        components::PlayerDirection,
     },
     messages::{
-        ClientMessage, ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, PlayerInput, PlayerNetId,
-        ReliableServerMessage, StartGame, UnreliableServerMessage,
+        ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, PlayerInput, PlayerNetId, PlayerUpdate,
+        ReliableClientMessage, ReliableServerMessage, StartGame, UnreliableClientMessage,
+        UnreliableServerMessage,
     },
-    player::Player,
-    GameTime,
+    net::ConnectionState,
+    player::{Player, PlayerConnectionState, PlayerUpdates},
+    registry::EntityRegistry,
+    GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::{
     collections::{hash_map::Entry, HashMap},
     net::{IpAddr, SocketAddr},
+    time::Instant,
 };
 
 const DEFAULT_SERVER_PORT: u16 = 3455;
@@ -36,14 +42,22 @@ pub struct NetworkReader {
 
 #[derive(SystemParam)]
 pub struct UpdateParams<'a> {
+    game_time: ResMut<'a, GameTime>,
+    player_updates: ResMut<'a, PlayerUpdates>,
     spawn_level_object_commands: ResMut<'a, GameCommands<SpawnLevelObject>>,
     despawn_level_object_commands: ResMut<'a, GameCommands<DespawnLevelObject>>,
     spawn_player_commands: ResMut<'a, GameCommands<SpawnPlayer>>,
     despawn_player_commands: ResMut<'a, GameCommands<DespawnPlayer>>,
 }
 
+#[derive(SystemParam)]
+pub struct NetworkParams<'a> {
+    net: ResMut<'a, NetworkResource>,
+    connection_state: ResMut<'a, ConnectionState>,
+}
+
 pub fn process_network_events(
-    mut net: ResMut<NetworkResource>,
+    mut network_params: NetworkParams,
     mut state: Local<NetworkReader>,
     network_events: Res<Events<NetworkEvent>>,
     mut current_player_net_id: ResMut<CurrentPlayerNetId>,
@@ -54,6 +68,12 @@ pub fn process_network_events(
         match event {
             NetworkEvent::Connected(handle) => {
                 log::info!("Connected: {}", handle);
+                if let Err(err) = network_params
+                    .net
+                    .send_message(*handle, ReliableClientMessage::Handshake)
+                {
+                    log::error!("Failed to send a Handshake message: {:?}", err);
+                }
             }
             NetworkEvent::Disconnected(handle) => {
                 log::info!("Disconnected: {}", handle);
@@ -62,7 +82,7 @@ pub fn process_network_events(
         }
     }
 
-    for (handle, connection) in net.connections.iter_mut() {
+    for (handle, connection) in network_params.net.connections.iter_mut() {
         let channels = connection.channels().unwrap();
 
         while let Some(message) = channels.recv::<UnreliableServerMessage>() {
@@ -73,8 +93,18 @@ pub fn process_network_events(
             );
 
             match message {
-                UnreliableServerMessage::DeltaUpdate(_update) => {
-                    // TODO: apply delta updates.
+                UnreliableServerMessage::DeltaUpdate(update) => {
+                    network_params
+                        .connection_state
+                        .acknowledge_incoming(update.frame_number)
+                        .expect("todo disconnect");
+                    if let (Some(ack_frame_number), ack_bit_set) = update.acknowledgments {
+                        network_params
+                            .connection_state
+                            .apply_outcoming_acknowledgements(ack_frame_number, ack_bit_set)
+                            .expect("todo disconnect");
+                    }
+                    process_delta_update_message(update, &mut players, &mut update_params);
                 }
             }
         }
@@ -126,27 +156,103 @@ pub fn process_network_events(
             }
         }
 
-        while channels.recv::<ClientMessage>().is_some() {
+        while channels.recv::<UnreliableClientMessage>().is_some() {
             log::error!("Unexpected ClientMessage received on [{}]", handle);
         }
     }
 }
 
-pub fn send_network_updates(time: Res<GameTime>, mut net: ResMut<NetworkResource>) {
+#[derive(SystemParam)]
+pub struct PlayerUpdateParams<'a> {
+    player_directions: Query<'a, &'a PlayerDirection>,
+}
+
+pub fn send_network_updates(
+    time: Res<GameTime>,
+    mut network_params: NetworkParams,
+    current_player_net_id: Res<CurrentPlayerNetId>,
+    player_registry: Res<EntityRegistry<PlayerNetId>>,
+    player_update_params: PlayerUpdateParams,
+) {
     log::trace!("Broadcast updates for frame {}", time.game_frame);
-    let (connection_handle, address) = match net.connections.iter_mut().next() {
+    let (connection_handle, address) = match network_params.net.connections.iter_mut().next() {
         Some((&handle, connection)) => (handle, connection.remote_address()),
         None => return,
     };
-    let result = net.send_message(
+    let player_entity = match current_player_net_id.0 {
+        Some(net_id) => player_registry
+            .get_entity(net_id)
+            .expect("Expected a registered entity for the player"),
+        None => return,
+    };
+
+    let player_direction = player_update_params
+        .player_directions
+        .get(player_entity)
+        .expect("Expected a created spawned player");
+
+    network_params
+        .connection_state
+        .add_outcoming_packet(time.game_frame, Instant::now())
+        .expect("todo disconnect");
+    let first_unacknowledged_frame = network_params
+        .connection_state
+        .first_unacknowledged_outcoming_packet()
+        .expect("Expected at least the new packet for the current frame");
+    let mut inputs: Vec<PlayerInput> = Vec::new();
+    // TODO: deduplicate updates (the same code is written for server).
+    for (frame_number, &direction) in player_direction
+        .buffer
+        .iter_with_interpolation()
+        // TODO: should client always sent redundant inputs or only the current ones (unless packet loss is detected)?
+        .skip_while(|(frame_number, _)| *frame_number < first_unacknowledged_frame)
+    {
+        if Some(direction) != inputs.last().map(|i| i.direction) {
+            inputs.push(PlayerInput {
+                frame_number,
+                direction,
+            });
+        }
+    }
+
+    let result = network_params.net.send_message(
         connection_handle,
-        ClientMessage::PlayerInput(PlayerInput {
-            frame_number: FrameNumber::new(0),
-            direction: Vec2::new(0.0, 0.0),
+        UnreliableClientMessage::PlayerUpdate(PlayerUpdate {
+            frame_number: time.game_frame,
+            acknowledgments: network_params.connection_state.incoming_acknowledgments(),
+            inputs,
         }),
     );
     if let Err(err) = result {
         log::error!("Failed to send a message to {:?}: {:?}", address, err);
+    }
+}
+
+fn process_delta_update_message(
+    delta_update: DeltaUpdate,
+    players: &mut HashMap<PlayerNetId, Player>,
+    update_params: &mut UpdateParams,
+) {
+    for player_state in delta_update.players {
+        players.entry(player_state.net_id).or_insert_with(|| {
+            update_params.spawn_player_commands.push(SpawnPlayer {
+                net_id: player_state.net_id,
+                start_position: player_state.position,
+            });
+            Player {
+                nickname: "?".to_owned(),
+                state: PlayerConnectionState::Connecting,
+            }
+        });
+
+        let updates = update_params.player_updates.get_mut(
+            player_state.net_id,
+            delta_update.frame_number,
+            COMPONENT_FRAMEBUFFER_LIMIT,
+        );
+        for input in player_state.inputs {
+            updates.insert(input.frame_number, Some(input.direction));
+        }
     }
 }
 
@@ -162,9 +268,12 @@ fn process_start_game_message(
             start_game.net_id,
             Player {
                 nickname: start_game.nickname,
-                connected_at: start_game.game_state.frame_number,
+                state: PlayerConnectionState::Playing,
             },
         );
+        update_params.game_time.generation += 1;
+        update_params.game_time.game_frame = start_game.game_state.frame_number;
+        update_params.game_time.simulation_frame = start_game.game_state.frame_number;
         update_params.spawn_player_commands.push(SpawnPlayer {
             net_id: start_game.net_id,
             start_position,
@@ -179,7 +288,7 @@ fn process_start_game_message(
                 player.net_id,
                 Player {
                     nickname: player.nickname,
-                    connected_at: player.connected_at,
+                    state: PlayerConnectionState::Playing,
                 },
             );
             update_params.spawn_player_commands.push(SpawnPlayer {
@@ -222,7 +331,7 @@ fn process_connected_player_message(
         });
         Player {
             nickname: connected_player.nickname,
-            connected_at: connected_player.connected_at,
+            state: PlayerConnectionState::Playing,
         }
     });
 }
