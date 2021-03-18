@@ -37,11 +37,15 @@ pub fn spawn_players(
         );
         let player_entity = PlayerClientFactory::create(commands, &mut pbr_client_params, &());
         commands
-            .with(RigidBodyBuilder::new_dynamic().translation(0.0, PLAYER_SIZE / 2.0, 0.0))
+            .with(
+                RigidBodyBuilder::new_dynamic()
+                    .translation(0.0, PLAYER_SIZE / 2.0, 0.0)
+                    .lock_rotations(),
+            )
             .with(ColliderBuilder::cuboid(
-                PLAYER_SIZE,
-                PLAYER_SIZE,
-                PLAYER_SIZE,
+                PLAYER_SIZE / 2.0,
+                PLAYER_SIZE / 2.0,
+                PLAYER_SIZE / 2.0,
             ))
             .with(Position::new(command.start_position, time.simulation_frame))
             .with(PlayerDirection::new(Vec2::zero(), time.simulation_frame))

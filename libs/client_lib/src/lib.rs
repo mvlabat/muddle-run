@@ -67,12 +67,12 @@ fn basic_scene(commands: &mut Commands) {
     // Add entities to the scene.
     commands
         .spawn(LightBundle {
-            transform: Transform::from_translation(Vec3::new(4.0, 8.0, 4.0)),
+            transform: Transform::from_translation(Vec3::new(4.0, 10.0, -14.0)),
             ..Default::default()
         })
         // Camera.
         .spawn(Camera3dBundle {
-            transform: Transform::from_translation(Vec3::new(3.0, 5.0, -8.0))
+            transform: Transform::from_translation(Vec3::new(5.0, 10.0, -14.0))
                 .looking_at(Vec3::default(), Vec3::unit_y()),
             ..Default::default()
         });
