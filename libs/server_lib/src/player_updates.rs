@@ -1,11 +1,7 @@
-use crate::net::PlayerConnections;
-use bevy::{
-    ecs::{Res, ResMut},
-    log,
-};
+use bevy::{ecs::ResMut, log};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
-    messages::{DeltaUpdate, PlayerInput, PlayerNetId, PlayerState},
+    messages::{PlayerInput, PlayerNetId},
     player::{PlayerDirectionUpdate, PlayerUpdates},
     GameTime, SIMULATIONS_PER_SECOND,
 };
@@ -80,45 +76,5 @@ pub fn process_player_input_updates(
                 );
             }
         }
-    }
-}
-
-pub fn prepare_client_updates(
-    time: Res<GameTime>,
-    player_connections: Res<PlayerConnections>,
-    updates: Res<PlayerUpdates>,
-    mut deferred_server_updates: ResMut<DeferredUpdates<DeltaUpdate>>,
-) {
-    // TODO: actual delta updates.
-    for (&connection_player_net_id, _) in player_connections.iter() {
-        let players = updates
-            .direction
-            .iter()
-            .map(|(&player_net_id, updates_buffer)| {
-                let mut inputs = Vec::new();
-                if let Some((frame_number, player_input)) =
-                    updates_buffer.get_with_interpolation(time.game_frame)
-                {
-                    inputs.push(PlayerInput {
-                        frame_number,
-                        direction: player_input.direction,
-                    });
-                }
-                PlayerState {
-                    net_id: player_net_id,
-                    position: Default::default(), // TODO: position
-                    inputs,
-                }
-            })
-            .collect();
-        deferred_server_updates.push(
-            connection_player_net_id,
-            DeltaUpdate {
-                frame_number: time.game_frame,
-                acknowledgments: (None, 0), // to fill in the `send_network_updates` system
-                players,
-                confirmed_actions: Vec::new(),
-            },
-        );
     }
 }

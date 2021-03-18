@@ -1,5 +1,5 @@
 use bevy::{
-    math::{Mat4, Vec2, Vec3, Vec4},
+    math::{Mat4, Vec2, Vec4},
     window::Window,
 };
 use bevy_rapier3d::rapier::{geometry::Ray, na};
@@ -38,30 +38,4 @@ pub fn cursor_pos_to_ray(
         camera_pos,
         na::Vector3::from_row_slice(ray_world.normalize().as_ref()),
     )
-}
-
-pub fn intersect_ray_plane(ray: &Ray, size: f32) -> Option<Vec3> {
-    let plane_normal = Vec3::new(0.0, 1.0, 0.0);
-    let ray_origin = Vec3::new(ray.origin.x, ray.origin.y, ray.origin.z);
-    let ray_direction = Vec3::new(ray.dir.x, ray.dir.y, ray.dir.z);
-
-    let denominator = plane_normal.dot(ray_direction);
-    if denominator.abs() > f32::EPSILON {
-        let t = (-ray_origin).dot(plane_normal) / denominator;
-        if t >= f32::EPSILON {
-            return Some(ray_origin + t * ray_direction).and_then(|intersection_point| {
-                // Checks that the intersection point is within the plane. Assumes plane's origin
-                // at zero coordinates.
-                if intersection_point.y.abs() <= f32::EPSILON
-                    && intersection_point.x.abs() <= size / 2.0
-                    && intersection_point.z.abs() <= size / 2.0
-                {
-                    Some(intersection_point)
-                } else {
-                    None
-                }
-            });
-        }
-    }
-    None
 }

@@ -35,7 +35,7 @@ pub fn read_movement_updates(
                 .position
                 .get(&player_net_id)
                 .and_then(|buffer| buffer.get(time.game_frame))
-                .and_then(|p| p.clone())
+                .and_then(|p| *p)
             {
                 let current_position = *position
                     .buffer
