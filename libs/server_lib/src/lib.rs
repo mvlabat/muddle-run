@@ -2,7 +2,7 @@ use crate::{
     net::{
         process_network_events, send_network_updates, startup, NetworkReader, PlayerConnections,
     },
-    player_updates::{process_player_input_updates, AcknowledgedInputs, DeferredUpdates},
+    player_updates::{process_player_input_updates, DeferredUpdates},
 };
 use bevy::prelude::*;
 use mr_shared_lib::{
@@ -56,7 +56,6 @@ impl Plugin for MuddleServerPlugin {
         resources.get_or_insert_with(PlayerConnections::default);
         resources.get_or_insert_with(HashMap::<u32, ConnectionState>::default);
         resources.get_or_insert_with(DeferredUpdates::<PlayerInput>::default);
-        resources.get_or_insert_with(AcknowledgedInputs::default);
     }
 }
 

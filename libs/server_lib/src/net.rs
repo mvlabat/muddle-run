@@ -77,6 +77,7 @@ pub fn process_network_events(
                     net_id: player_net_id,
                     start_position: Vec2::zero(),
                 });
+                // Add an initial update to have something to extrapolate from.
                 update_params.deferred_player_updates.push(
                     player_net_id,
                     PlayerInput {
@@ -352,9 +353,24 @@ fn create_player_state(
         }
     }
 
+    let start_position_frame = inputs.first().map_or_else(
+        || std::cmp::max(updates_start_frame, position.buffer.start_frame()),
+        |input| input.frame_number,
+    );
+
     PlayerState {
         net_id,
-        position: *position.buffer.get(updates_start_frame).unwrap(),
+        position: *position
+            .buffer
+            .get(start_position_frame)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Player ({}) position for frame {} doesn't exist (current frame: {})",
+                    net_id.0,
+                    start_position_frame.value(),
+                    time.game_frame.value()
+                )
+            }),
         inputs,
     }
 }

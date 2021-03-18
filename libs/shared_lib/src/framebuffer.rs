@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 
 pub type FrameNumber = WrappedCounter<u16>;
 
+#[derive(Debug)]
 pub struct Framebuffer<T> {
     start_frame: FrameNumber,
     /// Stores a frame number as the first element of the tuple.
@@ -67,6 +68,11 @@ impl<T> Framebuffer<T> {
             .get((frame_number - self.start_frame).value() as usize)
     }
 
+    pub fn get_mut(&mut self, frame_number: FrameNumber) -> Option<&mut T> {
+        self.buffer
+            .get_mut((frame_number - self.start_frame).value() as usize)
+    }
+
     pub fn last(&self) -> Option<&T> {
         self.buffer.back()
     }
@@ -75,6 +81,14 @@ impl<T> Framebuffer<T> {
         let start_frame = self.start_frame;
         self.buffer
             .iter()
+            .enumerate()
+            .map(move |(i, v)| (FrameNumber::new(i as u16) + start_frame, v))
+    }
+
+    pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = (FrameNumber, &mut T)> {
+        let start_frame = self.start_frame;
+        self.buffer
+            .iter_mut()
             .enumerate()
             .map(move |(i, v)| (FrameNumber::new(i as u16) + start_frame, v))
     }
@@ -140,7 +154,8 @@ impl<T> Framebuffer<Option<T>> {
         &self,
         mut frame_number: FrameNumber,
     ) -> Option<(FrameNumber, &T)> {
-        let max_frame = self.start_frame + self.limit - FrameNumber::new(1);
+        let max_frame = self.start_frame + FrameNumber::new(self.buffer.len() as u16) + self.limit
+            - FrameNumber::new(1);
         if frame_number > max_frame {
             log::warn!(
                 "Requested frame {} is larger than max frame: {}",

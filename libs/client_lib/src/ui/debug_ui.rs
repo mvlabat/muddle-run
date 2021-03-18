@@ -15,6 +15,7 @@ use bevy_rapier3d::{
 use mr_shared_lib::{
     game::components::{PlayerDirection, Position},
     messages::PlayerNetId,
+    net::ConnectionState,
     player::Player,
     registry::EntityRegistry,
 };
@@ -36,6 +37,7 @@ pub struct DebugUiState {
 pub fn debug_ui(
     mut egui_context: ResMut<EguiContext>,
     mut debug_ui_state: ResMut<DebugUiState>,
+    connection_state: Res<ConnectionState>,
     diagnostics: Res<Diagnostics>,
 ) {
     let ctx = &mut egui_context.ctx;
@@ -64,6 +66,17 @@ pub fn debug_ui(
                         debug_ui_state.fps_history_len,
                     );
                 });
+
+            ui.separator();
+            ui.label(format!("RTT: {}ms", connection_state.rtt_millis() as usize));
+            ui.label(format!(
+                "Packet loss: {:.2}%",
+                connection_state.packet_loss() * 100.0
+            ));
+            ui.label(format!(
+                "Packet loss: {:.2}%",
+                connection_state.jitter() * 100.0
+            ));
         });
     }
 }

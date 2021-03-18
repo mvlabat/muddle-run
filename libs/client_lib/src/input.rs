@@ -7,7 +7,10 @@ use bevy::{
     render::camera::CameraProjection,
 };
 use bevy_rapier3d::{na, rapier::geometry::Ray};
-use mr_shared_lib::{player::PlayerUpdates, GameTime, COMPONENT_FRAMEBUFFER_LIMIT};
+use mr_shared_lib::{
+    player::{PlayerDirectionUpdate, PlayerUpdates},
+    GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
+};
 
 #[derive(Default)]
 pub struct EventReaderState {
@@ -53,8 +56,11 @@ pub fn track_input_events(
 
     // Keyboard input.
     if let Some(player_net_id) = current_player_net_id.0 {
-        let updates =
-            player_updates.get_mut(player_net_id, time.game_frame, COMPONENT_FRAMEBUFFER_LIMIT);
+        let direction_updates = player_updates.get_direction_mut(
+            player_net_id,
+            time.game_frame,
+            COMPONENT_FRAMEBUFFER_LIMIT,
+        );
         let mut direction = Vec2::zero();
         if input.keyboard_input.pressed(KeyCode::A) || input.keyboard_input.pressed(KeyCode::Left) {
             direction.x += 1.0;
@@ -70,7 +76,13 @@ pub fn track_input_events(
         if input.keyboard_input.pressed(KeyCode::S) || input.keyboard_input.pressed(KeyCode::Down) {
             direction.y -= 1.0;
         }
-        updates.insert(time.game_frame, Some(direction));
+        direction_updates.insert(
+            time.game_frame,
+            Some(PlayerDirectionUpdate {
+                direction,
+                is_processed_client_input: Some(false),
+            }),
+        );
     }
     for ev in event_reader_state.keys.iter(&input.ev_keys) {
         if ev.state.is_pressed() {

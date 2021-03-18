@@ -4,7 +4,7 @@ use crate::{
             ClientFactory, PbrClientParams, PlaneClientFactory, PlayerClientFactory,
         },
         commands::{GameCommands, SpawnLevelObject, SpawnPlayer},
-        components::{PlayerDirection, Position},
+        components::{PlayerDirection, Position, Spawned},
         level::{LevelObjectDesc, LevelState},
     },
     messages::{EntityNetId, PlayerNetId},
@@ -32,7 +32,7 @@ pub fn spawn_players(
 
         log::info!(
             "Spawning a new player (frame {}): {}",
-            time.game_frame,
+            time.simulation_frame,
             command.net_id.0
         );
         let player_entity = PlayerClientFactory::create(commands, &mut pbr_client_params, &());
@@ -43,8 +43,9 @@ pub fn spawn_players(
                 PLAYER_SIZE,
                 PLAYER_SIZE,
             ))
-            .with(Position::new(command.start_position, time.game_frame))
-            .with(PlayerDirection::new(Vec2::zero(), time.game_frame));
+            .with(Position::new(command.start_position, time.simulation_frame))
+            .with(PlayerDirection::new(Vec2::zero(), time.simulation_frame))
+            .with(Spawned::new(time.simulation_frame));
         player_entities.register(command.net_id, player_entity);
     }
 }
@@ -72,7 +73,14 @@ pub fn spawn_level_objects(
                 PlaneClientFactory::create(commands, &mut pbr_client_params, &plane)
             }
         };
+        commands.with(Spawned::new(command.frame_number));
         object_entities.register(command.object.net_id, object_entity);
+    }
+}
+
+pub fn mark_mature_entities(game_time: Res<GameTime>, mut spawned_entities: Query<&mut Spawned>) {
+    for mut spawned in spawned_entities.iter_mut() {
+        spawned.mark_if_mature(game_time.game_frame);
     }
 }
 

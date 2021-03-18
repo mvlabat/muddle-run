@@ -215,6 +215,11 @@ impl ConnectionState {
             }
             acknowledgment_bit_set <<= 1;
         }
+        // let ack = &mut self.outcoming_packets_acks[frames_to_set];
+        // if ack.acknowledged.is_none() {
+        //     assert_eq!(ack.frame_number, frame_number);
+        //     ack.acknowledged = Some(now);
+        // }
 
         self.update_stats(frame_number);
 
@@ -229,6 +234,7 @@ impl ConnectionState {
             .position(|ack| ack.frame_number == frame_number)
             .map(|pos| pos + 1)
             .unwrap_or(0);
+
         let outcoming_unacknowledged_count = self
             .outcoming_packets_acks
             .iter()

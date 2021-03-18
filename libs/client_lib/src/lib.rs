@@ -16,6 +16,8 @@ pub struct MuddleClientPlugin;
 impl Plugin for MuddleClientPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         let input_stage = SystemStage::serial()
+            // Processing network events should happen before tracking input
+            // because we reset current's player inputs on each delta update.
             .with_system(process_network_events.system())
             .with_system(input::track_input_events.system())
             .with_system(input::cast_mouse_ray.system());

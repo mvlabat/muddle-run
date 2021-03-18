@@ -10,7 +10,7 @@ use crate::{
         },
         level::LevelState,
         movement::{player_movement, read_movement_updates, sync_position},
-        spawn::{spawn_level_objects, spawn_players},
+        spawn::{mark_mature_entities, spawn_level_objects, spawn_players},
     },
     net::network_setup,
     player::{Player, PlayerUpdates},
@@ -51,14 +51,19 @@ pub mod registry;
 
 // Constants.
 pub mod stage {
-    pub const INPUT: &str = "mr_shared_input";
-    pub const SCHEDULE: &str = "mr_shared_schedule";
+    pub const WRITE_INPUT_UPDATES: &str = "mr_shared_write_input_updates";
+
+    pub const MAIN_SCHEDULE: &str = "mr_shared_main_schedule";
+    pub const READ_INPUT_UPDATES: &str = "mr_shared_read_input_updates";
+    pub const BROADCAST_UPDATES: &str = "mr_shared_broadcast_updates";
+    pub const POST_SIMULATIONS: &str = "mr_shared_post_simulations";
+
+    pub const SIMULATION_SCHEDULE: &str = "mr_shared_simulation_schedule";
     pub const SPAWN: &str = "mr_shared_spawn";
     pub const PRE_GAME: &str = "mr_shared_pre_game";
     pub const GAME: &str = "mr_shared_game";
     pub const PHYSICS: &str = "mr_shared_physics";
     pub const POST_PHYSICS: &str = "mr_shared_post_physics";
-    pub const BROADCAST_UPDATES: &str = "mr_shared_broadcast_updates";
     pub const POST_GAME: &str = "mr_shared_post_game";
 }
 pub const PLAYER_SIZE: f32 = 1.0;
@@ -97,10 +102,8 @@ impl Plugin for MuddleSharedPlugin {
             .lock()
             .expect("Can't initialize the plugin more than once");
 
-        let schedule = Schedule::default()
-            .with_run_criteria(FixedTimestep::steps_per_second(
-                SIMULATIONS_PER_SECOND as f64,
-            ))
+        let simulation_schedule = Schedule::default()
+            .with_run_criteria(SimulationTickRunCriteria::default())
             .with_stage(
                 stage::SPAWN,
                 SystemStage::parallel()
@@ -110,7 +113,6 @@ impl Plugin for MuddleSharedPlugin {
             .with_stage(
                 stage::PRE_GAME,
                 SystemStage::parallel()
-                    .with_system(read_movement_updates.system())
                     .with_system(physics::create_body_and_collider_system.system())
                     .with_system(physics::create_joints_system.system()),
             )
@@ -130,20 +132,42 @@ impl Plugin for MuddleSharedPlugin {
                     .with_system(physics::sync_transform_system.system()),
             )
             .with_stage(
+                stage::POST_GAME,
+                SystemStage::parallel().with_system(tick_simulation_frame.system()),
+            );
+
+        let main_schedule = Schedule::default()
+            .with_run_criteria(FixedTimestep::steps_per_second(
+                SIMULATIONS_PER_SECOND as f64,
+            ))
+            .with_stage(stage::SIMULATION_SCHEDULE, simulation_schedule)
+            .with_stage(
                 stage::BROADCAST_UPDATES,
                 broadcast_updates_stage
                     .take()
                     .expect("Can't initialize the plugin more than once")
-                    .with_run_criteria(TickRunCriteria::new(TICKS_PER_NETWORK_BROADCAST)),
+                    .with_run_criteria(GameTickRunCriteria::new(TICKS_PER_NETWORK_BROADCAST)),
             )
             .with_stage(
-                stage::POST_GAME,
-                SystemStage::parallel().with_system(tick.system()),
+                stage::POST_SIMULATIONS,
+                SystemStage::serial()
+                    .with_system(tick_game_frame.system())
+                    .with_system(mark_mature_entities.system()),
             );
-        builder.add_stage_before(bevy::app::stage::UPDATE, stage::SCHEDULE, schedule);
+
         builder.add_stage_before(
-            stage::SCHEDULE,
-            stage::INPUT,
+            bevy::app::stage::UPDATE,
+            stage::MAIN_SCHEDULE,
+            main_schedule,
+        );
+        builder.add_stage_before(
+            stage::MAIN_SCHEDULE,
+            stage::READ_INPUT_UPDATES,
+            SystemStage::parallel().with_system(read_movement_updates.system()),
+        );
+        builder.add_stage_before(
+            stage::READ_INPUT_UPDATES,
+            stage::WRITE_INPUT_UPDATES,
             input_stage
                 .take()
                 .expect("Can't initialize the plugin more than once"),
@@ -189,6 +213,9 @@ impl Plugin for RapierResourcesPlugin {
     }
 }
 
+// TODO: split into two resources for simulation and game frames to live separately?
+//  This will probably help with avoiding bugs where we mistakenly use game frame
+//  instead of simulation frame.
 #[derive(Default, Debug)]
 pub struct GameTime {
     pub generation: usize,
@@ -196,7 +223,7 @@ pub struct GameTime {
     pub game_frame: FrameNumber,
 }
 
-pub struct TickRunCriteria {
+pub struct GameTickRunCriteria {
     system_id: SystemId,
     ticks_per_step: FrameNumber,
     last_generation: Option<usize>,
@@ -205,7 +232,7 @@ pub struct TickRunCriteria {
     archetype_access: TypeAccess<ArchetypeComponent>,
 }
 
-impl TickRunCriteria {
+impl GameTickRunCriteria {
     pub fn new(ticks_per_step: u16) -> Self {
         Self {
             system_id: SystemId::new(),
@@ -224,20 +251,22 @@ impl TickRunCriteria {
         }
 
         if self.last_tick + self.ticks_per_step <= time.game_frame {
+            trace!("Run and loop a game schedule (game {})", time.game_frame);
             self.last_tick += self.ticks_per_step;
             ShouldRun::YesAndLoop
         } else {
+            trace!("Don't run a game schedule (game {})", time.game_frame);
             ShouldRun::No
         }
     }
 }
 
-impl System for TickRunCriteria {
+impl System for GameTickRunCriteria {
     type In = ();
     type Out = ShouldRun;
 
     fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed(std::any::type_name::<TickRunCriteria>())
+        Cow::Borrowed(std::any::type_name::<GameTickRunCriteria>())
     }
 
     fn id(&self) -> SystemId {
@@ -277,8 +306,113 @@ impl System for TickRunCriteria {
     }
 }
 
-pub fn tick(mut time: ResMut<GameTime>) {
-    log::trace!("Tick: {}", time.game_frame.value());
+pub struct SimulationTickRunCriteria {
+    system_id: SystemId,
+    last_game_frame: Option<FrameNumber>,
+    last_tick: FrameNumber,
+    resource_access: TypeAccess<TypeId>,
+    archetype_access: TypeAccess<ArchetypeComponent>,
+}
+
+impl Default for SimulationTickRunCriteria {
+    fn default() -> Self {
+        Self {
+            system_id: SystemId::new(),
+            last_game_frame: None,
+            last_tick: FrameNumber::new(0),
+            resource_access: Default::default(),
+            archetype_access: Default::default(),
+        }
+    }
+}
+
+impl SimulationTickRunCriteria {
+    pub fn update(&mut self, time: &GameTime) -> ShouldRun {
+        // Checking that a game frame has changed will make us avoid panicking in case we rewind
+        // simulation frame just 1 frame back.
+        if self.last_game_frame != Some(time.game_frame) {
+            self.last_game_frame = Some(time.game_frame);
+        } else if self.last_tick == time.simulation_frame {
+            panic!(
+                "Simulation frame hasn't advanced: {}",
+                time.simulation_frame
+            );
+        }
+        self.last_tick = time.simulation_frame;
+
+        if self.last_tick <= time.game_frame {
+            trace!(
+                "Run and loop a simulation schedule (simulation: {}, game {})",
+                time.simulation_frame,
+                time.game_frame
+            );
+            ShouldRun::YesAndLoop
+        } else {
+            trace!(
+                "Don't run a simulation schedule (simulation: {}, game {})",
+                time.simulation_frame,
+                time.game_frame
+            );
+            ShouldRun::No
+        }
+    }
+}
+
+impl System for SimulationTickRunCriteria {
+    type In = ();
+    type Out = ShouldRun;
+
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed(std::any::type_name::<SimulationTickRunCriteria>())
+    }
+
+    fn id(&self) -> SystemId {
+        self.system_id
+    }
+
+    fn update(&mut self, _world: &World) {}
+
+    fn archetype_component_access(&self) -> &TypeAccess<ArchetypeComponent> {
+        &self.archetype_access
+    }
+
+    fn resource_access(&self) -> &TypeAccess<TypeId> {
+        &self.resource_access
+    }
+
+    fn thread_local_execution(&self) -> ThreadLocalExecution {
+        ThreadLocalExecution::Immediate
+    }
+
+    unsafe fn run_unsafe(
+        &mut self,
+        _input: Self::In,
+        _world: &World,
+        resources: &Resources,
+    ) -> Option<Self::Out> {
+        let time = resources.get::<GameTime>().unwrap();
+        let result = self.update(&time);
+
+        Some(result)
+    }
+
+    fn run_thread_local(&mut self, _world: &mut World, _resources: &mut Resources) {}
+
+    fn initialize(&mut self, _world: &mut World, _resources: &mut Resources) {
+        self.resource_access.add_read(TypeId::of::<GameTime>());
+    }
+}
+
+pub fn tick_simulation_frame(mut time: ResMut<GameTime>) {
+    log::trace!(
+        "Concluding simulation frame tick: {}",
+        time.simulation_frame.value()
+    );
+    time.simulation_frame += FrameNumber::new(1);
+}
+
+pub fn tick_game_frame(mut time: ResMut<GameTime>) {
+    log::trace!("Concluding game frame tick: {}", time.game_frame.value());
     time.game_frame += FrameNumber::new(1);
 }
 

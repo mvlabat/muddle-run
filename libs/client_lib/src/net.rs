@@ -2,6 +2,7 @@ use crate::CurrentPlayerNetId;
 use bevy::{ecs::SystemParam, log, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use mr_shared_lib::{
+    framebuffer::FrameNumber,
     game::{
         commands::{
             DespawnLevelObject, DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer,
@@ -14,12 +15,12 @@ use mr_shared_lib::{
         UnreliableServerMessage,
     },
     net::ConnectionState,
-    player::{Player, PlayerConnectionState, PlayerUpdates},
+    player::{Player, PlayerConnectionState, PlayerDirectionUpdate, PlayerUpdates},
     registry::EntityRegistry,
-    GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
+    GameTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
 };
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::HashMap,
     net::{IpAddr, SocketAddr},
     time::Instant,
 };
@@ -104,7 +105,13 @@ pub fn process_network_events(
                             .apply_outcoming_acknowledgements(ack_frame_number, ack_bit_set)
                             .expect("todo disconnect");
                     }
-                    process_delta_update_message(update, &mut players, &mut update_params);
+                    process_delta_update_message(
+                        update,
+                        &network_params.connection_state,
+                        current_player_net_id.0,
+                        &mut players,
+                        &mut update_params,
+                    );
                 }
             }
         }
@@ -130,11 +137,7 @@ pub fn process_network_events(
                     );
                 }
                 ReliableServerMessage::ConnectedPlayer(connected_player) => {
-                    process_connected_player_message(
-                        connected_player,
-                        &mut players,
-                        &mut update_params,
-                    );
+                    process_connected_player_message(connected_player, &mut players);
                 }
                 ReliableServerMessage::DisconnectedPlayer(disconnected_player) => {
                     process_disconnected_player_message(
@@ -144,11 +147,19 @@ pub fn process_network_events(
                     );
                 }
                 ReliableServerMessage::SpawnLevelObject(spawn_level_object) => {
+                    update_params.game_time.simulation_frame = std::cmp::min(
+                        spawn_level_object.frame_number,
+                        update_params.game_time.simulation_frame,
+                    );
                     update_params
                         .spawn_level_object_commands
                         .push(spawn_level_object);
                 }
                 ReliableServerMessage::DespawnLevelObject(despawn_level_object) => {
+                    update_params.game_time.simulation_frame = std::cmp::min(
+                        despawn_level_object.frame_number,
+                        update_params.game_time.simulation_frame,
+                    );
                     update_params
                         .despawn_level_object_commands
                         .push(despawn_level_object);
@@ -230,9 +241,13 @@ pub fn send_network_updates(
 
 fn process_delta_update_message(
     delta_update: DeltaUpdate,
+    connection_state: &ConnectionState,
+    current_player_net_id: Option<PlayerNetId>,
     players: &mut HashMap<PlayerNetId, Player>,
     update_params: &mut UpdateParams,
 ) {
+    let mut rewind_to_simulation_frame = delta_update.frame_number;
+
     for player_state in delta_update.players {
         players.entry(player_state.net_id).or_insert_with(|| {
             update_params.spawn_player_commands.push(SpawnPlayer {
@@ -245,14 +260,65 @@ fn process_delta_update_message(
             }
         });
 
-        let updates = update_params.player_updates.get_mut(
+        let estimated_frames_diff =
+            connection_state.rtt_millis() / 2.0 / 1000.0 * SIMULATIONS_PER_SECOND as f32;
+        let frames_to_compensate = if current_player_net_id == Some(player_state.net_id) {
+            FrameNumber::new(estimated_frames_diff as u16)
+        } else {
+            FrameNumber::new(0)
+        };
+
+        let direction_updates = update_params.player_updates.get_direction_mut(
             player_state.net_id,
             delta_update.frame_number,
             COMPONENT_FRAMEBUFFER_LIMIT,
         );
+        let frame_to_update_position = if let Some(earliest_input) = player_state.inputs.first() {
+            for (_, update) in direction_updates
+                .iter_mut()
+                .skip_while(|(frame_number, _)| earliest_input.frame_number < *frame_number)
+            {
+                let is_unactual_client_input = update.as_ref().map_or(false, |update| {
+                    update.is_processed_client_input != Some(false)
+                });
+                if is_unactual_client_input {
+                    *update = None;
+                }
+            }
+            earliest_input.frame_number
+        } else {
+            delta_update.frame_number
+        };
         for input in player_state.inputs {
-            updates.insert(input.frame_number, Some(input.direction));
+            direction_updates.insert(
+                input.frame_number - frames_to_compensate,
+                Some(PlayerDirectionUpdate {
+                    direction: input.direction,
+                    is_processed_client_input: None,
+                }),
+            );
+            rewind_to_simulation_frame =
+                std::cmp::min(rewind_to_simulation_frame, input.frame_number);
         }
+
+        let position_updates = update_params.player_updates.get_position_mut(
+            player_state.net_id,
+            delta_update.frame_number,
+            COMPONENT_FRAMEBUFFER_LIMIT,
+        );
+        position_updates.insert(
+            frame_to_update_position - frames_to_compensate,
+            Some(player_state.position),
+        );
+    }
+
+    // There's no need to rewind if we haven't started the game.
+    // TODO: deduce whether we started the game or not from some other state.
+    if current_player_net_id.is_some() {
+        update_params.game_time.simulation_frame = std::cmp::min(
+            update_params.game_time.simulation_frame,
+            rewind_to_simulation_frame,
+        );
     }
 }
 
@@ -312,28 +378,20 @@ fn process_start_game_message(
 fn process_connected_player_message(
     connected_player: ConnectedPlayer,
     players: &mut HashMap<PlayerNetId, Player>,
-    update_params: &mut UpdateParams,
 ) {
-    let player_entry = players.entry(connected_player.net_id);
-    if let Entry::Occupied(_) = player_entry {
-        log::error!("Player ({}) is already spawned", connected_player.net_id.0);
-    }
-    player_entry.or_insert_with(|| {
-        log::info!(
-            "A new player ({}) connected: {}",
-            connected_player.net_id.0,
-            connected_player.nickname
-        );
-        // TODO: spawn a player only when getting a delta update with it.
-        update_params.spawn_player_commands.push(SpawnPlayer {
-            net_id: connected_player.net_id,
-            start_position: Vec2::zero(),
-        });
+    // Player is spawned when the first DeltaUpdate with it arrives, so we don't do it here.
+    log::info!(
+        "A new player ({}) connected: {}",
+        connected_player.net_id.0,
+        connected_player.nickname
+    );
+    players.insert(
+        connected_player.net_id,
         Player {
             nickname: connected_player.nickname,
             state: PlayerConnectionState::Playing,
-        }
-    });
+        },
+    );
 }
 
 fn process_disconnected_player_message(

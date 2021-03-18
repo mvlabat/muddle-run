@@ -7,17 +7,40 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct PlayerUpdates {
-    pub updates: HashMap<PlayerNetId, Framebuffer<Option<Vec2>>>,
+    pub direction: HashMap<PlayerNetId, Framebuffer<Option<PlayerDirectionUpdate>>>,
+    /// Is supposed to be filled and used only by clients, as it contains authoritative updates.
+    pub position: HashMap<PlayerNetId, Framebuffer<Option<Vec2>>>,
+}
+
+pub struct PlayerDirectionUpdate {
+    pub direction: Vec2,
+    pub is_processed_client_input: Option<bool>,
 }
 
 impl PlayerUpdates {
-    pub fn get_mut(
+    pub fn get_direction_mut(
+        &mut self,
+        player_net_id: PlayerNetId,
+        frame_number: FrameNumber,
+        default_limit: u16,
+    ) -> &mut Framebuffer<Option<PlayerDirectionUpdate>> {
+        self.direction.entry(player_net_id).or_insert_with(|| {
+            let mut buffer = Framebuffer::new(frame_number, default_limit);
+            buffer.push(Some(PlayerDirectionUpdate {
+                direction: Vec2::zero(),
+                is_processed_client_input: None,
+            }));
+            buffer
+        })
+    }
+
+    pub fn get_position_mut(
         &mut self,
         player_net_id: PlayerNetId,
         frame_number: FrameNumber,
         default_limit: u16,
     ) -> &mut Framebuffer<Option<Vec2>> {
-        self.updates.entry(player_net_id).or_insert_with(|| {
+        self.position.entry(player_net_id).or_insert_with(|| {
             let mut buffer = Framebuffer::new(frame_number, default_limit);
             buffer.push(Some(Vec2::zero()));
             buffer
