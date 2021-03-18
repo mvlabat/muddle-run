@@ -250,6 +250,7 @@ fn process_delta_update_message(
 
     for player_state in delta_update.players {
         players.entry(player_state.net_id).or_insert_with(|| {
+            log::info!("First update with the new player {}", player_state.net_id.0);
             update_params.spawn_player_commands.push(SpawnPlayer {
                 net_id: player_state.net_id,
                 start_position: player_state.position,
@@ -350,6 +351,7 @@ fn process_start_game_message(
 
     for player in start_game.players {
         if let Some(start_position) = player_start_position(player.net_id, &start_game.game_state) {
+            log::info!("Spawning player {}: {}", player.net_id.0, player.nickname);
             players.insert(
                 player.net_id,
                 Player {

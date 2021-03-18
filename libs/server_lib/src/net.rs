@@ -236,81 +236,79 @@ pub fn send_network_updates(
             // If a player has just connected, we need to send `StartGame` message to the connected
             // player and broadcast `ConnectedPlayer` to everyone else.
 
-            if connection_player_net_id == connected_player_net_id {
-                // TODO: prepare the update in another system.
-                let mut players_state = players
-                    .iter()
-                    .map(|(&iter_player_net_id, _player)| {
-                        let entity = players_registry
-                            .get_entity(iter_player_net_id)
-                            .unwrap_or_else(|| {
-                                panic!("Player entity ({:?}) is not registered", iter_player_net_id)
-                            });
-                        if connected_player_net_id == iter_player_net_id {
-                            PlayerState {
-                                net_id: connection_player_net_id,
-                                position: Vec2::zero(),
-                                inputs: Vec::new(),
-                            }
-                        } else {
-                            create_player_state(
-                                iter_player_net_id,
-                                &time,
-                                connection_state,
-                                entity,
-                                &player_entities,
-                            )
+            // TODO: prepare the update in another system.
+            let mut players_state = players
+                .iter()
+                .map(|(&iter_player_net_id, _player)| {
+                    let entity = players_registry
+                        .get_entity(iter_player_net_id)
+                        .unwrap_or_else(|| {
+                            panic!("Player entity ({:?}) is not registered", iter_player_net_id)
+                        });
+                    if connected_player_net_id == iter_player_net_id {
+                        PlayerState {
+                            net_id: connection_player_net_id,
+                            position: Vec2::zero(),
+                            inputs: Vec::new(),
                         }
-                    })
-                    .collect::<Vec<_>>();
-                players_state.push(PlayerState {
-                    net_id: connection_player_net_id,
-                    position: Vec2::zero(),
-                    inputs: Vec::new(),
-                });
+                    } else {
+                        create_player_state(
+                            iter_player_net_id,
+                            &time,
+                            connection_state,
+                            entity,
+                            &player_entities,
+                        )
+                    }
+                })
+                .collect::<Vec<_>>();
+            players_state.push(PlayerState {
+                net_id: connection_player_net_id,
+                position: Vec2::zero(),
+                inputs: Vec::new(),
+            });
 
-                let result = network_params.net.send_message(
-                    connection_handle,
-                    ReliableServerMessage::StartGame(StartGame {
-                        net_id: connection_player_net_id,
-                        nickname: player.nickname.clone(),
-                        objects: level_state
-                            .objects
-                            .iter()
-                            .map(|level_object| SpawnLevelObject {
-                                object: level_object.clone(),
-                                frame_number: time.game_frame,
-                            })
-                            .collect(),
-                        players: players
-                            .iter()
-                            .map(|(&net_id, player)| ConnectedPlayer {
-                                net_id,
-                                nickname: player.nickname.clone(),
-                            })
-                            .collect(),
-                        game_state: DeltaUpdate {
+            let result = network_params.net.send_message(
+                connection_handle,
+                ReliableServerMessage::StartGame(StartGame {
+                    net_id: connection_player_net_id,
+                    nickname: player.nickname.clone(),
+                    objects: level_state
+                        .objects
+                        .iter()
+                        .map(|level_object| SpawnLevelObject {
+                            object: level_object.clone(),
                             frame_number: time.game_frame,
-                            acknowledgments: connection_state.incoming_acknowledgments(),
-                            players: players_state,
-                            confirmed_actions: Vec::new(),
-                        },
-                    }),
-                );
-                if let Err(err) = result {
-                    log::error!("Failed to send a message: {:?}", err);
-                }
-            } else {
-                broadcast_message_to_others(
-                    &mut network_params.net,
-                    &network_params.player_connections,
-                    connection_handle,
-                    &ReliableServerMessage::ConnectedPlayer(ConnectedPlayer {
-                        net_id: connection_player_net_id,
-                        nickname: player.nickname.clone(),
-                    }),
-                );
+                        })
+                        .collect(),
+                    players: players
+                        .iter()
+                        .map(|(&net_id, player)| ConnectedPlayer {
+                            net_id,
+                            nickname: player.nickname.clone(),
+                        })
+                        .collect(),
+                    game_state: DeltaUpdate {
+                        frame_number: time.game_frame,
+                        acknowledgments: connection_state.incoming_acknowledgments(),
+                        players: players_state,
+                        confirmed_actions: Vec::new(),
+                    },
+                }),
+            );
+            if let Err(err) = result {
+                log::error!("Failed to send a message: {:?}", err);
             }
+
+            broadcast_message_to_others(
+                &mut network_params.net,
+                &network_params.player_connections,
+                connection_handle,
+                &ReliableServerMessage::ConnectedPlayer(ConnectedPlayer {
+                    net_id: connection_player_net_id,
+                    nickname: player.nickname.clone(),
+                }),
+            );
         }
     }
 
