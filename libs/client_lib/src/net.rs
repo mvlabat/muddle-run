@@ -291,7 +291,7 @@ fn process_delta_update_message(
     let mut rewind_to_simulation_frame = delta_update.frame_number;
 
     // Calculating how many frames ahead of the server we want to be.
-    let frames_rtt = SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 2.0 / 1000.0;
+    let frames_rtt = SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0;
     update_params.estimated_server_time.frame_number = std::cmp::max(
         update_params.estimated_server_time.frame_number,
         delta_update.frame_number + FrameNumber::new(frames_rtt as u16),
@@ -300,8 +300,8 @@ fn process_delta_update_message(
     let jitter_buffer = SIMULATIONS_PER_SECOND as f32 * connection_state.jitter_millis() / 1000.0;
     let frames_to_be_ahead =
         FrameNumber::new((frames_rtt + packet_loss_buffer + jitter_buffer) as u16);
-    let diff = (update_params.target_frames_ahead.frames_count.value() as i16
-        - frames_to_be_ahead.value() as i16)
+    let diff = (update_params.target_frames_ahead.frames_count.value() as i32
+        - frames_to_be_ahead.value() as i32)
         .abs() as u16;
     if diff > jitter_buffer as u16 {
         update_params.target_frames_ahead.frames_count = frames_to_be_ahead;
