@@ -476,11 +476,11 @@ impl System for SimulationTickRunCriteria {
 pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
     log::trace!(
         "Concluding simulation frame tick: {}, {}",
-        time.player_frame.value(),
-        time.server_frame.value()
+        time.server_frame.value(),
+        time.player_frame.value()
     );
-    time.player_frame += FrameNumber::new(1);
     time.server_frame += FrameNumber::new(1);
+    time.player_frame += FrameNumber::new(1);
 }
 
 pub fn tick_game_frame(mut time: ResMut<GameTime>) {

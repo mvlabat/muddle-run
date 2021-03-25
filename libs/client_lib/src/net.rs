@@ -355,6 +355,12 @@ fn process_delta_update_message(
             delta_update.frame_number,
             COMPONENT_FRAMEBUFFER_LIMIT,
         );
+        log::trace!(
+            "Updating position for player {} (frame_number: {}): {:?}",
+            player_state.net_id.0,
+            frame_to_update_position,
+            player_state.position
+        );
         position_updates.insert(frame_to_update_position, Some(player_state.position));
     }
 
