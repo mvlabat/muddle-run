@@ -76,12 +76,13 @@ pub fn process_network_events(
                 update_params.spawn_player_commands.push(SpawnPlayer {
                     net_id: player_net_id,
                     start_position: Vec2::zero(),
+                    is_player_frame_simulated: false,
                 });
                 // Add an initial update to have something to extrapolate from.
                 update_params.deferred_player_updates.push(
                     player_net_id,
                     PlayerInput {
-                        frame_number: time.game_frame,
+                        frame_number: time.frame_number,
                         direction: Vec2::zero(),
                     },
                 );
@@ -131,7 +132,7 @@ pub fn process_network_events(
                 UnreliableClientMessage::PlayerUpdate(update) => {
                     if let Err(err) = connection_state.acknowledge_incoming(update.frame_number) {
                         // TODO: disconnect players.
-                        log::error!("Failed to acknowledge an incoming packet: {:?}", err);
+                        log::error!("Failed to acknowledge an incoming packet (update frame: {}, current frame: {}): {:?}", update.frame_number, time.frame_number, err);
                         break;
                     }
                     if let (Some(frame_number), ack_bit_set) = update.acknowledgments {
@@ -140,7 +141,9 @@ pub fn process_network_events(
                         {
                             // TODO: disconnect players.
                             log::error!(
-                                "Failed to apply outcoming packet acknowledgments: {:?}",
+                                "Failed to apply outcoming packet acknowledgments (update frame: {}, current frame: {}): {:?}",
+                                update.frame_number,
+                                time.frame_number,
                                 err
                             );
                             break;
@@ -189,7 +192,7 @@ pub fn send_network_updates(
             if let Err(err) = network_params.net.send_message(
                 connection_handle,
                 UnreliableServerMessage::DeltaUpdate(DeltaUpdate {
-                    frame_number: time.game_frame,
+                    frame_number: time.frame_number,
                     acknowledgments: connection_state.incoming_acknowledgments(),
                     players: players
                         .iter()
@@ -218,7 +221,8 @@ pub fn send_network_updates(
                 log::error!("Failed to send a message: {:?}", err);
             }
 
-            if let Err(err) = connection_state.add_outcoming_packet(time.game_frame, Instant::now())
+            if let Err(err) =
+                connection_state.add_outcoming_packet(time.frame_number, Instant::now())
             {
                 // TODO: disconnect players.
                 log::error!("Failed to add an outcoming packet: {:?}", err);
@@ -278,7 +282,7 @@ pub fn send_network_updates(
                         .iter()
                         .map(|level_object| SpawnLevelObject {
                             object: level_object.clone(),
-                            frame_number: time.game_frame,
+                            frame_number: time.frame_number,
                         })
                         .collect(),
                     players: players
@@ -289,7 +293,7 @@ pub fn send_network_updates(
                         })
                         .collect(),
                     game_state: DeltaUpdate {
-                        frame_number: time.game_frame,
+                        frame_number: time.frame_number,
                         acknowledgments: connection_state.incoming_acknowledgments(),
                         players: players_state,
                         confirmed_actions: Vec::new(),
@@ -328,9 +332,9 @@ fn create_player_state(
         // TODO: avoid doing the same searches when gathering updates for every player?
         connection_state
             .first_unacknowledged_outcoming_packet()
-            .unwrap_or(time.game_frame)
+            .unwrap_or(time.frame_number)
     } else {
-        time.game_frame
+        time.frame_number
     };
 
     let (_, position, player_direction) = player_entities.get(entity).unwrap();
@@ -366,7 +370,7 @@ fn create_player_state(
                     "Player ({}) position for frame {} doesn't exist (current frame: {})",
                     net_id.0,
                     start_position_frame.value(),
-                    time.game_frame.value()
+                    time.frame_number.value()
                 )
             }),
         inputs,

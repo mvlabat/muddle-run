@@ -1,10 +1,10 @@
 use crate::{
     framebuffer::FrameNumber,
-    game::components::{PlayerDirection, Position, Spawned},
+    game::components::{PlayerDirection, PlayerFrameSimulated, Position, Spawned},
     messages::PlayerNetId,
     player::PlayerUpdates,
     registry::EntityRegistry,
-    GameTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
+    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
 };
 use bevy::{
     ecs::{Entity, Query, Res, ResMut},
@@ -21,6 +21,7 @@ const LERP_FACTOR: f32 = 1.0 / SIMULATIONS_PER_SECOND as f32 * 2.0;
 
 pub fn read_movement_updates(
     time: Res<GameTime>,
+    simulation_time: Res<SimulationTime>,
     mut player_updates: ResMut<PlayerUpdates>,
     player_registry: Res<EntityRegistry<PlayerNetId>>,
     mut players: Query<(Entity, &mut Position, &mut PlayerDirection)>,
@@ -30,71 +31,87 @@ pub fn read_movement_updates(
             .get_id(entity)
             .expect("Expected a registered player");
 
-        for frame_number in time.simulation_frame..=time.game_frame {
+        for frame_number in simulation_time.server_frame..=time.frame_number {
             if let Some(position_update) = player_updates
                 .position
                 .get(&player_net_id)
-                .and_then(|buffer| buffer.get(time.game_frame))
+                .and_then(|buffer| buffer.get(time.frame_number))
                 .and_then(|p| *p)
             {
                 let current_position = *position
                     .buffer
-                    .get(time.game_frame)
+                    .get(time.frame_number)
                     .expect("We always expect a start position for a current frame to exist");
                 let lerp_position =
                     current_position + (position_update - current_position) * LERP_FACTOR;
-                position.buffer.insert(time.game_frame, lerp_position);
+                position.buffer.insert(time.frame_number, lerp_position);
             }
 
             let direction_update = player_updates
-                .get_direction_mut(player_net_id, time.game_frame, COMPONENT_FRAMEBUFFER_LIMIT)
+                .get_direction_mut(
+                    player_net_id,
+                    time.frame_number,
+                    COMPONENT_FRAMEBUFFER_LIMIT,
+                )
                 .get_mut(frame_number);
             // TODO: make sure that we don't leave all buffer filled with `None` (i.e. disconnect a player earlier).
             //  Document the implemented guarantees.
+            let current_direction = player_direction
+                .buffer
+                .get(frame_number)
+                .and_then(|update| *update);
             player_direction.buffer.insert(
                 frame_number,
-                direction_update.and_then(|direction_update| {
-                    direction_update.as_mut().map(|direction_update| {
-                        direction_update.is_processed_client_input = Some(true);
-                        direction_update.direction
+                direction_update
+                    .and_then(|direction_update| {
+                        direction_update.as_mut().map(|direction_update| {
+                            direction_update.is_processed_client_input = Some(true);
+                            direction_update.direction
+                        })
                     })
-                }),
+                    // Avoid replacing initial updates with None.
+                    .or(current_direction),
             );
         }
     }
 }
 
 pub fn player_movement(
-    time: Res<GameTime>,
+    time: Res<SimulationTime>,
     mut rigid_body_set: ResMut<RigidBodySet>,
     players: Query<(
         &RigidBodyHandleComponent,
         &PlayerDirection,
         &Position,
+        Option<&PlayerFrameSimulated>,
         &Spawned,
     )>,
 ) {
-    log::trace!("Moving players (frame {})", time.simulation_frame);
-    for (rigid_body, player_direction, position, _) in players
+    log::trace!(
+        "Moving players (frame {}, {})",
+        time.server_frame,
+        time.player_frame
+    );
+    for (rigid_body, player_direction, position, player_frame_simulated, _) in players
         .iter()
-        .filter(|(_, _, _, spawned)| spawned.is_spawned(time.simulation_frame))
+        .filter(|(_, _, _, player_frame_simulated, spawned)| {
+            spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated))
+        })
     {
+        let frame_number = time.entity_simulation_frame(player_frame_simulated);
         let rigid_body = rigid_body_set
             .get_mut(rigid_body.handle())
             .expect("expected a rigid body");
 
         let mut body_position = *rigid_body.position();
-        let current_position = position
-            .buffer
-            .get(time.simulation_frame)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Expected position for frame {} (start frame: {}, len: {})",
-                    time.simulation_frame,
-                    position.buffer.start_frame(),
-                    position.buffer.len()
-                );
-            });
+        let current_position = position.buffer.get(frame_number).unwrap_or_else(|| {
+            panic!(
+                "Expected position for frame {} (start frame: {}, len: {})",
+                time.entity_simulation_frame(player_frame_simulated),
+                position.buffer.start_frame(),
+                position.buffer.len()
+            );
+        });
         let wake_up = (body_position.translation.x - current_position.x).abs() > f32::EPSILON
             || (body_position.translation.z - current_position.y).abs() > f32::EPSILON;
         body_position.translation.x = current_position.x;
@@ -103,13 +120,8 @@ pub fn player_movement(
 
         let (_, current_direction) = player_direction
             .buffer
-            .get_with_extrapolation(time.simulation_frame)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Expected player direction for frame {}",
-                    time.simulation_frame
-                )
-            });
+            .get_with_extrapolation(frame_number)
+            .unwrap_or_else(|| panic!("Expected player direction for frame {}", frame_number));
         let wake_up = current_direction.length_squared() > 0.0;
         rigid_body.set_linvel(
             Vector::new(current_direction.x, 0.0, current_direction.y),
@@ -119,15 +131,27 @@ pub fn player_movement(
 }
 
 pub fn sync_position(
-    time: Res<GameTime>,
+    time: Res<SimulationTime>,
     rigid_body_set: Res<RigidBodySet>,
-    mut simulated_entities: Query<(&RigidBodyHandleComponent, &mut Position, &Spawned)>,
+    mut simulated_entities: Query<(
+        &RigidBodyHandleComponent,
+        &mut Position,
+        Option<&PlayerFrameSimulated>,
+        &Spawned,
+    )>,
 ) {
-    log::trace!("Syncing positions (frame {})", time.simulation_frame);
-    for (rigid_body, mut position, _) in simulated_entities
+    log::trace!(
+        "Syncing positions (frame {}, {})",
+        time.server_frame,
+        time.player_frame
+    );
+    for (rigid_body, mut position, player_frame_simulated, _) in simulated_entities
         .iter_mut()
-        .filter(|(_, _, spawned)| spawned.is_spawned(time.simulation_frame))
+        .filter(|(_, _, player_frame_simulated, spawned)| {
+            spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated))
+        })
     {
+        let frame_number = time.entity_simulation_frame(player_frame_simulated);
         let rigid_body = rigid_body_set
             .get(rigid_body.handle())
             .expect("expected a rigid body");
@@ -136,7 +160,7 @@ pub fn sync_position(
         // Positions buffer represents start positions before moving entities, so this is why
         // we save the new position in the next frame.
         position.buffer.insert(
-            time.simulation_frame + FrameNumber::new(1),
+            frame_number + FrameNumber::new(1),
             Vec2::new(body_position.translation.x, body_position.translation.z),
         );
     }

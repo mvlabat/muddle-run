@@ -43,7 +43,7 @@ pub struct ConnectionState {
     incoming_packets_acks: u64,
     outcoming_packets_acks: VecDeque<Acknowledgment>,
     packet_loss: f32,
-    jitter: f32,
+    jitter_millis: f32,
     rtt_millis: f32,
 }
 
@@ -54,19 +54,23 @@ impl Default for ConnectionState {
             incoming_packets_acks: u64::MAX - 1,
             outcoming_packets_acks: VecDeque::new(),
             packet_loss: 0.0,
-            jitter: 0.0,
+            jitter_millis: 0.0,
             rtt_millis: 100.0,
         }
     }
 }
 
 impl ConnectionState {
+    pub fn set_initial_rtt_millis(&mut self, rtt_millis: f32) {
+        self.rtt_millis = rtt_millis;
+    }
+
     pub fn packet_loss(&self) -> f32 {
         self.packet_loss
     }
 
-    pub fn jitter(&self) -> f32 {
-        self.jitter
+    pub fn jitter_millis(&self) -> f32 {
+        self.jitter_millis
     }
 
     pub fn rtt_millis(&self) -> f32 {
@@ -86,7 +90,7 @@ impl ConnectionState {
             .chain(
                 self.outcoming_packets_acks
                     .iter()
-                    .map(|ack| ack.acknowledged.is_some()),
+                    .map(|ack| ack.acknowledged),
             )
             .fold(0, |bitset, ack| bitset << 1 | ack as u64)
     }
@@ -94,7 +98,7 @@ impl ConnectionState {
     pub fn first_unacknowledged_outcoming_packet(&self) -> Option<FrameNumber> {
         self.outcoming_packets_acks
             .iter()
-            .find(|ack| ack.acknowledged.is_none())
+            .find(|ack| !ack.acknowledged)
             .map(|ack| ack.frame_number)
     }
 
@@ -105,15 +109,23 @@ impl ConnectionState {
     ) -> Result<(), AddOutcomingPacketError> {
         if self.outcoming_packets_acks.len() == 64 {
             let oldest_packet = self.outcoming_packets_acks.front().unwrap();
-            if oldest_packet.acknowledged.is_none() {
+            if !oldest_packet.acknowledged {
                 return Err(AddOutcomingPacketError::WouldLoseUnacknowledged);
             }
+        }
+        self.add_outcoming_packet_unchecked(frame_number, sent);
+        Ok(())
+    }
+
+    pub fn add_outcoming_packet_unchecked(&mut self, frame_number: FrameNumber, sent: Instant) {
+        if self.outcoming_packets_acks.len() == 64 {
             self.outcoming_packets_acks.pop_front();
         }
         if let Some(prev_packet) = self.outcoming_packets_acks.back() {
             if prev_packet.frame_number + FrameNumber::new(TICKS_PER_NETWORK_BROADCAST)
                 != frame_number
             {
+                // TODO: don't panic. Clients might be able to DoS?
                 panic!(
                     "Inconsistent packet step (latest: {}, new: {})",
                     prev_packet.frame_number.value(),
@@ -123,10 +135,10 @@ impl ConnectionState {
         }
         self.outcoming_packets_acks.push_back(Acknowledgment {
             frame_number,
-            acknowledged: None,
-            sent,
+            acknowledged: false,
+            acknowledged_at: None,
+            sent_at: sent,
         });
-        Ok(())
     }
 
     pub fn acknowledge_incoming(
@@ -207,19 +219,19 @@ impl ConnectionState {
 
         for acknowledgment in self.outcoming_packets_acks.iter_mut().take(frames_to_set) {
             let acknowledged = acknowledgment_bit_set >> 63 != 0;
-            if !acknowledged && acknowledgment.acknowledged.is_some() {
+            if !acknowledged && acknowledgment.acknowledged {
                 return Err(AcknowledgeError::Inconsistent);
             }
-            if acknowledged && acknowledgment.acknowledged.is_none() {
-                acknowledgment.acknowledged = Some(now);
+            if acknowledged && !acknowledgment.acknowledged {
+                acknowledgment.acknowledged = true;
             }
             acknowledgment_bit_set <<= 1;
         }
-        // let ack = &mut self.outcoming_packets_acks[frames_to_set];
-        // if ack.acknowledged.is_none() {
-        //     assert_eq!(ack.frame_number, frame_number);
-        //     ack.acknowledged = Some(now);
-        // }
+
+        assert!(frames_to_set > 0);
+        let ack = &mut self.outcoming_packets_acks[frames_to_set - 1];
+        assert_eq!(ack.frame_number, frame_number);
+        ack.acknowledged_at = Some(now);
 
         self.update_stats(frame_number);
 
@@ -235,15 +247,17 @@ impl ConnectionState {
             .map(|pos| pos + 1)
             .unwrap_or(0);
 
+        // Calculating packet loss.
         let outcoming_unacknowledged_count = self
             .outcoming_packets_acks
             .iter()
             .take(expected_acknowledged_count)
-            .fold(0u32, |acc, ack| acc + ack.acknowledged.is_none() as u32);
+            .fold(0u32, |acc, ack| acc + !ack.acknowledged as u32);
         let incoming_unacknowledged_count = self.incoming_packets_acks.count_zeros();
         self.packet_loss = (outcoming_unacknowledged_count + incoming_unacknowledged_count) as f32
             / (expected_acknowledged_count + 64) as f32;
 
+        // Calculating rtt.
         if expected_acknowledged_count > 0 {
             let acknowledged_frame = self
                 .outcoming_packets_acks
@@ -251,13 +265,37 @@ impl ConnectionState {
                 .unwrap();
             // TODO: fix this somehow to be callable on acknowledging incoming packets?
             let rtt = (acknowledged_frame
-                .acknowledged
+                .acknowledged_at
                 .expect("Expected the currently acknowledged frame to have a timestamp")
-                - acknowledged_frame.sent)
+                - acknowledged_frame.sent_at)
                 .as_secs_f32()
                 * 1000.0;
             self.rtt_millis += (rtt - self.rtt_millis) * RTT_UPDATE_FACTOR;
         }
+
+        // Calculating average rtt.
+        let mut acc = 0.0;
+        let mut count = 0;
+        for rtt in self
+            .outcoming_packets_acks
+            .iter()
+            .filter_map(|ack| ack.rtt_millis())
+        {
+            acc += rtt;
+            count += 1;
+        }
+        let avg_rtt = acc / count as f32;
+
+        // Calculating jitter.
+        let mut acc = 0.0;
+        for rtt in self
+            .outcoming_packets_acks
+            .iter()
+            .filter_map(|ack| ack.rtt_millis())
+        {
+            acc += (avg_rtt - rtt).abs();
+        }
+        self.jitter_millis = acc / count as f32;
     }
 
     fn frames_to_fill(&self) -> usize {
@@ -265,10 +303,21 @@ impl ConnectionState {
     }
 }
 
+#[derive(Debug)]
 struct Acknowledgment {
     frame_number: FrameNumber,
-    acknowledged: Option<Instant>,
-    sent: Instant,
+    acknowledged: bool,
+    /// This field will be left empty if a package was lost.
+    /// Even if we receive related updates later, `acknowledged_at` will remain being set to `None`.
+    acknowledged_at: Option<Instant>,
+    sent_at: Instant,
+}
+
+impl Acknowledgment {
+    pub fn rtt_millis(&self) -> Option<f32> {
+        self.acknowledged_at
+            .map(|acknowledged_at| (acknowledged_at - self.sent_at).as_secs_f32() * 1000.0)
+    }
 }
 
 pub fn network_setup(mut net: ResMut<NetworkResource>) {
@@ -389,8 +438,9 @@ mod tests {
             .enumerate()
             .map(|(i, &acknowledged)| Acknowledgment {
                 frame_number: FrameNumber::new(i as u16),
-                acknowledged: if acknowledged { Some(now) } else { None },
-                sent: now,
+                acknowledged,
+                acknowledged_at: if acknowledged { Some(now) } else { None },
+                sent_at: now,
             })
             .collect::<Vec<_>>();
 
@@ -399,7 +449,7 @@ mod tests {
             incoming_packets_acks: 0,
             outcoming_packets_acks: VecDeque::from(acknowledgments),
             packet_loss: 0.0,
-            jitter: 0.0,
+            jitter_millis: 0.0,
             rtt_millis: 0.0,
         }
     }

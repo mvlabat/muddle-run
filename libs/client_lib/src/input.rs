@@ -58,7 +58,7 @@ pub fn track_input_events(
     if let Some(player_net_id) = current_player_net_id.0 {
         let direction_updates = player_updates.get_direction_mut(
             player_net_id,
-            time.game_frame,
+            time.frame_number,
             COMPONENT_FRAMEBUFFER_LIMIT,
         );
         let mut direction = Vec2::zero();
@@ -77,7 +77,7 @@ pub fn track_input_events(
             direction.y -= 1.0;
         }
         direction_updates.insert(
-            time.game_frame,
+            time.frame_number,
             Some(PlayerDirectionUpdate {
                 direction,
                 is_processed_client_input: Some(false),

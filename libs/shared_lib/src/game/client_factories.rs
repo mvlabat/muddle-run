@@ -1,6 +1,6 @@
 use crate::game::level_objects::PlaneDesc;
 #[cfg(feature = "render")]
-use crate::PLAYER_SIZE;
+use crate::{game::components::PlayerFrameSimulated, PLAYER_SIZE};
 use bevy::{ecs::SystemParam, prelude::*};
 
 pub trait ClientFactory<'a> {
@@ -21,13 +21,13 @@ pub struct PlayerClientFactory;
 
 impl<'a> ClientFactory<'a> for PlayerClientFactory {
     type Dependencies = PbrClientParams<'a>;
-    type Input = ();
+    type Input = bool;
 
     #[cfg(feature = "render")]
     fn create(
         commands: &mut Commands,
         deps: &mut Self::Dependencies,
-        _input: &Self::Input,
+        is_player_frame_simulated: &Self::Input,
     ) -> Entity {
         commands.spawn(PbrBundle {
             mesh: deps
@@ -36,6 +36,9 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
             material: deps.materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
             ..Default::default()
         });
+        if *is_player_frame_simulated {
+            commands.with(PlayerFrameSimulated);
+        }
         commands.current_entity().unwrap()
     }
 }
@@ -44,13 +47,13 @@ pub struct PlaneClientFactory;
 
 impl<'a> ClientFactory<'a> for PlaneClientFactory {
     type Dependencies = PbrClientParams<'a>;
-    type Input = PlaneDesc;
+    type Input = (PlaneDesc, bool);
 
     #[cfg(feature = "render")]
     fn create(
         commands: &mut Commands,
         deps: &mut Self::Dependencies,
-        plane_desc: &Self::Input,
+        (plane_desc, is_player_frame_simulated): &Self::Input,
     ) -> Entity {
         commands.spawn(PbrBundle {
             mesh: deps.meshes.add(Mesh::from(shape::Plane {
@@ -59,6 +62,9 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
             material: deps.materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
             ..Default::default()
         });
+        if *is_player_frame_simulated {
+            commands.with(PlayerFrameSimulated);
+        }
         commands.current_entity().unwrap()
     }
 }

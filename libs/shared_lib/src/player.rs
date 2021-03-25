@@ -5,13 +5,14 @@ use crate::{
 use bevy::math::Vec2;
 use std::collections::HashMap;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct PlayerUpdates {
     pub direction: HashMap<PlayerNetId, Framebuffer<Option<PlayerDirectionUpdate>>>,
     /// Is supposed to be filled and used only by clients, as it contains authoritative updates.
     pub position: HashMap<PlayerNetId, Framebuffer<Option<Vec2>>>,
 }
 
+#[derive(Debug)]
 pub struct PlayerDirectionUpdate {
     pub direction: Vec2,
     pub is_processed_client_input: Option<bool>,

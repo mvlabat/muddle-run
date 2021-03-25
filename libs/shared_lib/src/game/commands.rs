@@ -32,6 +32,7 @@ impl<T> GameCommands<T> {
 pub struct SpawnPlayer {
     pub net_id: PlayerNetId,
     pub start_position: Vec2,
+    pub is_player_frame_simulated: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

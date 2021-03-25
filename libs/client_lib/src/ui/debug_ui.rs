@@ -1,4 +1,4 @@
-use crate::{input::MouseRay, ui::MuddleInspectable};
+use crate::{input::MouseRay, ui::MuddleInspectable, EstimatedServerTime};
 use bevy::{
     diagnostic::{DiagnosticMeasurement, Diagnostics, FrameTimeDiagnosticsPlugin},
     ecs::SystemParam,
@@ -18,6 +18,7 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::Player,
     registry::EntityRegistry,
+    GameTicksPerSecond, SimulationTime, TargetFramesAhead,
 };
 use std::collections::{HashMap, VecDeque};
 
@@ -34,18 +35,30 @@ pub struct DebugUiState {
     pub fps_history_len: usize,
 }
 
+#[derive(SystemParam)]
+pub struct DebugData<'a> {
+    target_frames_ahead: Res<'a, TargetFramesAhead>,
+    tick_rate: Res<'a, GameTicksPerSecond>,
+    time: Res<'a, SimulationTime>,
+    server_time: Res<'a, EstimatedServerTime>,
+    connection_state: Res<'a, ConnectionState>,
+    diagnostics: Res<'a, Diagnostics>,
+}
+
 pub fn debug_ui(
     mut egui_context: ResMut<EguiContext>,
     mut debug_ui_state: ResMut<DebugUiState>,
-    connection_state: Res<ConnectionState>,
-    diagnostics: Res<Diagnostics>,
+    debug_data: DebugData,
 ) {
     let ctx = &mut egui_context.ctx;
 
-    if let Some(fps_diagnostic) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
+    if let Some(fps_diagnostic) = debug_data.diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
         debug_ui_state.fps_history_len = fps_diagnostic.get_max_history_length();
     }
-    if let Some(measurement) = diagnostics.get_measurement(FrameTimeDiagnosticsPlugin::FPS) {
+    if let Some(measurement) = debug_data
+        .diagnostics
+        .get_measurement(FrameTimeDiagnosticsPlugin::FPS)
+    {
         if debug_ui_state.fps_history.len() == debug_ui_state.fps_history_len {
             debug_ui_state.fps_history.pop_front();
         }
@@ -68,14 +81,37 @@ pub fn debug_ui(
                 });
 
             ui.separator();
-            ui.label(format!("RTT: {}ms", connection_state.rtt_millis() as usize));
             ui.label(format!(
-                "Packet loss: {:.2}%",
-                connection_state.packet_loss() * 100.0
+                "Frames ahead: {}",
+                debug_data.time.player_frame - debug_data.time.server_frame
+            ));
+            ui.label(format!(
+                "Target frames ahead: {}",
+                debug_data.target_frames_ahead.frames_count
+            ));
+            ui.separator();
+            ui.label(format!("Tick rate: {}", debug_data.tick_rate.rate));
+            ui.label(format!("Player frame: {}", debug_data.time.player_frame));
+            ui.label(format!(
+                "Local server frame: {}",
+                debug_data.time.server_frame
+            ));
+            ui.label(format!(
+                "Server frame: {}",
+                debug_data.server_time.frame_number
+            ));
+            ui.separator();
+            ui.label(format!(
+                "RTT: {}ms",
+                debug_data.connection_state.rtt_millis() as usize
             ));
             ui.label(format!(
                 "Packet loss: {:.2}%",
-                connection_state.jitter() * 100.0
+                debug_data.connection_state.packet_loss() * 100.0
+            ));
+            ui.label(format!(
+                "Jitter: {}ms",
+                debug_data.connection_state.jitter_millis() as usize
             ));
         });
     }

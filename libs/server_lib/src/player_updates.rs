@@ -1,9 +1,12 @@
-use bevy::{ecs::ResMut, log};
+use bevy::{
+    ecs::{Res, ResMut},
+    log,
+};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     messages::{PlayerInput, PlayerNetId},
     player::{PlayerDirectionUpdate, PlayerUpdates},
-    GameTime, SIMULATIONS_PER_SECOND,
+    GameTime, SimulationTime, SIMULATIONS_PER_SECOND,
 };
 use std::collections::HashMap;
 
@@ -34,7 +37,8 @@ impl<T> DeferredUpdates<T> {
 }
 
 pub fn process_player_input_updates(
-    mut time: ResMut<GameTime>,
+    time: Res<GameTime>,
+    mut simulation_time: ResMut<SimulationTime>,
     mut updates: ResMut<PlayerUpdates>,
     mut deferred_updates: ResMut<DeferredUpdates<PlayerInput>>,
 ) {
@@ -53,13 +57,15 @@ pub fn process_player_input_updates(
             let lag_compensated_frames = (MAX_LAG_COMPENSATION_MSEC as f32
                 / (1000.0 / SIMULATIONS_PER_SECOND as f32))
                 as u16;
-            let min_frame_number = time.game_frame - FrameNumber::new(lag_compensated_frames);
+            let min_frame_number = time.frame_number - FrameNumber::new(lag_compensated_frames);
             let update_frame_number = std::cmp::max(min_frame_number, player_update.frame_number);
 
             // We don't want to allow re-writing updates.
             if updates.get(update_frame_number).is_none() && updates.can_insert(update_frame_number)
             {
-                time.simulation_frame = std::cmp::min(time.simulation_frame, update_frame_number);
+                simulation_time.server_frame =
+                    std::cmp::min(simulation_time.server_frame, update_frame_number);
+                simulation_time.player_frame = simulation_time.server_frame;
                 updates.insert(
                     update_frame_number,
                     Some(PlayerDirectionUpdate {
@@ -70,9 +76,10 @@ pub fn process_player_input_updates(
             } else {
                 // TODO: is just discarding old updates good enough?
                 log::warn!(
-                    "Ignoring player {:?} input for frame {}",
+                    "Ignoring player {:?} input for frame {} (current: {})",
                     player_net_id,
-                    update_frame_number
+                    update_frame_number,
+                    time.frame_number,
                 );
             }
         }

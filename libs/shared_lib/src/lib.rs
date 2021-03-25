@@ -8,6 +8,7 @@ use crate::{
         commands::{
             DespawnLevelObject, DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer,
         },
+        components::PlayerFrameSimulated,
         level::LevelState,
         movement::{player_movement, read_movement_updates, sync_position},
         spawn::{mark_mature_entities, spawn_level_objects, spawn_players},
@@ -17,12 +18,11 @@ use crate::{
     registry::EntityRegistry,
 };
 use bevy::{
-    core::FixedTimestep,
     ecs::{ArchetypeComponent, ShouldRun, SystemId, ThreadLocalExecution, TypeAccess},
     log,
     prelude::*,
 };
-use bevy_networking_turbulence::NetworkingPlugin;
+use bevy_networking_turbulence::{LinkConditionerConfig, NetworkingPlugin};
 use bevy_rapier3d::{
     physics,
     physics::{
@@ -69,30 +69,44 @@ pub mod stage {
 pub const PLAYER_SIZE: f32 = 1.0;
 pub const PLANE_SIZE: f32 = 20.0;
 pub const SIMULATIONS_PER_SECOND: u16 = 120;
+pub const TICKING_SPEED_FACTOR: u16 = 10;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
 pub const TICKS_PER_NETWORK_BROADCAST: u16 = 2;
 
-pub struct MuddleSharedPlugin {
+pub struct MuddleSharedPlugin<S: System<In = (), Out = ShouldRun>> {
+    main_run_criteria: Mutex<Option<S>>,
     input_stage: Mutex<Option<SystemStage>>,
     broadcast_updates_stage: Mutex<Option<SystemStage>>,
+    link_conditioner: Option<LinkConditionerConfig>,
 }
 
-impl MuddleSharedPlugin {
-    pub fn new(input_stage: SystemStage, broadcast_updates_stage: SystemStage) -> Self {
+impl<S: System<In = (), Out = ShouldRun>> MuddleSharedPlugin<S> {
+    pub fn new(
+        main_run_criteria: S,
+        input_stage: SystemStage,
+        broadcast_updates_stage: SystemStage,
+        link_conditioner: Option<LinkConditionerConfig>,
+    ) -> Self {
         Self {
+            main_run_criteria: Mutex::new(Some(main_run_criteria)),
             input_stage: Mutex::new(Some(input_stage)),
             broadcast_updates_stage: Mutex::new(Some(broadcast_updates_stage)),
+            link_conditioner,
         }
     }
 }
 
-impl Plugin for MuddleSharedPlugin {
+impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
     fn build(&self, builder: &mut AppBuilder) {
         builder.add_plugin(RapierResourcesPlugin);
         builder.add_plugin(NetworkingPlugin {
-            link_conditioner: None,
+            link_conditioner: self.link_conditioner.clone(),
         });
 
+        let mut main_run_criteria = self
+            .main_run_criteria
+            .lock()
+            .expect("Can't initialize the plugin more than once");
         let mut input_stage = self
             .input_stage
             .lock()
@@ -137,9 +151,11 @@ impl Plugin for MuddleSharedPlugin {
             );
 
         let main_schedule = Schedule::default()
-            .with_run_criteria(FixedTimestep::steps_per_second(
-                SIMULATIONS_PER_SECOND as f64,
-            ))
+            .with_run_criteria(
+                main_run_criteria
+                    .take()
+                    .expect("Can't initialize the plugin more than once"),
+            )
             .with_stage(stage::SIMULATION_SCHEDULE, simulation_schedule)
             .with_stage(
                 stage::BROADCAST_UPDATES,
@@ -152,6 +168,7 @@ impl Plugin for MuddleSharedPlugin {
                 stage::POST_SIMULATIONS,
                 SystemStage::serial()
                     .with_system(tick_game_frame.system())
+                    .with_system(control_ticking_speed.system())
                     .with_system(mark_mature_entities.system()),
             );
 
@@ -177,6 +194,9 @@ impl Plugin for MuddleSharedPlugin {
 
         let resources = builder.resources_mut();
         resources.get_or_insert_with(GameTime::default);
+        resources.get_or_insert_with(SimulationTime::default);
+        resources.get_or_insert_with(GameTicksPerSecond::default);
+        resources.get_or_insert_with(TargetFramesAhead::default);
         resources.get_or_insert_with(LevelState::default);
         resources.get_or_insert_with(PlayerUpdates::default);
         resources.get_or_insert_with(GameCommands::<SpawnPlayer>::default);
@@ -219,8 +239,52 @@ impl Plugin for RapierResourcesPlugin {
 #[derive(Default, Debug)]
 pub struct GameTime {
     pub generation: usize,
-    pub simulation_frame: FrameNumber,
-    pub game_frame: FrameNumber,
+    pub frame_number: FrameNumber,
+}
+
+#[derive(Default, Debug)]
+pub struct SimulationTime {
+    /// Is expected to be ahead of `server_frame` on the client side, is equal to `server_frame`
+    /// on the server side.
+    pub player_frame: FrameNumber,
+    pub server_frame: FrameNumber,
+}
+
+#[derive(Default, Debug)]
+pub struct TargetFramesAhead {
+    /// Is always zero for the server.
+    pub frames_count: FrameNumber,
+}
+
+pub struct GameTicksPerSecond {
+    pub rate: u16,
+}
+
+impl Default for GameTicksPerSecond {
+    fn default() -> Self {
+        Self {
+            rate: SIMULATIONS_PER_SECOND,
+        }
+    }
+}
+
+impl SimulationTime {
+    pub fn entity_simulation_frame(
+        &self,
+        player_frame_simulated: Option<&PlayerFrameSimulated>,
+    ) -> FrameNumber {
+        if player_frame_simulated.is_some() {
+            self.player_frame
+        } else {
+            self.server_frame
+        }
+    }
+
+    pub fn rewind(&mut self, frame_number: FrameNumber) {
+        let frames_ahead = self.player_frame - self.server_frame;
+        self.server_frame = std::cmp::min(self.server_frame, frame_number);
+        self.player_frame = self.server_frame + frames_ahead;
+    }
 }
 
 pub struct GameTickRunCriteria {
@@ -247,15 +311,15 @@ impl GameTickRunCriteria {
     pub fn update(&mut self, time: &GameTime) -> ShouldRun {
         if self.last_generation != Some(time.generation) {
             self.last_generation = Some(time.generation);
-            self.last_tick = time.game_frame - self.ticks_per_step;
+            self.last_tick = time.frame_number - self.ticks_per_step;
         }
 
-        if self.last_tick + self.ticks_per_step <= time.game_frame {
-            trace!("Run and loop a game schedule (game {})", time.game_frame);
+        if self.last_tick + self.ticks_per_step <= time.frame_number {
+            trace!("Run and loop a game schedule (game {})", time.frame_number);
             self.last_tick += self.ticks_per_step;
             ShouldRun::YesAndLoop
         } else {
-            trace!("Don't run a game schedule (game {})", time.game_frame);
+            trace!("Don't run a game schedule (game {})", time.frame_number);
             ShouldRun::No
         }
     }
@@ -309,7 +373,8 @@ impl System for GameTickRunCriteria {
 pub struct SimulationTickRunCriteria {
     system_id: SystemId,
     last_game_frame: Option<FrameNumber>,
-    last_tick: FrameNumber,
+    last_player_frame: FrameNumber,
+    last_server_frame: FrameNumber,
     resource_access: TypeAccess<TypeId>,
     archetype_access: TypeAccess<ArchetypeComponent>,
 }
@@ -319,7 +384,8 @@ impl Default for SimulationTickRunCriteria {
         Self {
             system_id: SystemId::new(),
             last_game_frame: None,
-            last_tick: FrameNumber::new(0),
+            last_player_frame: FrameNumber::new(0),
+            last_server_frame: FrameNumber::new(0),
             resource_access: Default::default(),
             archetype_access: Default::default(),
         }
@@ -327,31 +393,34 @@ impl Default for SimulationTickRunCriteria {
 }
 
 impl SimulationTickRunCriteria {
-    pub fn update(&mut self, time: &GameTime) -> ShouldRun {
+    pub fn update(&mut self, game_time: &GameTime, simulation_time: &SimulationTime) -> ShouldRun {
         // Checking that a game frame has changed will make us avoid panicking in case we rewind
         // simulation frame just 1 frame back.
-        if self.last_game_frame != Some(time.game_frame) {
-            self.last_game_frame = Some(time.game_frame);
-        } else if self.last_tick == time.simulation_frame {
+        if self.last_game_frame != Some(game_time.frame_number) {
+            self.last_game_frame = Some(game_time.frame_number);
+        } else if self.last_player_frame == simulation_time.player_frame
+            && self.last_server_frame == simulation_time.server_frame
+        {
             panic!(
-                "Simulation frame hasn't advanced: {}",
-                time.simulation_frame
+                "Simulation frame hasn't advanced: {}, {}",
+                simulation_time.player_frame, simulation_time.server_frame
             );
         }
-        self.last_tick = time.simulation_frame;
+        self.last_player_frame = simulation_time.player_frame;
+        self.last_server_frame = simulation_time.server_frame;
 
-        if self.last_tick <= time.game_frame {
+        if self.last_player_frame <= game_time.frame_number {
             trace!(
                 "Run and loop a simulation schedule (simulation: {}, game {})",
-                time.simulation_frame,
-                time.game_frame
+                simulation_time.player_frame,
+                game_time.frame_number
             );
             ShouldRun::YesAndLoop
         } else {
             trace!(
                 "Don't run a simulation schedule (simulation: {}, game {})",
-                time.simulation_frame,
-                time.game_frame
+                simulation_time.player_frame,
+                game_time.frame_number
             );
             ShouldRun::No
         }
@@ -391,7 +460,8 @@ impl System for SimulationTickRunCriteria {
         resources: &Resources,
     ) -> Option<Self::Out> {
         let time = resources.get::<GameTime>().unwrap();
-        let result = self.update(&time);
+        let simulation_time = resources.get::<SimulationTime>().unwrap();
+        let result = self.update(&time, &simulation_time);
 
         Some(result)
     }
@@ -403,17 +473,74 @@ impl System for SimulationTickRunCriteria {
     }
 }
 
-pub fn tick_simulation_frame(mut time: ResMut<GameTime>) {
+pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
     log::trace!(
-        "Concluding simulation frame tick: {}",
-        time.simulation_frame.value()
+        "Concluding simulation frame tick: {}, {}",
+        time.player_frame.value(),
+        time.server_frame.value()
     );
-    time.simulation_frame += FrameNumber::new(1);
+    time.player_frame += FrameNumber::new(1);
+    time.server_frame += FrameNumber::new(1);
 }
 
 pub fn tick_game_frame(mut time: ResMut<GameTime>) {
-    log::trace!("Concluding game frame tick: {}", time.game_frame.value());
-    time.game_frame += FrameNumber::new(1);
+    log::trace!("Concluding game frame tick: {}", time.frame_number.value());
+    time.frame_number += FrameNumber::new(1);
+}
+
+pub fn control_ticking_speed(
+    mut frames_ticked: Local<u16>,
+    mut prev_generation: Local<usize>,
+    mut prev_tick_rate: Local<GameTicksPerSecond>,
+    mut tick_rate: ResMut<GameTicksPerSecond>,
+    mut simulation_time: ResMut<SimulationTime>,
+    time: Res<GameTime>,
+    target_frames_ahead: Res<TargetFramesAhead>,
+) {
+    use std::cmp::Ordering;
+
+    let target_player_frame = simulation_time.server_frame + target_frames_ahead.frames_count;
+    tick_rate.rate = match simulation_time.player_frame.cmp(&target_player_frame) {
+        Ordering::Equal => SIMULATIONS_PER_SECOND,
+        Ordering::Greater => slower_tick_rate(),
+        Ordering::Less => faster_tick_rate(),
+    };
+
+    if prev_tick_rate.rate != tick_rate.rate || *prev_generation != time.generation {
+        *frames_ticked = 0;
+    }
+
+    if *frames_ticked == TICKING_SPEED_FACTOR {
+        *frames_ticked = 0;
+        if tick_rate.rate == faster_tick_rate() {
+            simulation_time.server_frame -= FrameNumber::new(1);
+        } else if tick_rate.rate == slower_tick_rate() {
+            simulation_time.player_frame -= FrameNumber::new(1);
+        }
+    }
+    *frames_ticked += 1;
+    prev_tick_rate.rate = tick_rate.rate;
+    *prev_generation = time.generation;
+}
+
+fn faster_tick_rate() -> u16 {
+    if SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR != 0 {
+        panic!(
+            "SIMULATIONS_PER_SECOND must a multiple of {}",
+            TICKING_SPEED_FACTOR
+        );
+    }
+    SIMULATIONS_PER_SECOND + SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
+}
+
+fn slower_tick_rate() -> u16 {
+    if SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR != 0 {
+        panic!(
+            "SIMULATIONS_PER_SECOND must a multiple of {}",
+            TICKING_SPEED_FACTOR
+        );
+    }
+    SIMULATIONS_PER_SECOND - SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
 }
 
 struct PairFilter;

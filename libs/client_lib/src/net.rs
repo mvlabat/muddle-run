@@ -1,4 +1,4 @@
-use crate::CurrentPlayerNetId;
+use crate::{CurrentPlayerNetId, EstimatedServerTime, InitialRtt};
 use bevy::{ecs::SystemParam, log, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use mr_shared_lib::{
@@ -17,7 +17,8 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::{Player, PlayerConnectionState, PlayerDirectionUpdate, PlayerUpdates},
     registry::EntityRegistry,
-    GameTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
+    GameTime, SimulationTime, TargetFramesAhead, COMPONENT_FRAMEBUFFER_LIMIT,
+    SIMULATIONS_PER_SECOND,
 };
 use std::{
     collections::HashMap,
@@ -43,7 +44,11 @@ pub struct NetworkReader {
 
 #[derive(SystemParam)]
 pub struct UpdateParams<'a> {
+    simulation_time: ResMut<'a, SimulationTime>,
     game_time: ResMut<'a, GameTime>,
+    estimated_server_time: ResMut<'a, EstimatedServerTime>,
+    target_frames_ahead: ResMut<'a, TargetFramesAhead>,
+    initial_rtt: ResMut<'a, InitialRtt>,
     player_updates: ResMut<'a, PlayerUpdates>,
     spawn_level_object_commands: ResMut<'a, GameCommands<SpawnLevelObject>>,
     despawn_level_object_commands: ResMut<'a, GameCommands<DespawnLevelObject>>,
@@ -75,6 +80,7 @@ pub fn process_network_events(
                 {
                     log::error!("Failed to send a Handshake message: {:?}", err);
                 }
+                update_params.initial_rtt.sent_at = Some(Instant::now());
             }
             NetworkEvent::Disconnected(handle) => {
                 log::info!("Disconnected: {}", handle);
@@ -95,15 +101,26 @@ pub fn process_network_events(
 
             match message {
                 UnreliableServerMessage::DeltaUpdate(update) => {
-                    network_params
+                    if let Err(err) = network_params
                         .connection_state
                         .acknowledge_incoming(update.frame_number)
-                        .expect("todo disconnect");
+                    {
+                        log::error!(
+                            "Failed to acknowledge with frame {}: {:?}",
+                            update.frame_number,
+                            err
+                        );
+                    }
                     if let (Some(ack_frame_number), ack_bit_set) = update.acknowledgments {
                         network_params
                             .connection_state
                             .apply_outcoming_acknowledgements(ack_frame_number, ack_bit_set)
-                            .expect("todo disconnect");
+                            .unwrap_or_else(|err| {
+                                panic!(
+                                    "{:?} todo disconnect (frame number: {}, ack frame: {})",
+                                    err, update_params.game_time.frame_number, ack_frame_number
+                                )
+                            });
                     }
                     process_delta_update_message(
                         update,
@@ -131,6 +148,7 @@ pub fn process_network_events(
                     log::info!("Starting the game");
                     process_start_game_message(
                         start_game,
+                        &mut network_params.connection_state,
                         &mut current_player_net_id,
                         &mut players,
                         &mut update_params,
@@ -147,19 +165,17 @@ pub fn process_network_events(
                     );
                 }
                 ReliableServerMessage::SpawnLevelObject(spawn_level_object) => {
-                    update_params.game_time.simulation_frame = std::cmp::min(
-                        spawn_level_object.frame_number,
-                        update_params.game_time.simulation_frame,
-                    );
+                    update_params
+                        .simulation_time
+                        .rewind(spawn_level_object.frame_number);
                     update_params
                         .spawn_level_object_commands
                         .push(spawn_level_object);
                 }
                 ReliableServerMessage::DespawnLevelObject(despawn_level_object) => {
-                    update_params.game_time.simulation_frame = std::cmp::min(
-                        despawn_level_object.frame_number,
-                        update_params.game_time.simulation_frame,
-                    );
+                    update_params
+                        .simulation_time
+                        .rewind(despawn_level_object.frame_number);
                     update_params
                         .despawn_level_object_commands
                         .push(despawn_level_object);
@@ -180,12 +196,25 @@ pub struct PlayerUpdateParams<'a> {
 
 pub fn send_network_updates(
     time: Res<GameTime>,
+    initial_rtt: Res<InitialRtt>,
     mut network_params: NetworkParams,
     current_player_net_id: Res<CurrentPlayerNetId>,
     player_registry: Res<EntityRegistry<PlayerNetId>>,
     player_update_params: PlayerUpdateParams,
 ) {
-    log::trace!("Broadcast updates for frame {}", time.game_frame);
+    let frames_ahead = match initial_rtt.frames() {
+        Some(frames) => frames,
+        None => {
+            log::trace!("Handshake is not yet complete, skipping");
+            return;
+        }
+    };
+    let server_frame = time.frame_number + frames_ahead;
+    log::trace!(
+        "Broadcast updates for frame {} (sent to server: {})",
+        time.frame_number,
+        server_frame
+    );
     let (connection_handle, address) = match network_params.net.connections.iter_mut().next() {
         Some((&handle, connection)) => (handle, connection.remote_address()),
         None => return,
@@ -204,12 +233,13 @@ pub fn send_network_updates(
 
     network_params
         .connection_state
-        .add_outcoming_packet(time.game_frame, Instant::now())
-        .expect("todo disconnect");
+        // Clients don't resend updates, so we can forget about unacknowledged packets.
+        .add_outcoming_packet_unchecked(server_frame, Instant::now());
     let first_unacknowledged_frame = network_params
         .connection_state
         .first_unacknowledged_outcoming_packet()
-        .expect("Expected at least the new packet for the current frame");
+        .expect("Expected at least the new packet for the current frame")
+        - frames_ahead;
     let mut inputs: Vec<PlayerInput> = Vec::new();
     // TODO: deduplicate updates (the same code is written for server).
     for (frame_number, &direction) in player_direction
@@ -229,7 +259,7 @@ pub fn send_network_updates(
     let result = network_params.net.send_message(
         connection_handle,
         UnreliableClientMessage::PlayerUpdate(PlayerUpdate {
-            frame_number: time.game_frame,
+            frame_number: server_frame,
             acknowledgments: network_params.connection_state.incoming_acknowledgments(),
             inputs,
         }),
@@ -248,12 +278,30 @@ fn process_delta_update_message(
 ) {
     let mut rewind_to_simulation_frame = delta_update.frame_number;
 
+    // Calculating how many frames ahead of the server we want to be.
+    let frames_rtt = SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 2.0 / 1000.0;
+    update_params.estimated_server_time.frame_number = std::cmp::max(
+        update_params.estimated_server_time.frame_number,
+        delta_update.frame_number + FrameNumber::new(frames_rtt as u16),
+    );
+    let packet_loss_buffer = frames_rtt * connection_state.packet_loss();
+    let jitter_buffer = SIMULATIONS_PER_SECOND as f32 * connection_state.jitter_millis() / 1000.0;
+    let frames_to_be_ahead =
+        FrameNumber::new((frames_rtt + packet_loss_buffer + jitter_buffer) as u16);
+    let diff = (update_params.target_frames_ahead.frames_count.value() as i16
+        - frames_to_be_ahead.value() as i16)
+        .abs() as u16;
+    if diff > jitter_buffer as u16 {
+        update_params.target_frames_ahead.frames_count = frames_to_be_ahead;
+    }
+
     for player_state in delta_update.players {
         players.entry(player_state.net_id).or_insert_with(|| {
             log::info!("First update with the new player {}", player_state.net_id.0);
             update_params.spawn_player_commands.push(SpawnPlayer {
                 net_id: player_state.net_id,
                 start_position: player_state.position,
+                is_player_frame_simulated: false,
             });
             Player {
                 nickname: "?".to_owned(),
@@ -261,10 +309,8 @@ fn process_delta_update_message(
             }
         });
 
-        let estimated_frames_diff =
-            connection_state.rtt_millis() / 2.0 / 1000.0 * SIMULATIONS_PER_SECOND as f32;
-        let frames_to_compensate = if current_player_net_id == Some(player_state.net_id) {
-            FrameNumber::new(estimated_frames_diff as u16)
+        let player_frames_ahead = if current_player_net_id == Some(player_state.net_id) {
+            update_params.target_frames_ahead.frames_count
         } else {
             FrameNumber::new(0)
         };
@@ -292,43 +338,46 @@ fn process_delta_update_message(
         };
         for input in player_state.inputs {
             direction_updates.insert(
-                input.frame_number - frames_to_compensate,
+                input.frame_number,
                 Some(PlayerDirectionUpdate {
                     direction: input.direction,
                     is_processed_client_input: None,
                 }),
             );
-            rewind_to_simulation_frame =
-                std::cmp::min(rewind_to_simulation_frame, input.frame_number);
         }
+        rewind_to_simulation_frame = std::cmp::min(
+            rewind_to_simulation_frame,
+            frame_to_update_position - player_frames_ahead,
+        );
 
         let position_updates = update_params.player_updates.get_position_mut(
             player_state.net_id,
             delta_update.frame_number,
             COMPONENT_FRAMEBUFFER_LIMIT,
         );
-        position_updates.insert(
-            frame_to_update_position - frames_to_compensate,
-            Some(player_state.position),
-        );
+        position_updates.insert(frame_to_update_position, Some(player_state.position));
     }
 
     // There's no need to rewind if we haven't started the game.
     // TODO: deduce whether we started the game or not from some other state.
     if current_player_net_id.is_some() {
-        update_params.game_time.simulation_frame = std::cmp::min(
-            update_params.game_time.simulation_frame,
-            rewind_to_simulation_frame,
-        );
+        update_params
+            .simulation_time
+            .rewind(rewind_to_simulation_frame);
     }
 }
 
 fn process_start_game_message(
     start_game: StartGame,
+    connection_state: &mut ConnectionState,
     current_player_net_id: &mut CurrentPlayerNetId,
     players: &mut HashMap<PlayerNetId, Player>,
     update_params: &mut UpdateParams,
 ) {
+    update_params.initial_rtt.received_at = Some(Instant::now());
+    connection_state
+        .set_initial_rtt_millis(update_params.initial_rtt.duration_secs().unwrap() * 1000.0);
+
     if let Some(start_position) = player_start_position(start_game.net_id, &start_game.game_state) {
         current_player_net_id.0 = Some(start_game.net_id);
         players.insert(
@@ -339,11 +388,18 @@ fn process_start_game_message(
             },
         );
         update_params.game_time.generation += 1;
-        update_params.game_time.game_frame = start_game.game_state.frame_number;
-        update_params.game_time.simulation_frame = start_game.game_state.frame_number;
+        update_params.target_frames_ahead.frames_count = FrameNumber::new(
+            (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
+        );
+        update_params.simulation_time.server_frame = start_game.game_state.frame_number;
+        update_params.simulation_time.player_frame =
+            start_game.game_state.frame_number + update_params.target_frames_ahead.frames_count;
+        update_params.game_time.frame_number =
+            start_game.game_state.frame_number + update_params.target_frames_ahead.frames_count;
         update_params.spawn_player_commands.push(SpawnPlayer {
             net_id: start_game.net_id,
             start_position,
+            is_player_frame_simulated: true,
         });
     } else {
         log::error!("Player's position isn't found in the game state");
@@ -362,6 +418,7 @@ fn process_start_game_message(
             update_params.spawn_player_commands.push(SpawnPlayer {
                 net_id: player.net_id,
                 start_position,
+                is_player_frame_simulated: false,
             });
         } else {
             log::error!(

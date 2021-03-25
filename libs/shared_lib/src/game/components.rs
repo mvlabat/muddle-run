@@ -11,9 +11,11 @@ pub struct PlayerDirection {
 }
 
 impl PlayerDirection {
-    pub fn new(initial_value: Vec2, buffer_start_frame: FrameNumber) -> Self {
+    pub fn new(initial_value: Vec2, buffer_start_frame: FrameNumber, frames_to_fill: u16) -> Self {
         let mut buffer = Framebuffer::new(buffer_start_frame, COMPONENT_FRAMEBUFFER_LIMIT);
-        buffer.push(Some(initial_value));
+        for _ in 0..frames_to_fill {
+            buffer.push(Some(initial_value));
+        }
         Self { buffer }
     }
 }
@@ -24,9 +26,11 @@ pub struct Position {
 }
 
 impl Position {
-    pub fn new(initial_value: Vec2, buffer_start_frame: FrameNumber) -> Self {
+    pub fn new(initial_value: Vec2, buffer_start_frame: FrameNumber, frames_to_fill: u16) -> Self {
         let mut buffer = Framebuffer::new(buffer_start_frame, COMPONENT_FRAMEBUFFER_LIMIT);
-        buffer.push(initial_value);
+        for _ in 0..frames_to_fill {
+            buffer.push(initial_value);
+        }
         Self { buffer }
     }
 }
@@ -61,3 +65,6 @@ impl Spawned {
         }
     }
 }
+
+/// Marks an entity to be simulated with using `SimulationTime::player_frame`.
+pub struct PlayerFrameSimulated;

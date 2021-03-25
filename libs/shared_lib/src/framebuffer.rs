@@ -99,7 +99,7 @@ impl<T> Framebuffer<T> {
     }
 }
 
-impl<T: Default> Framebuffer<T> {
+impl<T: Default + std::fmt::Debug> Framebuffer<T> {
     pub fn insert(&mut self, frame_number: FrameNumber, value: T) {
         let frame_len = FrameNumber::new(self.buffer.len() as u16);
         if !self.can_insert(frame_number) {

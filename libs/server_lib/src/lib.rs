@@ -4,7 +4,8 @@ use crate::{
     },
     player_updates::{process_player_input_updates, DeferredUpdates},
 };
-use bevy::prelude::*;
+use bevy::{core::FixedTimestep, prelude::*};
+use bevy_networking_turbulence::LinkConditionerConfig;
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -15,7 +16,7 @@ use mr_shared_lib::{
     messages::{EntityNetId, PlayerInput, PlayerNetId},
     net::ConnectionState,
     registry::IncrementId,
-    MuddleSharedPlugin, PLANE_SIZE,
+    MuddleSharedPlugin, PLANE_SIZE, SIMULATIONS_PER_SECOND,
 };
 use std::collections::HashMap;
 
@@ -45,8 +46,15 @@ impl Plugin for MuddleServerPlugin {
 
         // Game.
         builder.add_plugin(MuddleSharedPlugin::new(
+            FixedTimestep::steps_per_second(SIMULATIONS_PER_SECOND as f64),
             input_stage,
             broadcast_updates_stage,
+            Some(LinkConditionerConfig {
+                incoming_latency: 100,
+                incoming_jitter: 20,
+                incoming_loss: 0.01,
+                incoming_corruption: 0.0,
+            }),
         ));
 
         let resources = builder.resources_mut();
