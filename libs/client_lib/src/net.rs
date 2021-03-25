@@ -14,7 +14,7 @@ use mr_shared_lib::{
         ReliableClientMessage, ReliableServerMessage, StartGame, UnreliableClientMessage,
         UnreliableServerMessage,
     },
-    net::ConnectionState,
+    net::{AcknowledgeError, ConnectionState},
     player::{Player, PlayerConnectionState, PlayerDirectionUpdate, PlayerUpdates},
     registry::EntityRegistry,
     GameTime, SimulationTime, TargetFramesAhead, COMPONENT_FRAMEBUFFER_LIMIT,
@@ -111,24 +111,36 @@ pub fn process_network_events(
                             err
                         );
                     }
+                    let mut skip_update = false;
                     if let (Some(ack_frame_number), ack_bit_set) = update.acknowledgments {
-                        network_params
+                        match network_params
                             .connection_state
                             .apply_outcoming_acknowledgements(ack_frame_number, ack_bit_set)
-                            .unwrap_or_else(|err| {
-                                panic!(
-                                    "{:?} todo disconnect (frame number: {}, ack frame: {})",
-                                    err, update_params.game_time.frame_number, ack_frame_number
-                                )
-                            });
+                        {
+                            Err(AcknowledgeError::OutOfRange) => {
+                                log::warn!(
+                                    "Can't apply acknowledgments for frame {} (current frame: {})",
+                                    ack_frame_number,
+                                    update_params.game_time.frame_number
+                                );
+                                skip_update = true;
+                            }
+                            Err(err) => panic!(
+                                "{:?} todo disconnect (frame number: {}, ack frame: {})",
+                                err, update_params.game_time.frame_number, ack_frame_number
+                            ),
+                            _ => {}
+                        }
                     }
-                    process_delta_update_message(
-                        update,
-                        &network_params.connection_state,
-                        current_player_net_id.0,
-                        &mut players,
-                        &mut update_params,
-                    );
+                    if !skip_update {
+                        process_delta_update_message(
+                            update,
+                            &network_params.connection_state,
+                            current_player_net_id.0,
+                            &mut players,
+                            &mut update_params,
+                        );
+                    }
                 }
             }
         }
