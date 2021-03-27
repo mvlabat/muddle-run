@@ -1,4 +1,4 @@
-use crate::{CurrentPlayerNetId, EstimatedServerTime, InitialRtt};
+use crate::{CurrentPlayerNetId, EstimatedServerTime, InitialRtt, PlayerDelay, TargetFramesAhead};
 use bevy::{ecs::SystemParam, log, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use mr_shared_lib::{
@@ -17,8 +17,7 @@ use mr_shared_lib::{
     net::{AcknowledgeError, ConnectionState},
     player::{Player, PlayerConnectionState, PlayerDirectionUpdate, PlayerUpdates},
     registry::EntityRegistry,
-    GameTime, SimulationTime, TargetFramesAhead, COMPONENT_FRAMEBUFFER_LIMIT,
-    SIMULATIONS_PER_SECOND,
+    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
 };
 use std::{
     collections::HashMap,
@@ -48,6 +47,7 @@ pub struct UpdateParams<'a> {
     game_time: ResMut<'a, GameTime>,
     estimated_server_time: ResMut<'a, EstimatedServerTime>,
     target_frames_ahead: ResMut<'a, TargetFramesAhead>,
+    player_delay: ResMut<'a, PlayerDelay>,
     initial_rtt: ResMut<'a, InitialRtt>,
     player_updates: ResMut<'a, PlayerUpdates>,
     spawn_level_object_commands: ResMut<'a, GameCommands<SpawnLevelObject>>,
@@ -132,6 +132,7 @@ pub fn process_network_events(
                             _ => {}
                         }
                     }
+                    skip_update = skip_update || current_player_net_id.0.is_none();
                     if !skip_update {
                         process_delta_update_message(
                             update,
@@ -208,25 +209,12 @@ pub struct PlayerUpdateParams<'a> {
 
 pub fn send_network_updates(
     time: Res<GameTime>,
-    initial_rtt: Res<InitialRtt>,
     mut network_params: NetworkParams,
     current_player_net_id: Res<CurrentPlayerNetId>,
     player_registry: Res<EntityRegistry<PlayerNetId>>,
     player_update_params: PlayerUpdateParams,
 ) {
-    let frames_ahead = match initial_rtt.frames() {
-        Some(frames) => frames,
-        None => {
-            log::trace!("Handshake is not yet complete, skipping");
-            return;
-        }
-    };
-    let server_frame = time.frame_number + frames_ahead;
-    log::trace!(
-        "Broadcast updates for frame {} (sent to server: {})",
-        time.frame_number,
-        server_frame
-    );
+    log::trace!("Broadcast updates for frame {}", time.frame_number);
     let (connection_handle, address) = match network_params.net.connections.iter_mut().next() {
         Some((&handle, connection)) => (handle, connection.remote_address()),
         None => return,
@@ -246,12 +234,11 @@ pub fn send_network_updates(
     network_params
         .connection_state
         // Clients don't resend updates, so we can forget about unacknowledged packets.
-        .add_outcoming_packet_unchecked(server_frame, Instant::now());
+        .add_outcoming_packet_unchecked(time.frame_number, Instant::now());
     let first_unacknowledged_frame = network_params
         .connection_state
         .first_unacknowledged_outcoming_packet()
-        .expect("Expected at least the new packet for the current frame")
-        - frames_ahead;
+        .expect("Expected at least the new packet for the current frame");
     let mut inputs: Vec<PlayerInput> = Vec::new();
     // TODO: deduplicate updates (the same code is written for server).
     for (frame_number, &direction) in player_direction
@@ -271,7 +258,7 @@ pub fn send_network_updates(
     let result = network_params.net.send_message(
         connection_handle,
         UnreliableClientMessage::PlayerUpdate(PlayerUpdate {
-            frame_number: server_frame,
+            frame_number: time.frame_number,
             acknowledgments: network_params.connection_state.incoming_acknowledgments(),
             inputs,
         }),
@@ -290,21 +277,52 @@ fn process_delta_update_message(
 ) {
     let mut rewind_to_simulation_frame = delta_update.frame_number;
 
-    // Calculating how many frames ahead of the server we want to be.
+    // Calculating how many frames ahead of the server we want to be (implies resizing input buffer for the server).
     let frames_rtt = SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0;
-    update_params.estimated_server_time.frame_number = std::cmp::max(
-        update_params.estimated_server_time.frame_number,
-        delta_update.frame_number + FrameNumber::new(frames_rtt as u16),
-    );
     let packet_loss_buffer = frames_rtt * connection_state.packet_loss();
     let jitter_buffer = SIMULATIONS_PER_SECOND as f32 * connection_state.jitter_millis() / 1000.0;
     let frames_to_be_ahead =
-        FrameNumber::new((frames_rtt + packet_loss_buffer + jitter_buffer) as u16);
+        frames_rtt.ceil() + packet_loss_buffer.ceil() + jitter_buffer.ceil() + 1.0;
     let diff = (update_params.target_frames_ahead.frames_count.value() as i32
-        - frames_to_be_ahead.value() as i32)
+        - FrameNumber::new(frames_to_be_ahead.ceil() as u16).value() as i32)
         .abs() as u16;
-    if diff > jitter_buffer as u16 {
-        update_params.target_frames_ahead.frames_count = frames_to_be_ahead;
+    let new_target = FrameNumber::new(frames_to_be_ahead as u16);
+    if new_target > update_params.target_frames_ahead.frames_count || diff > jitter_buffer as u16 {
+        update_params.target_frames_ahead.frames_count = new_target;
+    }
+
+    // Adjusting the speed to synchronize with the server clock.
+    let new_estimated_server_time =
+        delta_update.frame_number + update_params.target_frames_ahead.frames_count;
+    if new_estimated_server_time > update_params.estimated_server_time.frame_number {
+        update_params.estimated_server_time.frame_number = new_estimated_server_time;
+        update_params.estimated_server_time.updated_at = update_params.game_time.frame_number;
+    }
+    let target_player_frame = update_params.estimated_server_time.frame_number;
+    let player_delay = (target_player_frame.value() as i32
+        - update_params.game_time.frame_number.value() as i32) as i16;
+
+    // TODO: any better heuristics here?
+    let is_above_threshold = player_delay.abs() as f32
+        > update_params.target_frames_ahead.frames_count.value() as f32 / 2.0;
+    let is_above_jitter_or_positive = player_delay.abs() as f32 > jitter_buffer || player_delay > 0;
+    let needs_compensating = is_above_threshold && is_above_jitter_or_positive;
+
+    let is_not_resizing_input_buffer = update_params.target_frames_ahead.frames_count
+        == update_params.simulation_time.player_frame - update_params.simulation_time.server_frame;
+    if needs_compensating && is_not_resizing_input_buffer {
+        log::debug!("player delay: {}, ahread of server: {}, game frame: {}, update frame: {}, estimated server frame: {}, to be ahead: {}, rtt: {}, packet_loss: {}, jitter: {}",
+            player_delay,
+            update_params.game_time.frame_number.value() as i32 - update_params.estimated_server_time.frame_number.value() as i32,
+            update_params.game_time.frame_number.value(),
+            delta_update.frame_number.value(),
+            update_params.estimated_server_time.frame_number.value(),
+            frames_to_be_ahead.ceil() as u16,
+            frames_rtt.ceil() as u16,
+            packet_loss_buffer.ceil() as u16,
+            jitter_buffer.ceil() as u16
+        );
+        update_params.player_delay.frame_count = player_delay / 2;
     }
 
     for player_state in delta_update.players {
@@ -357,6 +375,8 @@ fn process_delta_update_message(
                 }),
             );
         }
+
+        // TODO: detect whether a misprediction indeed happened to avoid redundant rewinding.
         rewind_to_simulation_frame = std::cmp::min(
             rewind_to_simulation_frame,
             frame_to_update_position - player_frames_ahead,
@@ -406,14 +426,22 @@ fn process_start_game_message(
             },
         );
         update_params.game_time.generation += 1;
-        update_params.target_frames_ahead.frames_count = FrameNumber::new(
+        let rtt_frames = FrameNumber::new(
+            (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0) as u16,
+        );
+        let half_rtt_frames = FrameNumber::new(
             (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
         );
+        update_params.target_frames_ahead.frames_count = rtt_frames;
         update_params.simulation_time.server_frame = start_game.game_state.frame_number;
         update_params.simulation_time.player_frame =
-            start_game.game_state.frame_number + update_params.target_frames_ahead.frames_count;
-        update_params.game_time.frame_number =
-            start_game.game_state.frame_number + update_params.target_frames_ahead.frames_count;
+            start_game.game_state.frame_number + rtt_frames;
+        update_params.game_time.frame_number = update_params.simulation_time.player_frame;
+
+        update_params.estimated_server_time.frame_number =
+            start_game.game_state.frame_number + half_rtt_frames;
+        update_params.estimated_server_time.updated_at = update_params.game_time.frame_number;
+
         update_params.spawn_player_commands.push(SpawnPlayer {
             net_id: start_game.net_id,
             start_position,

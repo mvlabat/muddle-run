@@ -49,10 +49,12 @@ impl Plugin for MuddleServerPlugin {
             FixedTimestep::steps_per_second(SIMULATIONS_PER_SECOND as f64),
             input_stage,
             broadcast_updates_stage,
+            SystemStage::serial(),
+            // None,
             Some(LinkConditionerConfig {
                 incoming_latency: 100,
                 incoming_jitter: 20,
-                incoming_loss: 0.01,
+                incoming_loss: 0.1,
                 incoming_corruption: 0.0,
             }),
         ));

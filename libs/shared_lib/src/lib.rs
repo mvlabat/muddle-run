@@ -57,6 +57,7 @@ pub mod stage {
     pub const READ_INPUT_UPDATES: &str = "mr_shared_read_input_updates";
     pub const BROADCAST_UPDATES: &str = "mr_shared_broadcast_updates";
     pub const POST_SIMULATIONS: &str = "mr_shared_post_simulations";
+    pub const POST_TICK: &str = "mr_shared_post_tick";
 
     pub const SIMULATION_SCHEDULE: &str = "mr_shared_simulation_schedule";
     pub const SPAWN: &str = "mr_shared_spawn";
@@ -69,7 +70,6 @@ pub mod stage {
 pub const PLAYER_SIZE: f32 = 1.0;
 pub const PLANE_SIZE: f32 = 20.0;
 pub const SIMULATIONS_PER_SECOND: u16 = 120;
-pub const TICKING_SPEED_FACTOR: u16 = 10;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
 pub const TICKS_PER_NETWORK_BROADCAST: u16 = 2;
 
@@ -77,6 +77,7 @@ pub struct MuddleSharedPlugin<S: System<In = (), Out = ShouldRun>> {
     main_run_criteria: Mutex<Option<S>>,
     input_stage: Mutex<Option<SystemStage>>,
     broadcast_updates_stage: Mutex<Option<SystemStage>>,
+    post_tick_stage: Mutex<Option<SystemStage>>,
     link_conditioner: Option<LinkConditionerConfig>,
 }
 
@@ -85,12 +86,14 @@ impl<S: System<In = (), Out = ShouldRun>> MuddleSharedPlugin<S> {
         main_run_criteria: S,
         input_stage: SystemStage,
         broadcast_updates_stage: SystemStage,
+        post_tick_stage: SystemStage,
         link_conditioner: Option<LinkConditionerConfig>,
     ) -> Self {
         Self {
             main_run_criteria: Mutex::new(Some(main_run_criteria)),
             input_stage: Mutex::new(Some(input_stage)),
             broadcast_updates_stage: Mutex::new(Some(broadcast_updates_stage)),
+            post_tick_stage: Mutex::new(Some(post_tick_stage)),
             link_conditioner,
         }
     }
@@ -113,6 +116,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .expect("Can't initialize the plugin more than once");
         let mut broadcast_updates_stage = self
             .broadcast_updates_stage
+            .lock()
+            .expect("Can't initialize the plugin more than once");
+        let mut post_tick_stage = self
+            .post_tick_stage
             .lock()
             .expect("Can't initialize the plugin more than once");
 
@@ -168,8 +175,14 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 stage::POST_SIMULATIONS,
                 SystemStage::serial()
                     .with_system(tick_game_frame.system())
-                    .with_system(control_ticking_speed.system())
                     .with_system(mark_mature_entities.system()),
+            )
+            .with_stage(
+                stage::POST_TICK,
+                post_tick_stage
+                    .take()
+                    .expect("Can't initialize the plugin more than once")
+                    .with_run_criteria(GameTickRunCriteria::new(TICKS_PER_NETWORK_BROADCAST)),
             );
 
         builder.add_stage_before(
@@ -195,8 +208,6 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         let resources = builder.resources_mut();
         resources.get_or_insert_with(GameTime::default);
         resources.get_or_insert_with(SimulationTime::default);
-        resources.get_or_insert_with(GameTicksPerSecond::default);
-        resources.get_or_insert_with(TargetFramesAhead::default);
         resources.get_or_insert_with(LevelState::default);
         resources.get_or_insert_with(PlayerUpdates::default);
         resources.get_or_insert_with(GameCommands::<SpawnPlayer>::default);
@@ -248,24 +259,6 @@ pub struct SimulationTime {
     /// on the server side.
     pub player_frame: FrameNumber,
     pub server_frame: FrameNumber,
-}
-
-#[derive(Default, Debug)]
-pub struct TargetFramesAhead {
-    /// Is always zero for the server.
-    pub frames_count: FrameNumber,
-}
-
-pub struct GameTicksPerSecond {
-    pub rate: u16,
-}
-
-impl Default for GameTicksPerSecond {
-    fn default() -> Self {
-        Self {
-            rate: SIMULATIONS_PER_SECOND,
-        }
-    }
 }
 
 impl SimulationTime {
@@ -486,61 +479,6 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
 pub fn tick_game_frame(mut time: ResMut<GameTime>) {
     log::trace!("Concluding game frame tick: {}", time.frame_number.value());
     time.frame_number += FrameNumber::new(1);
-}
-
-pub fn control_ticking_speed(
-    mut frames_ticked: Local<u16>,
-    mut prev_generation: Local<usize>,
-    mut prev_tick_rate: Local<GameTicksPerSecond>,
-    mut tick_rate: ResMut<GameTicksPerSecond>,
-    mut simulation_time: ResMut<SimulationTime>,
-    time: Res<GameTime>,
-    target_frames_ahead: Res<TargetFramesAhead>,
-) {
-    use std::cmp::Ordering;
-
-    let target_player_frame = simulation_time.server_frame + target_frames_ahead.frames_count;
-    tick_rate.rate = match simulation_time.player_frame.cmp(&target_player_frame) {
-        Ordering::Equal => SIMULATIONS_PER_SECOND,
-        Ordering::Greater => slower_tick_rate(),
-        Ordering::Less => faster_tick_rate(),
-    };
-
-    if prev_tick_rate.rate != tick_rate.rate || *prev_generation != time.generation {
-        *frames_ticked = 0;
-    }
-
-    if *frames_ticked == TICKING_SPEED_FACTOR {
-        *frames_ticked = 0;
-        if tick_rate.rate == faster_tick_rate() {
-            simulation_time.server_frame -= FrameNumber::new(1);
-        } else if tick_rate.rate == slower_tick_rate() {
-            simulation_time.player_frame -= FrameNumber::new(1);
-        }
-    }
-    *frames_ticked += 1;
-    prev_tick_rate.rate = tick_rate.rate;
-    *prev_generation = time.generation;
-}
-
-fn faster_tick_rate() -> u16 {
-    if SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR != 0 {
-        panic!(
-            "SIMULATIONS_PER_SECOND must a multiple of {}",
-            TICKING_SPEED_FACTOR
-        );
-    }
-    SIMULATIONS_PER_SECOND + SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
-}
-
-fn slower_tick_rate() -> u16 {
-    if SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR != 0 {
-        panic!(
-            "SIMULATIONS_PER_SECOND must a multiple of {}",
-            TICKING_SPEED_FACTOR
-        );
-    }
-    SIMULATIONS_PER_SECOND - SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
 }
 
 struct PairFilter;

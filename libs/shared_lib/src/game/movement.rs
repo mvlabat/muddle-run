@@ -103,7 +103,9 @@ pub fn read_movement_updates(
                 direction_update
                     .and_then(|direction_update| {
                         direction_update.as_mut().map(|direction_update| {
-                            direction_update.is_processed_client_input = Some(true);
+                            if cfg!(feature = "render") {
+                                direction_update.is_processed_client_input = Some(true);
+                            }
                             direction_update.direction
                         })
                     })

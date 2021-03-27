@@ -12,7 +12,7 @@ pub struct PlayerUpdates {
     pub position: HashMap<PlayerNetId, Framebuffer<Option<Vec2>>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct PlayerDirectionUpdate {
     pub direction: Vec2,
     pub is_processed_client_input: Option<bool>,

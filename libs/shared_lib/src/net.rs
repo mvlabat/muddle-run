@@ -18,6 +18,7 @@ use std::{
 use thiserror::Error;
 
 const RTT_UPDATE_FACTOR: f32 = 0.2;
+const JITTER_DECREASE_THRESHOLD_SECS: u64 = 1;
 
 #[derive(Debug, Error)]
 pub enum AcknowledgeError {
@@ -44,6 +45,7 @@ pub struct ConnectionState {
     outcoming_packets_acks: VecDeque<Acknowledgment>,
     packet_loss: f32,
     jitter_millis: f32,
+    last_increased_jitter: Instant,
     rtt_millis: f32,
 }
 
@@ -55,6 +57,8 @@ impl Default for ConnectionState {
             outcoming_packets_acks: VecDeque::new(),
             packet_loss: 0.0,
             jitter_millis: 0.0,
+            last_increased_jitter: Instant::now()
+                - Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS),
             rtt_millis: 100.0,
         }
     }
@@ -217,9 +221,16 @@ impl ConnectionState {
             as f32
             / frames_to_set as f32;
 
+        let last_acknowledged = self
+            .outcoming_packets_acks
+            .iter()
+            .rfind(|ack| ack.acknowledged)
+            .map(|ack| ack.frame_number);
         for acknowledgment in self.outcoming_packets_acks.iter_mut().take(frames_to_set) {
             let acknowledged = acknowledgment_bit_set >> 63 != 0;
-            if !acknowledged && acknowledgment.acknowledged {
+            let is_not_outdated =
+                last_acknowledged.map_or(true, |last_ack_frame| frame_number > last_ack_frame);
+            if !acknowledged && acknowledgment.acknowledged && is_not_outdated {
                 return Err(AcknowledgeError::Inconsistent);
             }
             if acknowledged && !acknowledgment.acknowledged {
@@ -287,15 +298,22 @@ impl ConnectionState {
         let avg_rtt = acc / count as f32;
 
         // Calculating jitter.
-        let mut acc = 0.0;
+        let mut jitter = 0.0f32;
         for rtt in self
             .outcoming_packets_acks
             .iter()
             .filter_map(|ack| ack.rtt_millis())
         {
-            acc += (avg_rtt - rtt).abs();
+            jitter = jitter.max((avg_rtt - rtt).abs() * 1.1);
         }
-        self.jitter_millis = acc / count as f32;
+        if jitter > self.jitter_millis {
+            self.last_increased_jitter = Instant::now();
+            self.jitter_millis = jitter;
+        } else if Instant::now().duration_since(self.last_increased_jitter)
+            > Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS)
+        {
+            self.jitter_millis = self.jitter_millis + (jitter - self.jitter_millis) * 0.1;
+        }
     }
 
     fn frames_to_fill(&self) -> usize {

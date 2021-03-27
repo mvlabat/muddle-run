@@ -1,4 +1,7 @@
-use crate::{input::MouseRay, ui::MuddleInspectable, EstimatedServerTime};
+use crate::{
+    input::MouseRay, ui::MuddleInspectable, AdjustedSpeedReason, EstimatedServerTime,
+    GameTicksPerSecond, PlayerDelay, TargetFramesAhead,
+};
 use bevy::{
     diagnostic::{DiagnosticMeasurement, Diagnostics, FrameTimeDiagnosticsPlugin},
     ecs::SystemParam,
@@ -13,12 +16,13 @@ use bevy_rapier3d::{
     },
 };
 use mr_shared_lib::{
+    framebuffer::FrameNumber,
     game::components::{PlayerDirection, Position},
     messages::PlayerNetId,
     net::ConnectionState,
     player::Player,
     registry::EntityRegistry,
-    GameTicksPerSecond, SimulationTime, TargetFramesAhead,
+    SimulationTime,
 };
 use std::collections::{HashMap, VecDeque};
 
@@ -28,37 +32,70 @@ pub fn update_ui_scale_factor(mut egui_settings: ResMut<EguiSettings>, windows: 
     }
 }
 
+#[derive(SystemParam)]
+pub struct DebugData<'a> {
+    time: Res<'a, SimulationTime>,
+    tick_rate: Res<'a, GameTicksPerSecond>,
+    player_delay: Res<'a, PlayerDelay>,
+    adjusted_speed_reason: Res<'a, AdjustedSpeedReason>,
+    target_frames_ahead: Res<'a, TargetFramesAhead>,
+    estimated_server_time: Res<'a, EstimatedServerTime>,
+    connection_state: Res<'a, ConnectionState>,
+}
+
 #[derive(Default)]
 pub struct DebugUiState {
     pub show: bool,
     pub fps_history: VecDeque<DiagnosticMeasurement>,
     pub fps_history_len: usize,
+    pub pause: bool,
+
+    pub frames_ahead: FrameNumber,
+    pub target_frames_ahead: FrameNumber,
+    pub tick_rate: u16,
+    pub player_frame: FrameNumber,
+    pub local_server_frame: FrameNumber,
+    pub estimated_server_frame: FrameNumber,
+    pub ahead_of_server: i32,
+    pub player_delay: i16,
+    pub adjusted_speed_reason: AdjustedSpeedReason,
+    pub rtt_millis: usize,
+    pub packet_loss: f32,
+    pub jitter_millis: usize,
 }
 
-#[derive(SystemParam)]
-pub struct DebugData<'a> {
-    target_frames_ahead: Res<'a, TargetFramesAhead>,
-    tick_rate: Res<'a, GameTicksPerSecond>,
-    time: Res<'a, SimulationTime>,
-    server_time: Res<'a, EstimatedServerTime>,
-    connection_state: Res<'a, ConnectionState>,
-    diagnostics: Res<'a, Diagnostics>,
+pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_data: DebugData) {
+    if debug_ui_state.pause {
+        return;
+    }
+    debug_ui_state.frames_ahead = debug_data.time.player_frame - debug_data.time.server_frame;
+    debug_ui_state.target_frames_ahead = debug_data.target_frames_ahead.frames_count;
+    debug_ui_state.tick_rate = debug_data.tick_rate.rate;
+    debug_ui_state.player_frame = debug_data.time.player_frame;
+    debug_ui_state.local_server_frame = debug_data.time.server_frame;
+    debug_ui_state.estimated_server_frame = debug_data.estimated_server_time.frame_number;
+    debug_ui_state.ahead_of_server = debug_data.time.player_frame.value() as i32
+        - debug_data.estimated_server_time.frame_number.value() as i32
+        + (debug_data.time.player_frame - debug_data.estimated_server_time.updated_at).value()
+            as i32;
+    debug_ui_state.player_delay = debug_data.player_delay.frame_count;
+    debug_ui_state.adjusted_speed_reason = *debug_data.adjusted_speed_reason;
+    debug_ui_state.rtt_millis = debug_data.connection_state.rtt_millis() as usize;
+    debug_ui_state.packet_loss = debug_data.connection_state.packet_loss() * 100.0;
+    debug_ui_state.jitter_millis = debug_data.connection_state.jitter_millis() as usize;
 }
 
 pub fn debug_ui(
     mut egui_context: ResMut<EguiContext>,
     mut debug_ui_state: ResMut<DebugUiState>,
-    debug_data: DebugData,
+    diagnostics: Res<Diagnostics>,
 ) {
     let ctx = &mut egui_context.ctx;
 
-    if let Some(fps_diagnostic) = debug_data.diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
+    if let Some(fps_diagnostic) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
         debug_ui_state.fps_history_len = fps_diagnostic.get_max_history_length();
     }
-    if let Some(measurement) = debug_data
-        .diagnostics
-        .get_measurement(FrameTimeDiagnosticsPlugin::FPS)
-    {
+    if let Some(measurement) = diagnostics.get_measurement(FrameTimeDiagnosticsPlugin::FPS) {
         if debug_ui_state.fps_history.len() == debug_ui_state.fps_history_len {
             debug_ui_state.fps_history.pop_front();
         }
@@ -81,38 +118,40 @@ pub fn debug_ui(
                 });
 
             ui.separator();
-            ui.label(format!(
-                "Frames ahead: {}",
-                debug_data.time.player_frame - debug_data.time.server_frame
-            ));
+            if debug_ui_state.pause {
+                if ui.button("Unpause").clicked {
+                    debug_ui_state.pause = false;
+                }
+            } else if ui.button("Pause").clicked {
+                debug_ui_state.pause = true;
+            }
+
+            ui.label(format!("Frames ahead: {}", debug_ui_state.frames_ahead,));
             ui.label(format!(
                 "Target frames ahead: {}",
-                debug_data.target_frames_ahead.frames_count
+                debug_ui_state.target_frames_ahead,
             ));
             ui.separator();
-            ui.label(format!("Tick rate: {}", debug_data.tick_rate.rate));
-            ui.label(format!("Player frame: {}", debug_data.time.player_frame));
+            ui.label(format!("Tick rate: {}", debug_ui_state.tick_rate));
+            ui.label(format!("Player frame: {}", debug_ui_state.player_frame));
             ui.label(format!(
                 "Local server frame: {}",
-                debug_data.time.server_frame
+                debug_ui_state.local_server_frame
             ));
             ui.label(format!(
-                "Server frame: {}",
-                debug_data.server_time.frame_number
+                "Estimated server frame: {}",
+                debug_ui_state.estimated_server_frame
             ));
+            ui.label(format!(
+                "Ahead of server: {}",
+                debug_ui_state.ahead_of_server
+            ));
+            ui.label(format!("Player delay: {}", debug_ui_state.player_delay));
+            ui.label(format!("{:?}", debug_ui_state.adjusted_speed_reason));
             ui.separator();
-            ui.label(format!(
-                "RTT: {}ms",
-                debug_data.connection_state.rtt_millis() as usize
-            ));
-            ui.label(format!(
-                "Packet loss: {:.2}%",
-                debug_data.connection_state.packet_loss() * 100.0
-            ));
-            ui.label(format!(
-                "Jitter: {}ms",
-                debug_data.connection_state.jitter_millis() as usize
-            ));
+            ui.label(format!("RTT: {}ms", debug_ui_state.rtt_millis));
+            ui.label(format!("Packet loss: {:.2}%", debug_ui_state.packet_loss));
+            ui.label(format!("Jitter: {}ms", debug_ui_state.jitter_millis));
         });
     }
 }

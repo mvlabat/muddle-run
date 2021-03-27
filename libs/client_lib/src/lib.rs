@@ -1,16 +1,26 @@
 use crate::{
     input::MouseRay,
     net::{initiate_connection, process_network_events, send_network_updates},
+    ui::debug_ui::update_debug_ui_state,
 };
 use bevy::{
+    app::{AppBuilder, Plugin},
+    core::Time,
     diagnostic::FrameTimeDiagnosticsPlugin,
-    ecs::{ArchetypeComponent, ShouldRun, SystemId, ThreadLocalExecution, TypeAccess},
-    prelude::*,
+    ecs::{
+        ArchetypeComponent, Commands, Entity, IntoSystem, Local, Res, ResMut, Resources, ShouldRun,
+        System, SystemId, SystemParam, SystemStage, ThreadLocalExecution, TypeAccess, World,
+    },
+    math::Vec3,
+    pbr::LightBundle,
+    render::entity::Camera3dBundle,
+    transform::components::Transform,
 };
 use bevy_egui::EguiPlugin;
+use bevy_networking_turbulence::LinkConditionerConfig;
 use mr_shared_lib::{
-    framebuffer::FrameNumber, messages::PlayerNetId, net::ConnectionState, GameTicksPerSecond,
-    MuddleSharedPlugin, SIMULATIONS_PER_SECOND,
+    framebuffer::FrameNumber, messages::PlayerNetId, net::ConnectionState, GameTime,
+    MuddleSharedPlugin, SimulationTime, SIMULATIONS_PER_SECOND,
 };
 use std::{any::TypeId, borrow::Cow, time::Instant};
 
@@ -18,6 +28,8 @@ mod helpers;
 mod input;
 mod net;
 mod ui;
+
+const TICKING_SPEED_FACTOR: u16 = 10;
 
 pub struct MuddleClientPlugin;
 
@@ -31,6 +43,9 @@ impl Plugin for MuddleClientPlugin {
             .with_system(input::cast_mouse_ray.system());
         let broadcast_updates_stage =
             SystemStage::parallel().with_system(send_network_updates.system());
+        let post_tick_stage = SystemStage::serial()
+            .with_system(control_ticking_speed.system())
+            .with_system(update_debug_ui_state.system());
 
         builder
             .add_plugin(FrameTimeDiagnosticsPlugin)
@@ -46,7 +61,14 @@ impl Plugin for MuddleClientPlugin {
                 NetAdaptiveTimestemp::default(),
                 input_stage,
                 broadcast_updates_stage,
-                None,
+                post_tick_stage,
+                // None,
+                Some(LinkConditionerConfig {
+                    incoming_latency: 100,
+                    incoming_jitter: 20,
+                    incoming_loss: 0.0,
+                    incoming_corruption: 0.0,
+                }),
             ))
             // Egui.
             .add_system(ui::debug_ui::update_ui_scale_factor.system())
@@ -56,6 +78,10 @@ impl Plugin for MuddleClientPlugin {
         let resources = builder.resources_mut();
         resources.get_or_insert_with(InitialRtt::default);
         resources.get_or_insert_with(EstimatedServerTime::default);
+        resources.get_or_insert_with(GameTicksPerSecond::default);
+        resources.get_or_insert_with(TargetFramesAhead::default);
+        resources.get_or_insert_with(PlayerDelay::default);
+        resources.get_or_insert_with(AdjustedSpeedReason::default);
         resources.get_or_insert_with(ui::debug_ui::DebugUiState::default);
         resources.get_or_insert_with(CurrentPlayerNetId::default);
         resources.get_or_insert_with(ConnectionState::default);
@@ -96,7 +122,31 @@ impl InitialRtt {
 
 #[derive(Default)]
 pub struct EstimatedServerTime {
+    pub updated_at: FrameNumber,
     pub frame_number: FrameNumber,
+}
+
+#[derive(Default)]
+pub struct PlayerDelay {
+    pub frame_count: i16,
+}
+
+#[derive(Default, Debug)]
+pub struct TargetFramesAhead {
+    /// Is always zero for the server.
+    pub frames_count: FrameNumber,
+}
+
+pub struct GameTicksPerSecond {
+    pub rate: u16,
+}
+
+impl Default for GameTicksPerSecond {
+    fn default() -> Self {
+        Self {
+            rate: SIMULATIONS_PER_SECOND,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -119,6 +169,130 @@ fn basic_scene(commands: &mut Commands) {
         });
     let main_camera_entity = commands.current_entity().unwrap();
     commands.insert_resource(MainCameraEntity(main_camera_entity));
+}
+
+#[derive(SystemParam)]
+pub struct ControlTickingSpeedParams<'a> {
+    tick_rate: ResMut<'a, GameTicksPerSecond>,
+    simulation_time: ResMut<'a, SimulationTime>,
+    time: ResMut<'a, GameTime>,
+    target_frames_ahead: Res<'a, TargetFramesAhead>,
+    player_delay: ResMut<'a, PlayerDelay>,
+    adjusted_speed_reason: ResMut<'a, AdjustedSpeedReason>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum AdjustedSpeedReason {
+    SyncingFrames,
+    ResizingServerInputBuffer,
+    /// Means that speed isn't adjusted.
+    None,
+}
+
+impl Default for AdjustedSpeedReason {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+fn control_ticking_speed(
+    mut frames_ticked: Local<u16>,
+    mut prev_generation: Local<usize>,
+    mut prev_tick_rate: Local<GameTicksPerSecond>,
+    mut params: ControlTickingSpeedParams,
+) {
+    use std::cmp::Ordering;
+
+    let target_player_frame =
+        params.simulation_time.server_frame + params.target_frames_ahead.frames_count;
+    params.tick_rate.rate = match params
+        .simulation_time
+        .player_frame
+        .cmp(&target_player_frame)
+    {
+        Ordering::Equal => {
+            *params.adjusted_speed_reason = AdjustedSpeedReason::None;
+            SIMULATIONS_PER_SECOND
+        }
+        Ordering::Greater => {
+            *params.adjusted_speed_reason = AdjustedSpeedReason::ResizingServerInputBuffer;
+            slower_tick_rate()
+        }
+        Ordering::Less => {
+            *params.adjusted_speed_reason = AdjustedSpeedReason::ResizingServerInputBuffer;
+            faster_tick_rate()
+        }
+    };
+
+    if !matches!(
+        *params.adjusted_speed_reason,
+        AdjustedSpeedReason::ResizingServerInputBuffer
+    ) {
+        params.tick_rate.rate = match params.player_delay.frame_count.cmp(&0) {
+            Ordering::Equal => {
+                *params.adjusted_speed_reason = AdjustedSpeedReason::None;
+                SIMULATIONS_PER_SECOND
+            }
+            Ordering::Greater => {
+                *params.adjusted_speed_reason = AdjustedSpeedReason::SyncingFrames;
+                faster_tick_rate()
+            }
+            Ordering::Less => {
+                *params.adjusted_speed_reason = AdjustedSpeedReason::SyncingFrames;
+                slower_tick_rate()
+            }
+        };
+    }
+
+    if prev_tick_rate.rate != params.tick_rate.rate || *prev_generation != params.time.generation {
+        *frames_ticked = 0;
+    }
+
+    if *frames_ticked == TICKING_SPEED_FACTOR {
+        *frames_ticked = 0;
+        match *params.adjusted_speed_reason {
+            AdjustedSpeedReason::SyncingFrames => {
+                if params.tick_rate.rate == faster_tick_rate() {
+                    params.player_delay.frame_count -= 1;
+                } else if params.tick_rate.rate == slower_tick_rate() {
+                    params.player_delay.frame_count += 1;
+                }
+            }
+            AdjustedSpeedReason::ResizingServerInputBuffer => {
+                if params.tick_rate.rate == faster_tick_rate() {
+                    params.simulation_time.server_frame -= FrameNumber::new(1);
+                } else if params.tick_rate.rate == slower_tick_rate() {
+                    params.simulation_time.player_frame -= FrameNumber::new(1);
+                    params.time.frame_number -= FrameNumber::new(1);
+                }
+            }
+            AdjustedSpeedReason::None => {}
+        }
+    }
+
+    *frames_ticked += 1;
+    prev_tick_rate.rate = params.tick_rate.rate;
+    *prev_generation = params.time.generation;
+}
+
+fn faster_tick_rate() -> u16 {
+    if SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR != 0 {
+        panic!(
+            "SIMULATIONS_PER_SECOND must a multiple of {}",
+            TICKING_SPEED_FACTOR
+        );
+    }
+    SIMULATIONS_PER_SECOND + SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
+}
+
+fn slower_tick_rate() -> u16 {
+    if SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR != 0 {
+        panic!(
+            "SIMULATIONS_PER_SECOND must a multiple of {}",
+            TICKING_SPEED_FACTOR
+        );
+    }
+    SIMULATIONS_PER_SECOND - SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
 }
 
 pub struct NetAdaptiveTimestemp {
