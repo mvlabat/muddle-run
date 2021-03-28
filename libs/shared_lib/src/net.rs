@@ -106,22 +106,7 @@ impl ConnectionState {
             .map(|ack| ack.frame_number)
     }
 
-    pub fn add_outcoming_packet(
-        &mut self,
-        frame_number: FrameNumber,
-        sent: Instant,
-    ) -> Result<(), AddOutcomingPacketError> {
-        if self.outcoming_packets_acks.len() == 64 {
-            let oldest_packet = self.outcoming_packets_acks.front().unwrap();
-            if !oldest_packet.acknowledged {
-                return Err(AddOutcomingPacketError::WouldLoseUnacknowledged);
-            }
-        }
-        self.add_outcoming_packet_unchecked(frame_number, sent);
-        Ok(())
-    }
-
-    pub fn add_outcoming_packet_unchecked(&mut self, frame_number: FrameNumber, sent: Instant) {
+    pub fn add_outcoming_packet(&mut self, frame_number: FrameNumber, sent: Instant) {
         if self.outcoming_packets_acks.len() == 64 {
             self.outcoming_packets_acks.pop_front();
         }

@@ -221,13 +221,7 @@ pub fn send_network_updates(
                 log::error!("Failed to send a message: {:?}", err);
             }
 
-            if let Err(err) =
-                connection_state.add_outcoming_packet(time.frame_number, Instant::now())
-            {
-                // TODO: disconnect players.
-                log::error!("Failed to add an outcoming packet: {:?}", err);
-                continue;
-            }
+            connection_state.add_outcoming_packet(time.frame_number, Instant::now());
         }
 
         // Broadcasting updates about new connected players.

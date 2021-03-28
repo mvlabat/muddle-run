@@ -234,7 +234,7 @@ pub fn send_network_updates(
     network_params
         .connection_state
         // Clients don't resend updates, so we can forget about unacknowledged packets.
-        .add_outcoming_packet_unchecked(time.frame_number, Instant::now());
+        .add_outcoming_packet(time.frame_number, Instant::now());
     let first_unacknowledged_frame = network_params
         .connection_state
         .first_unacknowledged_outcoming_packet()
