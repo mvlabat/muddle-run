@@ -1,6 +1,7 @@
 use crate::{
     framebuffer::FrameNumber,
     game::commands::{DespawnLevelObject, SpawnLevelObject},
+    net::SessionId,
     registry::IncrementId,
 };
 use bevy::math::Vec2;
@@ -40,6 +41,12 @@ impl IncrementId for ActionNetId {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Message<T> {
+    pub session_id: SessionId,
+    pub message: T,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum UnreliableClientMessage {
     PlayerUpdate(PlayerUpdate),
 }
@@ -56,6 +63,7 @@ pub enum ReliableServerMessage {
     DisconnectedPlayer(DisconnectedPlayer),
     SpawnLevelObject(SpawnLevelObject),
     DespawnLevelObject(DespawnLevelObject),
+    Disconnect,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

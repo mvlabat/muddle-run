@@ -10,12 +10,12 @@ use mr_shared_lib::{
         components::PlayerDirection,
     },
     messages::{
-        ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, PlayerInput, PlayerNetId, PlayerUpdate,
-        ReliableClientMessage, ReliableServerMessage, StartGame, UnreliableClientMessage,
-        UnreliableServerMessage,
+        ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, Message, PlayerInput, PlayerNetId,
+        PlayerUpdate, ReliableClientMessage, ReliableServerMessage, StartGame,
+        UnreliableClientMessage, UnreliableServerMessage,
     },
-    net::{AcknowledgeError, ConnectionState},
-    player::{Player, PlayerConnectionState, PlayerDirectionUpdate, PlayerUpdates},
+    net::{AcknowledgeError, ConnectionState, ConnectionStatus, SessionId},
+    player::{Player, PlayerDirectionUpdate, PlayerUpdates},
     registry::EntityRegistry,
     GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
 };
@@ -45,6 +45,7 @@ pub struct NetworkReader {
 pub struct UpdateParams<'a> {
     simulation_time: ResMut<'a, SimulationTime>,
     game_time: ResMut<'a, GameTime>,
+    player_entities: Res<'a, EntityRegistry<PlayerNetId>>,
     estimated_server_time: ResMut<'a, EstimatedServerTime>,
     target_frames_ahead: ResMut<'a, TargetFramesAhead>,
     player_delay: ResMut<'a, PlayerDelay>,
@@ -74,13 +75,20 @@ pub fn process_network_events(
         match event {
             NetworkEvent::Connected(handle) => {
                 log::info!("Connected: {}", handle);
-                if let Err(err) = network_params
-                    .net
-                    .send_message(*handle, ReliableClientMessage::Handshake)
-                {
+                if let Err(err) = network_params.net.send_message(
+                    *handle,
+                    Message {
+                        // The server is expected to accept any session id for this message.
+                        session_id: SessionId::new(0),
+                        message: ReliableClientMessage::Handshake,
+                    },
+                ) {
                     log::error!("Failed to send a Handshake message: {:?}", err);
                 }
                 update_params.initial_rtt.sent_at = Some(Instant::now());
+                network_params
+                    .connection_state
+                    .set_status(ConnectionStatus::Handshaking);
             }
             NetworkEvent::Disconnected(handle) => {
                 log::info!("Disconnected: {}", handle);
@@ -92,12 +100,25 @@ pub fn process_network_events(
     for (handle, connection) in network_params.net.connections.iter_mut() {
         let channels = connection.channels().unwrap();
 
-        while let Some(message) = channels.recv::<UnreliableServerMessage>() {
+        while let Some(message) = channels.recv::<Message<UnreliableServerMessage>>() {
             log::trace!(
                 "UnreliableServerMessage received on [{}]: {:?}",
                 handle,
                 message
             );
+            let Message {
+                message,
+                session_id,
+            } = message;
+
+            if session_id != network_params.connection_state.session_id {
+                log::warn!(
+                    "Ignoring a server message: sent session id {} doesn't match {}",
+                    session_id,
+                    network_params.connection_state.session_id
+                );
+                continue;
+            }
 
             match message {
                 UnreliableServerMessage::DeltaUpdate(update) => {
@@ -146,19 +167,41 @@ pub fn process_network_events(
             }
         }
 
-        while let Some(message) = channels.recv::<ReliableServerMessage>() {
+        while let Some(message) = channels.recv::<Message<ReliableServerMessage>>() {
             log::trace!(
                 "ReliableServerMessage received on [{}]: {:?}",
                 handle,
                 message
             );
+            let Message {
+                message,
+                session_id,
+            } = message;
+
+            // It is assumed that we can't get the same reliable message twice.
+            // (Hopefully, the underlying stack does guarantee that.)
+            let ignore_session_id_check = matches!(message, ReliableServerMessage::StartGame(_));
+
+            if session_id != network_params.connection_state.session_id && !ignore_session_id_check
+            {
+                log::warn!(
+                    "Ignoring a server message: sent session id {} doesn't match {}",
+                    session_id,
+                    network_params.connection_state.session_id
+                );
+                continue;
+            }
 
             match message {
                 ReliableServerMessage::StartGame(start_game) => {
-                    if current_player_net_id.0 == Some(start_game.net_id) {
-                        continue;
-                    }
-                    log::info!("Starting the game");
+                    network_params.connection_state.session_id = session_id;
+                    network_params
+                        .connection_state
+                        .set_status(ConnectionStatus::Connected);
+                    log::info!(
+                        "Starting the game (update frame: {})",
+                        start_game.game_state.frame_number
+                    );
                     process_start_game_message(
                         start_game,
                         &mut network_params.connection_state,
@@ -171,11 +214,7 @@ pub fn process_network_events(
                     process_connected_player_message(connected_player, &mut players);
                 }
                 ReliableServerMessage::DisconnectedPlayer(disconnected_player) => {
-                    process_disconnected_player_message(
-                        disconnected_player,
-                        &mut players,
-                        &mut update_params,
-                    );
+                    process_disconnected_player_message(disconnected_player);
                 }
                 ReliableServerMessage::SpawnLevelObject(spawn_level_object) => {
                     update_params
@@ -193,11 +232,23 @@ pub fn process_network_events(
                         .despawn_level_object_commands
                         .push(despawn_level_object);
                 }
+                ReliableServerMessage::Disconnect => {
+                    todo!("disconnect");
+                }
             }
         }
 
-        while channels.recv::<UnreliableClientMessage>().is_some() {
-            log::error!("Unexpected ClientMessage received on [{}]", handle);
+        while channels
+            .recv::<Message<UnreliableClientMessage>>()
+            .is_some()
+        {
+            log::error!(
+                "Unexpected UnreliableClientMessage received on [{}]",
+                handle
+            );
+        }
+        while channels.recv::<Message<ReliableClientMessage>>().is_some() {
+            log::error!("Unexpected ReliableClientMessage received on [{}]", handle);
         }
     }
 }
@@ -255,13 +306,17 @@ pub fn send_network_updates(
         }
     }
 
+    let message = UnreliableClientMessage::PlayerUpdate(PlayerUpdate {
+        frame_number: time.frame_number,
+        acknowledgments: network_params.connection_state.incoming_acknowledgments(),
+        inputs,
+    });
     let result = network_params.net.send_message(
         connection_handle,
-        UnreliableClientMessage::PlayerUpdate(PlayerUpdate {
-            frame_number: time.frame_number,
-            acknowledgments: network_params.connection_state.incoming_acknowledgments(),
-            inputs,
-        }),
+        Message {
+            session_id: network_params.connection_state.session_id,
+            message,
+        },
     );
     if let Err(err) = result {
         log::error!("Failed to send a message to {:?}: {:?}", address, err);
@@ -325,19 +380,44 @@ fn process_delta_update_message(
         update_params.player_delay.frame_count = player_delay / 2;
     }
 
+    // Despawning players that aren't mentioned in the delta update.
+    let players_to_remove: Vec<PlayerNetId> = players
+        .keys()
+        .copied()
+        .filter(|player_net_id| {
+            !delta_update
+                .players
+                .iter()
+                .any(|player| player.net_id == *player_net_id)
+        })
+        .collect();
+
+    for player_net_id in players_to_remove {
+        players.remove(&player_net_id);
+        update_params.despawn_player_commands.push(DespawnPlayer {
+            net_id: player_net_id,
+            frame_number: delta_update.frame_number,
+        });
+    }
+
     for player_state in delta_update.players {
-        players.entry(player_state.net_id).or_insert_with(|| {
+        if update_params
+            .player_entities
+            .get_entity(player_state.net_id)
+            .is_none()
+        {
             log::info!("First update with the new player {}", player_state.net_id.0);
             update_params.spawn_player_commands.push(SpawnPlayer {
                 net_id: player_state.net_id,
                 start_position: player_state.position,
                 is_player_frame_simulated: false,
             });
-            Player {
-                nickname: "?".to_owned(),
-                state: PlayerConnectionState::Connecting,
-            }
-        });
+            players
+                .entry(player_state.net_id)
+                .or_insert_with(|| Player {
+                    nickname: "?".to_owned(),
+                });
+        }
 
         let player_frames_ahead = if current_player_net_id == Some(player_state.net_id) {
             update_params.target_frames_ahead.frames_count
@@ -397,8 +477,13 @@ fn process_delta_update_message(
     }
 
     // There's no need to rewind if we haven't started the game.
-    // TODO: deduce whether we started the game or not from some other state.
-    if current_player_net_id.is_some() {
+    if let ConnectionStatus::Connected = connection_state.status() {
+        log::trace!(
+            "Rewinding to frame {} (current server frame: {}, current player frame: {})",
+            rewind_to_simulation_frame,
+            update_params.simulation_time.server_frame,
+            update_params.simulation_time.player_frame
+        );
         update_params
             .simulation_time
             .rewind(rewind_to_simulation_frame);
@@ -422,7 +507,6 @@ fn process_start_game_message(
             start_game.net_id,
             Player {
                 nickname: start_game.nickname,
-                state: PlayerConnectionState::Playing,
             },
         );
         update_params.game_time.generation += 1;
@@ -442,6 +526,10 @@ fn process_start_game_message(
             start_game.game_state.frame_number + half_rtt_frames;
         update_params.estimated_server_time.updated_at = update_params.game_time.frame_number;
 
+        log::debug!(
+            "Spawning the current player ({})",
+            current_player_net_id.0.unwrap().0
+        );
         update_params.spawn_player_commands.push(SpawnPlayer {
             net_id: start_game.net_id,
             start_position,
@@ -452,13 +540,16 @@ fn process_start_game_message(
     }
 
     for player in start_game.players {
+        if player.net_id == current_player_net_id.0.unwrap() {
+            continue;
+        }
+
         if let Some(start_position) = player_start_position(player.net_id, &start_game.game_state) {
             log::info!("Spawning player {}: {}", player.net_id.0, player.nickname);
             players.insert(
                 player.net_id,
                 Player {
                     nickname: player.nickname,
-                    state: PlayerConnectionState::Playing,
                 },
             );
             update_params.spawn_player_commands.push(SpawnPlayer {
@@ -494,31 +585,13 @@ fn process_connected_player_message(
         connected_player.net_id,
         Player {
             nickname: connected_player.nickname,
-            state: PlayerConnectionState::Playing,
         },
     );
 }
 
-fn process_disconnected_player_message(
-    disconnected_player: DisconnectedPlayer,
-    players: &mut HashMap<PlayerNetId, Player>,
-    update_params: &mut UpdateParams,
-) {
-    if let Some(player) = players.remove(&disconnected_player.net_id) {
-        log::info!(
-            "A player ({}) disconnected: {}",
-            disconnected_player.net_id.0,
-            player.nickname
-        );
-        update_params.despawn_player_commands.push(DespawnPlayer {
-            net_id: disconnected_player.net_id,
-        });
-    } else {
-        log::error!(
-            "Unknown player with net id {}",
-            disconnected_player.net_id.0
-        );
-    }
+fn process_disconnected_player_message(disconnected_player: DisconnectedPlayer) {
+    // We actually remove players if there's no mention of them in a DeltaUpdate message.
+    log::info!("A player ({}) disconnected", disconnected_player.net_id.0);
 }
 
 fn player_start_position(player_net_id: PlayerNetId, delta_update: &DeltaUpdate) -> Option<Vec2> {

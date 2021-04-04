@@ -11,7 +11,7 @@ use crate::{
         components::PlayerFrameSimulated,
         level::LevelState,
         movement::{player_movement, read_movement_updates, sync_position},
-        spawn::{mark_mature_entities, spawn_level_objects, spawn_players},
+        spawn::{despawn_players, process_spawned_entities, spawn_level_objects, spawn_players},
     },
     net::network_setup,
     player::{Player, PlayerUpdates},
@@ -48,6 +48,7 @@ pub mod messages;
 pub mod net;
 pub mod player;
 pub mod registry;
+pub mod util;
 
 // Constants.
 pub mod stage {
@@ -127,7 +128,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_run_criteria(SimulationTickRunCriteria::default())
             .with_stage(
                 stage::SPAWN,
-                SystemStage::parallel()
+                SystemStage::serial()
+                    .with_system(despawn_players.system())
                     .with_system(spawn_players.system())
                     .with_system(spawn_level_objects.system()),
             )
@@ -175,7 +177,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 stage::POST_SIMULATIONS,
                 SystemStage::serial()
                     .with_system(tick_game_frame.system())
-                    .with_system(mark_mature_entities.system()),
+                    .with_system(process_spawned_entities.system()),
             )
             .with_stage(
                 stage::POST_TICK,
@@ -247,7 +249,7 @@ impl Plugin for RapierResourcesPlugin {
 // TODO: split into two resources for simulation and game frames to live separately?
 //  This will probably help with avoiding bugs where we mistakenly use game frame
 //  instead of simulation frame.
-#[derive(Default, Debug)]
+#[derive(Default, Clone, PartialEq, Debug)]
 pub struct GameTime {
     pub generation: usize,
     pub frame_number: FrameNumber,

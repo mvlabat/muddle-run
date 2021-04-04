@@ -64,6 +64,7 @@ impl Plugin for MuddleServerPlugin {
         resources.get_or_insert_with(PlayerNetId::default);
         resources.get_or_insert_with(NetworkReader::default);
         resources.get_or_insert_with(PlayerConnections::default);
+        resources.get_or_insert_with(Vec::<(PlayerNetId, u32)>::default);
         resources.get_or_insert_with(HashMap::<u32, ConnectionState>::default);
         resources.get_or_insert_with(DeferredUpdates::<PlayerInput>::default);
     }

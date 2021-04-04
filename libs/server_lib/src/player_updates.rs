@@ -8,6 +8,7 @@ use mr_shared_lib::{
     messages::{PlayerInput, PlayerNetId},
     net::ConnectionState,
     player::{PlayerDirectionUpdate, PlayerUpdates},
+    util::dedup_by_key_unsorted,
     GameTime, SimulationTime, SIMULATIONS_PER_SECOND,
 };
 use std::collections::HashMap;
@@ -71,7 +72,7 @@ pub fn process_player_input_updates(
 
         // A client might be able to send several messages with the same unacknowledged updates
         // between runs of this system.
-        player_updates.dedup_by_key(|update| update.frame_number);
+        dedup_by_key_unsorted(&mut player_updates, |update| update.frame_number);
 
         let mut updates_iter = player_updates.iter().peekable();
         while let Some(player_update) = updates_iter.next() {

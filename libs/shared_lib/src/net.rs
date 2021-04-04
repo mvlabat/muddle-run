@@ -1,7 +1,8 @@
 use crate::{
     framebuffer::FrameNumber,
+    looped_counter::WrappedCounter,
     messages::{
-        ReliableClientMessage, ReliableServerMessage, UnreliableClientMessage,
+        Message, ReliableClientMessage, ReliableServerMessage, UnreliableClientMessage,
         UnreliableServerMessage,
     },
     TICKS_PER_NETWORK_BROADCAST,
@@ -19,6 +20,19 @@ use thiserror::Error;
 
 const RTT_UPDATE_FACTOR: f32 = 0.2;
 const JITTER_DECREASE_THRESHOLD_SECS: u64 = 1;
+
+pub type SessionId = WrappedCounter<u16>;
+
+#[derive(Debug, Clone, Copy)]
+pub enum ConnectionStatus {
+    Uninitialized,
+    Handshaking,
+    Connected,
+    /// We've received a `Disconnect` event or triggered the process manually. After we finish
+    /// the needed clean-up, we switch the status to `Disconnected`.
+    Disconnecting,
+    Disconnected,
+}
 
 #[derive(Debug, Error)]
 pub enum AcknowledgeError {
@@ -40,8 +54,15 @@ pub enum AddOutcomingPacketError {
 // Note: We don't expect clients or server to re-send lost packets. If we detect packet loss,
 // we enable redundancy to include the lost updates in future packets.
 pub struct ConnectionState {
+    pub session_id: SessionId,
+    status: ConnectionStatus,
+    status_updated_at: Instant,
     newest_acknowledged_incoming_packet: Option<FrameNumber>,
+    // Packets that are incoming to us (not to a peer on the other side of a connection).
+    // We acknowledge these packets on receiving an unreliable message and send send the acks later.
     incoming_packets_acks: u64,
+    // Packets that we send to a peer represented by this connection.
+    // Here we store acks sent to us by that peer.
     outcoming_packets_acks: VecDeque<Acknowledgment>,
     packet_loss: f32,
     jitter_millis: f32,
@@ -52,6 +73,9 @@ pub struct ConnectionState {
 impl Default for ConnectionState {
     fn default() -> Self {
         Self {
+            session_id: SessionId::new(0),
+            status: ConnectionStatus::Uninitialized,
+            status_updated_at: Instant::now(),
             newest_acknowledged_incoming_packet: None,
             incoming_packets_acks: u64::MAX - 1,
             outcoming_packets_acks: VecDeque::new(),
@@ -65,6 +89,14 @@ impl Default for ConnectionState {
 }
 
 impl ConnectionState {
+    pub fn status(&self) -> ConnectionStatus {
+        self.status
+    }
+
+    pub fn status_updated_at(&self) -> Instant {
+        self.status_updated_at
+    }
+
     pub fn set_initial_rtt_millis(&mut self, rtt_millis: f32) {
         self.rtt_millis = rtt_millis;
     }
@@ -104,6 +136,15 @@ impl ConnectionState {
             .iter()
             .find(|ack| !ack.acknowledged)
             .map(|ack| ack.frame_number)
+    }
+
+    pub fn set_status(&mut self, status: ConnectionStatus) {
+        let session_id = self.session_id;
+
+        *self = Self::default();
+        self.status = status;
+        self.status_updated_at = Instant::now();
+        self.session_id = session_id;
     }
 
     pub fn add_outcoming_packet(&mut self, frame_number: FrameNumber, sent: Instant) {
@@ -326,16 +367,16 @@ impl Acknowledgment {
 pub fn network_setup(mut net: ResMut<NetworkResource>) {
     net.set_channels_builder(|builder: &mut ConnectionChannelsBuilder| {
         builder
-            .register::<UnreliableClientMessage>(CLIENT_INPUT_MESSAGE_SETTINGS)
+            .register::<Message<UnreliableClientMessage>>(CLIENT_INPUT_MESSAGE_SETTINGS)
             .unwrap();
         builder
-            .register::<ReliableClientMessage>(CLIENT_RELIABLE_MESSAGE_SETTINGS)
+            .register::<Message<ReliableClientMessage>>(CLIENT_RELIABLE_MESSAGE_SETTINGS)
             .unwrap();
         builder
-            .register::<ReliableServerMessage>(SERVER_RELIABLE_MESSAGE_SETTINGS)
+            .register::<Message<ReliableServerMessage>>(SERVER_RELIABLE_MESSAGE_SETTINGS)
             .unwrap();
         builder
-            .register::<UnreliableServerMessage>(SERVER_DELTA_UPDATE_MESSAGE_SETTINGS)
+            .register::<Message<UnreliableServerMessage>>(SERVER_DELTA_UPDATE_MESSAGE_SETTINGS)
             .unwrap();
     });
 }
@@ -400,7 +441,7 @@ const SERVER_DELTA_UPDATE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChan
 mod tests {
     use crate::{
         framebuffer::FrameNumber,
-        net::{Acknowledgment, ConnectionState},
+        net::{Acknowledgment, ConnectionState, ConnectionStatus, SessionId},
         TICKS_PER_NETWORK_BROADCAST,
     };
     use std::{collections::VecDeque, time::Instant};
@@ -434,11 +475,14 @@ mod tests {
             .collect::<Vec<_>>();
 
         ConnectionState {
+            session_id: SessionId::new(0),
+            status: ConnectionStatus::Uninitialized,
             newest_acknowledged_incoming_packet: None,
             incoming_packets_acks: 0,
             outcoming_packets_acks: VecDeque::from(acknowledgments),
             packet_loss: 0.0,
             jitter_millis: 0.0,
+            last_increased_jitter: Instant::now(),
             rtt_millis: 0.0,
         }
     }

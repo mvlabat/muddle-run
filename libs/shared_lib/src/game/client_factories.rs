@@ -15,6 +15,8 @@ pub trait ClientFactory<'a> {
         commands.spawn(());
         commands.current_entity().unwrap()
     }
+
+    fn remove_renderables(_commands: &mut Commands, _entity: Entity) {}
 }
 
 pub struct PlayerClientFactory;
@@ -40,6 +42,11 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
             commands.with(PlayerFrameSimulated);
         }
         commands.current_entity().unwrap()
+    }
+
+    #[cfg(feature = "render")]
+    fn remove_renderables(commands: &mut Commands, entity: Entity) {
+        commands.remove::<PbrBundle>(entity);
     }
 }
 

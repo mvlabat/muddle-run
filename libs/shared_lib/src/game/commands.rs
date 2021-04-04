@@ -38,6 +38,7 @@ pub struct SpawnPlayer {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DespawnPlayer {
     pub net_id: PlayerNetId,
+    pub frame_number: FrameNumber,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
