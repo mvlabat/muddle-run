@@ -1,4 +1,4 @@
-use crate::looped_counter::WrappedCounter;
+use crate::wrapped_counter::WrappedCounter;
 use bevy::log;
 use std::collections::VecDeque;
 

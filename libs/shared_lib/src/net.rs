@@ -1,10 +1,10 @@
 use crate::{
     framebuffer::FrameNumber,
-    looped_counter::WrappedCounter,
     messages::{
         Message, ReliableClientMessage, ReliableServerMessage, UnreliableClientMessage,
         UnreliableServerMessage,
     },
+    wrapped_counter::WrappedCounter,
     TICKS_PER_NETWORK_BROADCAST,
 };
 use bevy::ecs::ResMut;
@@ -477,6 +477,7 @@ mod tests {
         ConnectionState {
             session_id: SessionId::new(0),
             status: ConnectionStatus::Uninitialized,
+            status_updated_at: Instant::now(),
             newest_acknowledged_incoming_packet: None,
             incoming_packets_acks: 0,
             outcoming_packets_acks: VecDeque::from(acknowledgments),

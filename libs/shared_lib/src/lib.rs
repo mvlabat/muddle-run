@@ -43,12 +43,12 @@ use std::{any::TypeId, borrow::Cow, collections::HashMap, sync::Mutex};
 
 pub mod framebuffer;
 pub mod game;
-pub mod looped_counter;
 pub mod messages;
 pub mod net;
 pub mod player;
 pub mod registry;
 pub mod util;
+pub mod wrapped_counter;
 
 // Constants.
 pub mod stage {

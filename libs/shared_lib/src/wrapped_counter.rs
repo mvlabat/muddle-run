@@ -120,7 +120,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::looped_counter::WrappedCounter;
+    use crate::wrapped_counter::WrappedCounter;
 
     #[test]
     fn test_add_overflow() {
