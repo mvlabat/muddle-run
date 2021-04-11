@@ -28,6 +28,7 @@ use mr_shared_lib::{
     MuddleSharedPlugin, SimulationTime, SIMULATIONS_PER_SECOND,
 };
 use std::{borrow::Cow, time::Instant};
+use bevy::pbr::Light;
 
 mod helpers;
 mod input;
@@ -162,6 +163,11 @@ pub struct MainCameraEntity(pub Entity);
 fn basic_scene(mut commands: Commands) {
     // Add entities to the scene.
     commands.spawn_bundle(LightBundle {
+        light: Light {
+            range: 200.0,
+            intensity: 400.0,
+            .. Default::default()
+        },
         transform: Transform::from_translation(Vec3::new(4.0, 10.0, -14.0)),
         ..Default::default()
     });
