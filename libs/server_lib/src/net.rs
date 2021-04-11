@@ -1,5 +1,5 @@
 use crate::player_updates::DeferredUpdates;
-use bevy::{ecs::SystemParam, log, prelude::*};
+use bevy::{ecs::system::SystemParam, log, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use mr_shared_lib::{
     game::{
@@ -31,11 +31,6 @@ pub fn startup(mut net: ResMut<NetworkResource>) {
     net.listen(socket_address);
 }
 
-#[derive(Default)]
-pub struct NetworkReader {
-    network_events: EventReader<NetworkEvent>,
-}
-
 pub type PlayerConnections = Registry<PlayerNetId, u32>;
 
 #[derive(SystemParam)]
@@ -57,15 +52,14 @@ pub fn process_network_events(
     time: Res<GameTime>,
     mut prev_time: Local<GameTime>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
-    mut state: ResMut<NetworkReader>,
-    network_events: Res<Events<NetworkEvent>>,
+    mut network_events: EventReader<NetworkEvent>,
     mut network_params: NetworkParams,
     mut update_params: UpdateParams,
 ) {
     log::trace!("Processing network updates (frame: {})", time.frame_number);
 
     // Processing connection events.
-    for event in state.network_events.iter(&network_events) {
+    for event in network_events.iter() {
         match event {
             NetworkEvent::Connected(handle) => {
                 log::info!("New connection: {}", handle);
@@ -158,7 +152,7 @@ pub fn process_network_events(
                     players.insert(player_net_id, Player { nickname });
                     update_params.spawn_player_commands.push(SpawnPlayer {
                         net_id: player_net_id,
-                        start_position: Vec2::zero(),
+                        start_position: Vec2::ZERO,
                         is_player_frame_simulated: false,
                     });
                     // Add an initial update to have something to extrapolate from.
@@ -166,7 +160,7 @@ pub fn process_network_events(
                         player_net_id,
                         PlayerInput {
                             frame_number: time.frame_number,
-                            direction: Vec2::zero(),
+                            direction: Vec2::ZERO,
                         },
                     );
                 }
@@ -537,7 +531,7 @@ fn broadcast_start_game_messages(
                         if connected_player_net_id == iter_player_net_id {
                             Some(PlayerState {
                                 net_id: connected_player_net_id,
-                                position: Vec2::zero(),
+                                position: Vec2::ZERO,
                                 inputs: Vec::new(),
                             })
                         } else {
@@ -554,7 +548,7 @@ fn broadcast_start_game_messages(
             .collect();
         players_state.push(PlayerState {
             net_id: connected_player_net_id,
-            position: Vec2::zero(),
+            position: Vec2::ZERO,
             inputs: Vec::new(),
         });
 

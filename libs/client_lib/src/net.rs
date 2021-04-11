@@ -1,5 +1,5 @@
 use crate::{CurrentPlayerNetId, EstimatedServerTime, InitialRtt, PlayerDelay, TargetFramesAhead};
-use bevy::{ecs::SystemParam, log, prelude::*};
+use bevy::{ecs::system::SystemParam, log, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
@@ -36,11 +36,6 @@ pub fn initiate_connection(mut net: ResMut<NetworkResource>) {
     }
 }
 
-#[derive(Default)]
-pub struct NetworkReader {
-    network_events: EventReader<NetworkEvent>,
-}
-
 #[derive(SystemParam)]
 pub struct UpdateParams<'a> {
     simulation_time: ResMut<'a, SimulationTime>,
@@ -65,13 +60,12 @@ pub struct NetworkParams<'a> {
 
 pub fn process_network_events(
     mut network_params: NetworkParams,
-    mut state: Local<NetworkReader>,
-    network_events: Res<Events<NetworkEvent>>,
+    mut network_events: EventReader<NetworkEvent>,
     mut current_player_net_id: ResMut<CurrentPlayerNetId>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut update_params: UpdateParams,
 ) {
-    for event in state.network_events.iter(&network_events) {
+    for event in network_events.iter() {
         match event {
             NetworkEvent::Connected(handle) => {
                 log::info!("Connected: {}", handle);
@@ -255,7 +249,7 @@ pub fn process_network_events(
 
 #[derive(SystemParam)]
 pub struct PlayerUpdateParams<'a> {
-    player_directions: Query<'a, &'a PlayerDirection>,
+    player_directions: Query<'a, &'static PlayerDirection>,
 }
 
 pub fn send_network_updates(

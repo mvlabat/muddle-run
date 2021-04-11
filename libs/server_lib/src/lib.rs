@@ -1,7 +1,5 @@
 use crate::{
-    net::{
-        process_network_events, send_network_updates, startup, NetworkReader, PlayerConnections,
-    },
+    net::{process_network_events, send_network_updates, startup, PlayerConnections},
     player_updates::{process_player_input_updates, DeferredUpdates},
 };
 use bevy::{core::FixedTimestep, prelude::*};
@@ -29,7 +27,6 @@ impl Plugin for MuddleServerPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         // The minimal set of Bevy plugins needed for the game logic.
         builder.add_plugin(bevy::log::LogPlugin::default());
-        builder.add_plugin(bevy::reflect::ReflectPlugin::default());
         builder.add_plugin(bevy::core::CorePlugin::default());
         builder.add_plugin(bevy::transform::TransformPlugin::default());
         builder.add_plugin(bevy::diagnostic::DiagnosticsPlugin::default());
@@ -38,7 +35,7 @@ impl Plugin for MuddleServerPlugin {
         builder.add_startup_system(init_level.system());
         builder.add_startup_system(startup.system());
 
-        let input_stage = SystemStage::serial()
+        let input_stage = SystemStage::single_threaded()
             .with_system(process_network_events.system())
             .with_system(process_player_input_updates.system());
         let broadcast_updates_stage =
@@ -49,7 +46,7 @@ impl Plugin for MuddleServerPlugin {
             FixedTimestep::steps_per_second(SIMULATIONS_PER_SECOND as f64),
             input_stage,
             broadcast_updates_stage,
-            SystemStage::serial(),
+            SystemStage::single_threaded(),
             // None,
             Some(LinkConditionerConfig {
                 incoming_latency: 100,
@@ -59,14 +56,13 @@ impl Plugin for MuddleServerPlugin {
             }),
         ));
 
-        let resources = builder.resources_mut();
-        resources.get_or_insert_with(EntityNetId::default);
-        resources.get_or_insert_with(PlayerNetId::default);
-        resources.get_or_insert_with(NetworkReader::default);
-        resources.get_or_insert_with(PlayerConnections::default);
-        resources.get_or_insert_with(Vec::<(PlayerNetId, u32)>::default);
-        resources.get_or_insert_with(HashMap::<u32, ConnectionState>::default);
-        resources.get_or_insert_with(DeferredUpdates::<PlayerInput>::default);
+        let resources = builder.world_mut();
+        resources.get_resource_or_insert_with(EntityNetId::default);
+        resources.get_resource_or_insert_with(PlayerNetId::default);
+        resources.get_resource_or_insert_with(PlayerConnections::default);
+        resources.get_resource_or_insert_with(Vec::<(PlayerNetId, u32)>::default);
+        resources.get_resource_or_insert_with(HashMap::<u32, ConnectionState>::default);
+        resources.get_resource_or_insert_with(DeferredUpdates::<PlayerInput>::default);
     }
 }
 

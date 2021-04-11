@@ -18,7 +18,13 @@ use crate::{
     registry::EntityRegistry,
 };
 use bevy::{
-    ecs::{ArchetypeComponent, ShouldRun, SystemId, ThreadLocalExecution, TypeAccess},
+    ecs::{
+        archetype::{Archetype, ArchetypeComponentId},
+        component::ComponentId,
+        query::Access,
+        schedule::ShouldRun,
+        system::{IntoSystem, SystemId},
+    },
     log,
     prelude::*,
 };
@@ -29,17 +35,16 @@ use bevy_rapier3d::{
         EntityMaps, EventQueue, InteractionPairFilters, RapierConfiguration, SimulationToRenderTime,
     },
     rapier::{
-        dynamics::{IntegrationParameters, JointSet, RigidBodySet},
-        geometry::{
-            BroadPhase, ColliderSet, ContactPairFilter, IntersectionPairFilter, NarrowPhase,
-            PairFilterContext, SolverFlags,
-        },
+        dynamics::{CCDSolver, IntegrationParameters, JointSet, RigidBodySet},
+        geometry::{BroadPhase, ColliderSet, NarrowPhase, SolverFlags},
         math::Vector,
-        pipeline::{PhysicsPipeline, QueryPipeline},
+        pipeline::{
+            PairFilterContext, PhysicsHooks, PhysicsHooksFlags, PhysicsPipeline, QueryPipeline,
+        },
     },
 };
 use messages::{EntityNetId, PlayerNetId};
-use std::{any::TypeId, borrow::Cow, collections::HashMap, sync::Mutex};
+use std::{borrow::Cow, collections::HashMap, sync::Mutex};
 
 pub mod framebuffer;
 pub mod game;
@@ -128,7 +133,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_run_criteria(SimulationTickRunCriteria::default())
             .with_stage(
                 stage::SPAWN,
-                SystemStage::serial()
+                SystemStage::single_threaded()
                     .with_system(despawn_players.system())
                     .with_system(spawn_players.system())
                     .with_system(spawn_level_objects.system()),
@@ -175,7 +180,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::POST_SIMULATIONS,
-                SystemStage::serial()
+                SystemStage::single_threaded()
                     .with_system(tick_game_frame.system())
                     .with_system(process_spawned_entities.system()),
             )
@@ -188,7 +193,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             );
 
         builder.add_stage_before(
-            bevy::app::stage::UPDATE,
+            bevy::app::CoreStage::Update,
             stage::MAIN_SCHEDULE,
             main_schedule,
         );
@@ -207,18 +212,18 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
 
         builder.add_startup_system(network_setup.system());
 
-        let resources = builder.resources_mut();
-        resources.get_or_insert_with(GameTime::default);
-        resources.get_or_insert_with(SimulationTime::default);
-        resources.get_or_insert_with(LevelState::default);
-        resources.get_or_insert_with(PlayerUpdates::default);
-        resources.get_or_insert_with(GameCommands::<SpawnPlayer>::default);
-        resources.get_or_insert_with(GameCommands::<DespawnPlayer>::default);
-        resources.get_or_insert_with(GameCommands::<SpawnLevelObject>::default);
-        resources.get_or_insert_with(GameCommands::<DespawnLevelObject>::default);
-        resources.get_or_insert_with(EntityRegistry::<PlayerNetId>::default);
-        resources.get_or_insert_with(EntityRegistry::<EntityNetId>::default);
-        resources.get_or_insert_with(HashMap::<PlayerNetId, Player>::default);
+        let resources = builder.world_mut();
+        resources.get_resource_or_insert_with(GameTime::default);
+        resources.get_resource_or_insert_with(SimulationTime::default);
+        resources.get_resource_or_insert_with(LevelState::default);
+        resources.get_resource_or_insert_with(PlayerUpdates::default);
+        resources.get_resource_or_insert_with(GameCommands::<SpawnPlayer>::default);
+        resources.get_resource_or_insert_with(GameCommands::<DespawnPlayer>::default);
+        resources.get_resource_or_insert_with(GameCommands::<SpawnLevelObject>::default);
+        resources.get_resource_or_insert_with(GameCommands::<DespawnLevelObject>::default);
+        resources.get_resource_or_insert_with(EntityRegistry::<PlayerNetId>::default);
+        resources.get_resource_or_insert_with(EntityRegistry::<EntityNetId>::default);
+        resources.get_resource_or_insert_with(HashMap::<PlayerNetId, Player>::default);
     }
 }
 
@@ -227,22 +232,25 @@ pub struct RapierResourcesPlugin;
 impl Plugin for RapierResourcesPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
-            .add_resource(PhysicsPipeline::new())
-            .add_resource(QueryPipeline::new())
-            .add_resource(RapierConfiguration {
+            .insert_resource(PhysicsPipeline::new())
+            .insert_resource(QueryPipeline::new())
+            .insert_resource(RapierConfiguration {
                 gravity: Vector::new(0.0, 0.0, 0.0),
                 ..RapierConfiguration::default()
             })
-            .add_resource(IntegrationParameters::default())
-            .add_resource(BroadPhase::new())
-            .add_resource(NarrowPhase::new())
-            .add_resource(RigidBodySet::new())
-            .add_resource(ColliderSet::new())
-            .add_resource(JointSet::new())
-            .add_resource(InteractionPairFilters::new())
-            .add_resource(EventQueue::new(true))
-            .add_resource(SimulationToRenderTime::default())
-            .add_resource(EntityMaps::default());
+            .insert_resource(IntegrationParameters::default())
+            .insert_resource(BroadPhase::new())
+            .insert_resource(NarrowPhase::new())
+            .insert_resource(RigidBodySet::new())
+            .insert_resource(ColliderSet::new())
+            .insert_resource(JointSet::new())
+            .insert_resource(CCDSolver::new())
+            .insert_resource(InteractionPairFilters {
+                hook: Some(Box::new(PairFilter)),
+            })
+            .insert_resource(EventQueue::new(true))
+            .insert_resource(SimulationToRenderTime::default())
+            .insert_resource(EntityMaps::default());
     }
 }
 
@@ -282,37 +290,44 @@ impl SimulationTime {
     }
 }
 
-pub struct GameTickRunCriteria {
-    system_id: SystemId,
+#[derive(Default, Clone)]
+pub struct GameTickRunCriteriaState {
     ticks_per_step: FrameNumber,
     last_generation: Option<usize>,
     last_tick: FrameNumber,
-    resource_access: TypeAccess<TypeId>,
-    archetype_access: TypeAccess<ArchetypeComponent>,
+}
+
+pub struct GameTickRunCriteria {
+    state: GameTickRunCriteriaState,
+    internal_system: Box<dyn System<In = (), Out = ShouldRun>>,
 }
 
 impl GameTickRunCriteria {
     pub fn new(ticks_per_step: u16) -> Self {
         Self {
-            system_id: SystemId::new(),
-            ticks_per_step: FrameNumber::new(ticks_per_step),
-            last_generation: None,
-            last_tick: FrameNumber::new(0),
-            resource_access: Default::default(),
-            archetype_access: Default::default(),
+            state: GameTickRunCriteriaState {
+                ticks_per_step: FrameNumber::new(ticks_per_step),
+                last_generation: None,
+                last_tick: FrameNumber::new(0),
+            },
+            internal_system: Box::new(Self::prepare_system.system()),
         }
     }
 
-    pub fn update(&mut self, time: &GameTime) -> ShouldRun {
-        if self.last_generation != Some(time.generation) {
-            self.last_generation = Some(time.generation);
-            self.last_tick = time.frame_number - self.ticks_per_step;
+    fn prepare_system(
+        mut state: Local<GameTickRunCriteriaState>,
+        time: Res<GameTime>,
+    ) -> ShouldRun {
+        if state.last_generation != Some(time.generation) {
+            state.last_generation = Some(time.generation);
+            state.last_tick = time.frame_number - state.ticks_per_step;
         }
 
-        if self.last_tick + self.ticks_per_step <= time.frame_number {
+        if state.last_tick + state.ticks_per_step <= time.frame_number {
             trace!("Run and loop a game schedule (game {})", time.frame_number);
-            self.last_tick += self.ticks_per_step;
-            ShouldRun::YesAndLoop
+            let ticks_per_step = state.ticks_per_step;
+            state.last_tick += ticks_per_step;
+            ShouldRun::YesAndCheckAgain
         } else {
             trace!("Don't run a game schedule (game {})", time.frame_number);
             ShouldRun::No
@@ -329,88 +344,100 @@ impl System for GameTickRunCriteria {
     }
 
     fn id(&self) -> SystemId {
-        self.system_id
+        self.internal_system.id()
     }
 
-    fn update(&mut self, _world: &World) {}
-
-    fn archetype_component_access(&self) -> &TypeAccess<ArchetypeComponent> {
-        &self.archetype_access
+    fn new_archetype(&mut self, archetype: &Archetype) {
+        self.internal_system.new_archetype(archetype);
     }
 
-    fn resource_access(&self) -> &TypeAccess<TypeId> {
-        &self.resource_access
+    fn component_access(&self) -> &Access<ComponentId> {
+        self.internal_system.component_access()
     }
 
-    fn thread_local_execution(&self) -> ThreadLocalExecution {
-        ThreadLocalExecution::Immediate
+    fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
+        self.internal_system.archetype_component_access()
     }
 
-    unsafe fn run_unsafe(
-        &mut self,
-        _input: Self::In,
-        _world: &World,
-        resources: &Resources,
-    ) -> Option<Self::Out> {
-        let time = resources.get::<GameTime>().unwrap();
-        let result = self.update(&time);
-
-        Some(result)
+    fn is_send(&self) -> bool {
+        self.internal_system.is_send()
     }
 
-    fn run_thread_local(&mut self, _world: &mut World, _resources: &mut Resources) {}
+    unsafe fn run_unsafe(&mut self, _input: Self::In, world: &World) -> Self::Out {
+        self.internal_system.run_unsafe((), world)
+    }
 
-    fn initialize(&mut self, _world: &mut World, _resources: &mut Resources) {
-        self.resource_access.add_read(TypeId::of::<GameTime>());
+    fn apply_buffers(&mut self, world: &mut World) {
+        self.internal_system.apply_buffers(world)
+    }
+
+    fn initialize(&mut self, world: &mut World) {
+        self.internal_system = Box::new(
+            Self::prepare_system
+                .system()
+                .config(|c| c.0 = Some(self.state.clone())),
+        );
+        self.internal_system.initialize(world);
+    }
+
+    fn check_change_tick(&mut self, change_tick: u32) {
+        self.internal_system.check_change_tick(change_tick)
     }
 }
 
-pub struct SimulationTickRunCriteria {
-    system_id: SystemId,
+#[derive(Default, Clone)]
+pub struct SimulationTickRunCriteriaState {
     last_game_frame: Option<FrameNumber>,
     last_player_frame: FrameNumber,
     last_server_frame: FrameNumber,
-    resource_access: TypeAccess<TypeId>,
-    archetype_access: TypeAccess<ArchetypeComponent>,
+}
+
+pub struct SimulationTickRunCriteria {
+    state: SimulationTickRunCriteriaState,
+    internal_system: Box<dyn System<In = (), Out = ShouldRun>>,
 }
 
 impl Default for SimulationTickRunCriteria {
     fn default() -> Self {
         Self {
-            system_id: SystemId::new(),
-            last_game_frame: None,
-            last_player_frame: FrameNumber::new(0),
-            last_server_frame: FrameNumber::new(0),
-            resource_access: Default::default(),
-            archetype_access: Default::default(),
+            state: SimulationTickRunCriteriaState {
+                last_game_frame: None,
+                last_player_frame: FrameNumber::new(0),
+                last_server_frame: FrameNumber::new(0),
+            },
+            internal_system: Box::new(Self::prepare_system.system()),
         }
     }
 }
 
 impl SimulationTickRunCriteria {
-    pub fn update(&mut self, game_time: &GameTime, simulation_time: &SimulationTime) -> ShouldRun {
+    fn prepare_system(
+        mut state: Local<SimulationTickRunCriteriaState>,
+        game_time: Res<GameTime>,
+        simulation_time: Res<SimulationTime>,
+    ) -> ShouldRun {
         // Checking that a game frame has changed will make us avoid panicking in case we rewind
         // simulation frame just 1 frame back.
-        if self.last_game_frame != Some(game_time.frame_number) {
-            self.last_game_frame = Some(game_time.frame_number);
-        } else if self.last_player_frame == simulation_time.player_frame
-            && self.last_server_frame == simulation_time.server_frame
+        if state.last_game_frame != Some(game_time.frame_number) {
+            state.last_game_frame = Some(game_time.frame_number);
+        } else if state.last_player_frame == simulation_time.player_frame
+            && state.last_server_frame == simulation_time.server_frame
         {
             panic!(
                 "Simulation frame hasn't advanced: {}, {}",
                 simulation_time.player_frame, simulation_time.server_frame
             );
         }
-        self.last_player_frame = simulation_time.player_frame;
-        self.last_server_frame = simulation_time.server_frame;
+        state.last_player_frame = simulation_time.player_frame;
+        state.last_server_frame = simulation_time.server_frame;
 
-        if self.last_player_frame <= game_time.frame_number {
+        if state.last_player_frame <= game_time.frame_number {
             trace!(
                 "Run and loop a simulation schedule (simulation: {}, game {})",
                 simulation_time.player_frame,
                 game_time.frame_number
             );
-            ShouldRun::YesAndLoop
+            ShouldRun::YesAndCheckAgain
         } else {
             trace!(
                 "Don't run a simulation schedule (simulation: {}, game {})",
@@ -431,40 +458,44 @@ impl System for SimulationTickRunCriteria {
     }
 
     fn id(&self) -> SystemId {
-        self.system_id
+        self.internal_system.id()
     }
 
-    fn update(&mut self, _world: &World) {}
-
-    fn archetype_component_access(&self) -> &TypeAccess<ArchetypeComponent> {
-        &self.archetype_access
+    fn new_archetype(&mut self, archetype: &Archetype) {
+        self.internal_system.new_archetype(archetype);
     }
 
-    fn resource_access(&self) -> &TypeAccess<TypeId> {
-        &self.resource_access
+    fn component_access(&self) -> &Access<ComponentId> {
+        self.internal_system.component_access()
     }
 
-    fn thread_local_execution(&self) -> ThreadLocalExecution {
-        ThreadLocalExecution::Immediate
+    fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
+        self.internal_system.archetype_component_access()
     }
 
-    unsafe fn run_unsafe(
-        &mut self,
-        _input: Self::In,
-        _world: &World,
-        resources: &Resources,
-    ) -> Option<Self::Out> {
-        let time = resources.get::<GameTime>().unwrap();
-        let simulation_time = resources.get::<SimulationTime>().unwrap();
-        let result = self.update(&time, &simulation_time);
-
-        Some(result)
+    fn is_send(&self) -> bool {
+        self.internal_system.is_send()
     }
 
-    fn run_thread_local(&mut self, _world: &mut World, _resources: &mut Resources) {}
+    unsafe fn run_unsafe(&mut self, _input: Self::In, world: &World) -> Self::Out {
+        self.internal_system.run_unsafe((), world)
+    }
 
-    fn initialize(&mut self, _world: &mut World, _resources: &mut Resources) {
-        self.resource_access.add_read(TypeId::of::<GameTime>());
+    fn apply_buffers(&mut self, world: &mut World) {
+        self.internal_system.apply_buffers(world)
+    }
+
+    fn initialize(&mut self, world: &mut World) {
+        self.internal_system = Box::new(
+            Self::prepare_system
+                .system()
+                .config(|c| c.0 = Some(self.state.clone())),
+        );
+        self.internal_system.initialize(world);
+    }
+
+    fn check_change_tick(&mut self, change_tick: u32) {
+        self.internal_system.check_change_tick(change_tick)
     }
 }
 
@@ -485,13 +516,15 @@ pub fn tick_game_frame(mut time: ResMut<GameTime>) {
 
 struct PairFilter;
 
-impl ContactPairFilter for PairFilter {
+impl PhysicsHooks for PairFilter {
+    fn active_hooks(&self) -> PhysicsHooksFlags {
+        PhysicsHooksFlags::FILTER_CONTACT_PAIR | PhysicsHooksFlags::FILTER_INTERSECTION_PAIR
+    }
+
     fn filter_contact_pair(&self, _context: &PairFilterContext) -> Option<SolverFlags> {
         Some(SolverFlags::COMPUTE_IMPULSES)
     }
-}
 
-impl IntersectionPairFilter for PairFilter {
     fn filter_intersection_pair(&self, _context: &PairFilterContext) -> bool {
         true
     }

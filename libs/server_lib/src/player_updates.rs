@@ -1,6 +1,6 @@
 use crate::net::PlayerConnections;
 use bevy::{
-    ecs::{Res, ResMut},
+    ecs::system::{Res, ResMut},
     log,
 };
 use mr_shared_lib::{

@@ -4,7 +4,7 @@ use crate::{
 };
 use bevy::{
     diagnostic::{DiagnosticMeasurement, Diagnostics, FrameTimeDiagnosticsPlugin},
-    ecs::SystemParam,
+    ecs::system::SystemParam,
     prelude::*,
 };
 use bevy_egui::{egui, EguiContext, EguiSettings};
@@ -86,11 +86,12 @@ pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_dat
 }
 
 pub fn debug_ui(
-    mut egui_context: ResMut<EguiContext>,
+    // ResMut is intentional, to avoid fighting over the Mutex from different systems.
+    egui_context: ResMut<EguiContext>,
     mut debug_ui_state: ResMut<DebugUiState>,
     diagnostics: Res<Diagnostics>,
 ) {
-    let ctx = &mut egui_context.ctx;
+    let ctx = egui_context.ctx();
 
     if let Some(fps_diagnostic) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
         debug_ui_state.fps_history_len = fps_diagnostic.get_max_history_length();
@@ -119,10 +120,10 @@ pub fn debug_ui(
 
             ui.separator();
             if debug_ui_state.pause {
-                if ui.button("Unpause").clicked {
+                if ui.button("Unpause").clicked() {
                     debug_ui_state.pause = false;
                 }
-            } else if ui.button("Pause").clicked {
+            } else if ui.button("Pause").clicked() {
                 debug_ui_state.pause = true;
             }
 
@@ -170,13 +171,14 @@ impl Default for InspectableObject {
 pub struct InspectObjectQueries<'a> {
     players: Res<'a, HashMap<PlayerNetId, Player>>,
     player_registry: Res<'a, EntityRegistry<PlayerNetId>>,
-    colliders: Query<'a, (Entity, &'a ColliderHandleComponent)>,
-    positions: Query<'a, (Entity, &'a Position)>,
-    player_directions: Query<'a, (Entity, &'a PlayerDirection)>,
+    colliders: Query<'a, (Entity, &'static ColliderHandleComponent)>,
+    positions: Query<'a, (Entity, &'static Position)>,
+    player_directions: Query<'a, (Entity, &'static PlayerDirection)>,
 }
 
 pub fn inspect_object(
-    mut egui_context: ResMut<EguiContext>,
+    // ResMut is intentional, to avoid fighting over the Mutex from different systems.
+    egui_context: ResMut<EguiContext>,
     mut inspectable_object: Local<InspectableObject>,
     mouse_input: Res<Input<MouseButton>>,
     mouse_ray: Res<MouseRay>,
@@ -184,14 +186,15 @@ pub fn inspect_object(
     collider_set: Res<ColliderSet>,
     queries: InspectObjectQueries,
 ) {
-    let ctx = &mut egui_context.ctx;
-    if mouse_input.just_pressed(MouseButton::Left) && !ctx.is_mouse_over_area() {
+    let ctx = egui_context.ctx();
+    if mouse_input.just_pressed(MouseButton::Left) && !ctx.is_pointer_over_area() {
         if let Some((collider, _)) = query_pipeline.cast_ray(
             &collider_set,
             &mouse_ray.0,
             f32::MAX,
             true,
             InteractionGroups::all(),
+            None,
         ) {
             let (entity, _) = queries
                 .colliders
@@ -243,14 +246,14 @@ fn graph(
     let mut shapes = vec![Shape::Rect {
         rect,
         corner_radius: style.corner_radius,
-        fill: ui.style().visuals.dark_bg_color,
+        fill: ui.style().visuals.extreme_bg_color,
         stroke: ui.style().noninteractive().bg_stroke,
     }];
 
     let rect = rect.shrink(4.0);
     let line_stroke = Stroke::new(1.0, Color32::from_additive_luminance(128));
 
-    if let Some(mouse_pos) = ui.input().mouse.pos {
+    if let Some(mouse_pos) = ui.input().pointer.hover_pos() {
         if rect.contains(mouse_pos) {
             let y = mouse_pos.y;
             shapes.push(Shape::line_segment(

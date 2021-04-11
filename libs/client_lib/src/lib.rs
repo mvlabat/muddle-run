@@ -8,12 +8,17 @@ use bevy::{
     core::Time,
     diagnostic::FrameTimeDiagnosticsPlugin,
     ecs::{
-        ArchetypeComponent, Commands, Entity, IntoSystem, Local, Res, ResMut, Resources, ShouldRun,
-        System, SystemId, SystemParam, SystemStage, ThreadLocalExecution, TypeAccess, World,
+        archetype::{Archetype, ArchetypeComponentId},
+        component::ComponentId,
+        entity::Entity,
+        query::Access,
+        schedule::{ShouldRun, SystemStage},
+        system::{Commands, IntoSystem, Local, Res, ResMut, System, SystemId, SystemParam},
+        world::World,
     },
     math::Vec3,
     pbr::LightBundle,
-    render::entity::Camera3dBundle,
+    render::entity::PerspectiveCameraBundle,
     transform::components::Transform,
 };
 use bevy_egui::EguiPlugin;
@@ -22,7 +27,7 @@ use mr_shared_lib::{
     framebuffer::FrameNumber, messages::PlayerNetId, net::ConnectionState, GameTime,
     MuddleSharedPlugin, SimulationTime, SIMULATIONS_PER_SECOND,
 };
-use std::{any::TypeId, borrow::Cow, time::Instant};
+use std::{borrow::Cow, time::Instant};
 
 mod helpers;
 mod input;
@@ -35,7 +40,7 @@ pub struct MuddleClientPlugin;
 
 impl Plugin for MuddleClientPlugin {
     fn build(&self, builder: &mut AppBuilder) {
-        let input_stage = SystemStage::serial()
+        let input_stage = SystemStage::single_threaded()
             // Processing network events should happen before tracking input
             // because we reset current's player inputs on each delta update.
             .with_system(process_network_events.system())
@@ -43,7 +48,7 @@ impl Plugin for MuddleClientPlugin {
             .with_system(input::cast_mouse_ray.system());
         let broadcast_updates_stage =
             SystemStage::parallel().with_system(send_network_updates.system());
-        let post_tick_stage = SystemStage::serial()
+        let post_tick_stage = SystemStage::single_threaded()
             .with_system(control_ticking_speed.system())
             .with_system(update_debug_ui_state.system());
 
@@ -75,17 +80,17 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::debug_ui.system())
             .add_system(ui::debug_ui::inspect_object.system());
 
-        let resources = builder.resources_mut();
-        resources.get_or_insert_with(InitialRtt::default);
-        resources.get_or_insert_with(EstimatedServerTime::default);
-        resources.get_or_insert_with(GameTicksPerSecond::default);
-        resources.get_or_insert_with(TargetFramesAhead::default);
-        resources.get_or_insert_with(PlayerDelay::default);
-        resources.get_or_insert_with(AdjustedSpeedReason::default);
-        resources.get_or_insert_with(ui::debug_ui::DebugUiState::default);
-        resources.get_or_insert_with(CurrentPlayerNetId::default);
-        resources.get_or_insert_with(ConnectionState::default);
-        resources.get_or_insert_with(MouseRay::default);
+        let world = builder.world_mut();
+        world.get_resource_or_insert_with(InitialRtt::default);
+        world.get_resource_or_insert_with(EstimatedServerTime::default);
+        world.get_resource_or_insert_with(GameTicksPerSecond::default);
+        world.get_resource_or_insert_with(TargetFramesAhead::default);
+        world.get_resource_or_insert_with(PlayerDelay::default);
+        world.get_resource_or_insert_with(AdjustedSpeedReason::default);
+        world.get_resource_or_insert_with(ui::debug_ui::DebugUiState::default);
+        world.get_resource_or_insert_with(CurrentPlayerNetId::default);
+        world.get_resource_or_insert_with(ConnectionState::default);
+        world.get_resource_or_insert_with(MouseRay::default);
     }
 }
 
@@ -154,20 +159,20 @@ pub struct CurrentPlayerNetId(pub Option<PlayerNetId>);
 
 pub struct MainCameraEntity(pub Entity);
 
-fn basic_scene(commands: &mut Commands) {
+fn basic_scene(mut commands: Commands) {
     // Add entities to the scene.
-    commands
-        .spawn(LightBundle {
-            transform: Transform::from_translation(Vec3::new(4.0, 10.0, -14.0)),
+    commands.spawn_bundle(LightBundle {
+        transform: Transform::from_translation(Vec3::new(4.0, 10.0, -14.0)),
+        ..Default::default()
+    });
+    // Camera.
+    let main_camera_entity = commands
+        .spawn_bundle(PerspectiveCameraBundle {
+            transform: Transform::from_translation(Vec3::new(5.0, 10.0, -14.0))
+                .looking_at(Vec3::default(), Vec3::Y),
             ..Default::default()
         })
-        // Camera.
-        .spawn(Camera3dBundle {
-            transform: Transform::from_translation(Vec3::new(5.0, 10.0, -14.0))
-                .looking_at(Vec3::default(), Vec3::unit_y()),
-            ..Default::default()
-        });
-    let main_camera_entity = commands.current_entity().unwrap();
+        .id();
     commands.insert_resource(MainCameraEntity(main_camera_entity));
 }
 
@@ -295,38 +300,45 @@ fn slower_tick_rate() -> u16 {
     SIMULATIONS_PER_SECOND - SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
 }
 
-pub struct NetAdaptiveTimestemp {
+#[derive(Default, Clone)]
+pub struct NetAdaptiveTimestempState {
     accumulator: f64,
     looping: bool,
-    system_id: SystemId,
-    resource_access: TypeAccess<TypeId>,
-    archetype_access: TypeAccess<ArchetypeComponent>,
+}
+
+pub struct NetAdaptiveTimestemp {
+    state: NetAdaptiveTimestempState,
+    internal_system: Box<dyn System<In = (), Out = ShouldRun>>,
 }
 
 impl Default for NetAdaptiveTimestemp {
     fn default() -> Self {
         Self {
-            system_id: SystemId::new(),
-            accumulator: 0.0,
-            looping: false,
-            resource_access: Default::default(),
-            archetype_access: Default::default(),
+            state: NetAdaptiveTimestempState::default(),
+            internal_system: Box::new(Self::prepare_system.system()),
         }
     }
 }
 
 impl NetAdaptiveTimestemp {
-    pub fn update(&mut self, time: &Time, step: f64) -> ShouldRun {
-        if !self.looping {
-            self.accumulator += time.delta_seconds_f64();
+    fn prepare_system(
+        mut state: Local<NetAdaptiveTimestempState>,
+        time: Res<Time>,
+        game_ticks_per_second: Res<GameTicksPerSecond>,
+    ) -> ShouldRun {
+        let rate = game_ticks_per_second.rate;
+        let step = 1.0 / rate as f64;
+
+        if !state.looping {
+            state.accumulator += time.delta_seconds_f64();
         }
 
-        if self.accumulator >= step {
-            self.accumulator -= step;
-            self.looping = true;
-            ShouldRun::YesAndLoop
+        if state.accumulator >= step {
+            state.accumulator -= step;
+            state.looping = true;
+            ShouldRun::YesAndCheckAgain
         } else {
-            self.looping = false;
+            state.looping = false;
             ShouldRun::No
         }
     }
@@ -341,40 +353,43 @@ impl System for NetAdaptiveTimestemp {
     }
 
     fn id(&self) -> SystemId {
-        self.system_id
+        self.internal_system.id()
     }
 
-    fn update(&mut self, _world: &World) {}
-
-    fn archetype_component_access(&self) -> &TypeAccess<ArchetypeComponent> {
-        &self.archetype_access
+    fn new_archetype(&mut self, archetype: &Archetype) {
+        self.internal_system.new_archetype(archetype);
     }
 
-    fn resource_access(&self) -> &TypeAccess<TypeId> {
-        &self.resource_access
+    fn component_access(&self) -> &Access<ComponentId> {
+        self.internal_system.component_access()
     }
 
-    fn thread_local_execution(&self) -> ThreadLocalExecution {
-        ThreadLocalExecution::Immediate
+    fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
+        self.internal_system.archetype_component_access()
     }
 
-    unsafe fn run_unsafe(
-        &mut self,
-        _input: Self::In,
-        _world: &World,
-        resources: &Resources,
-    ) -> Option<Self::Out> {
-        let time = resources.get::<Time>().unwrap();
-        let rate = resources.get::<GameTicksPerSecond>().unwrap().rate;
-        let result = self.update(&time, 1.0 / rate as f64);
-        Some(result)
+    fn is_send(&self) -> bool {
+        self.internal_system.is_send()
     }
 
-    fn run_thread_local(&mut self, _world: &mut World, _resources: &mut Resources) {}
+    unsafe fn run_unsafe(&mut self, _input: Self::In, world: &World) -> Self::Out {
+        self.internal_system.run_unsafe((), world)
+    }
 
-    fn initialize(&mut self, _world: &mut World, _resources: &mut Resources) {
-        self.resource_access.add_read(TypeId::of::<Time>());
-        self.resource_access
-            .add_read(TypeId::of::<GameTicksPerSecond>());
+    fn apply_buffers(&mut self, world: &mut World) {
+        self.internal_system.apply_buffers(world)
+    }
+
+    fn initialize(&mut self, world: &mut World) {
+        self.internal_system = Box::new(
+            Self::prepare_system
+                .system()
+                .config(|c| c.0 = Some(self.state.clone())),
+        );
+        self.internal_system.initialize(world);
+    }
+
+    fn check_change_tick(&mut self, change_tick: u32) {
+        self.internal_system.check_change_tick(change_tick)
     }
 }

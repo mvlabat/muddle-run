@@ -15,15 +15,15 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 mr_client_lib = { path = "../../libs/client_lib", features = ["use-udp"]  }
 
-bevy_webgl2 = "0.4"
+bevy_webgl2 = "0.5"
 console_error_panic_hook = "0.1.6"
 console_log = "0.2.0"
 log = "0.4.11"
 uuid = "=0.8.1"
-wasm-bindgen = "0.2.68"
+wasm-bindgen = "0.2.73"
 
 [dependencies.bevy]
-version = "0.4"
+version = "0.5"
 default-features = false
 features = [
     "x11",

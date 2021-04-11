@@ -28,7 +28,7 @@ impl PlayerUpdates {
         self.direction.entry(player_net_id).or_insert_with(|| {
             let mut buffer = Framebuffer::new(frame_number, default_limit);
             buffer.push(Some(PlayerDirectionUpdate {
-                direction: Vec2::zero(),
+                direction: Vec2::ZERO,
                 is_processed_client_input: None,
             }));
             buffer
@@ -43,7 +43,7 @@ impl PlayerUpdates {
     ) -> &mut Framebuffer<Option<Vec2>> {
         self.position.entry(player_net_id).or_insert_with(|| {
             let mut buffer = Framebuffer::new(frame_number, default_limit);
-            buffer.push(Some(Vec2::zero()));
+            buffer.push(Some(Vec2::ZERO));
             buffer
         })
     }

@@ -7,7 +7,10 @@ use crate::{
     GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
 };
 use bevy::{
-    ecs::{Entity, Query, Res, ResMut},
+    ecs::{
+        entity::Entity,
+        system::{Query, Res, ResMut},
+    },
     log,
     math::Vec2,
 };

@@ -11,4 +11,4 @@ mr_client_lib = { path = "../../libs/client_lib", features = ["use-udp"] }
 env_logger = "0.8.1"
 
 [dependencies.bevy]
-version = "0.4"
+version = "0.5"

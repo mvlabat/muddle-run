@@ -1,6 +1,6 @@
 use crate::{helpers, ui::debug_ui::DebugUiState, CurrentPlayerNetId, MainCameraEntity};
 use bevy::{
-    ecs::SystemParam,
+    ecs::system::SystemParam,
     input::{keyboard::KeyboardInput, mouse::MouseButtonInput},
     log,
     prelude::*,
@@ -12,11 +12,11 @@ use mr_shared_lib::{
     GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 
-#[derive(Default)]
-pub struct EventReaderState {
-    pub keys: EventReader<KeyboardInput>,
-    pub cursor: EventReader<CursorMoved>,
-    pub mouse_button: EventReader<MouseButtonInput>,
+#[derive(SystemParam)]
+pub struct InputEvents<'a> {
+    pub keys: EventReader<'a, KeyboardInput>,
+    pub cursor: EventReader<'a, CursorMoved>,
+    pub mouse_button: EventReader<'a, MouseButtonInput>,
 }
 
 #[derive(Default)]
@@ -33,24 +33,16 @@ impl Default for MouseRay {
     }
 }
 
-#[derive(SystemParam)]
-pub struct InputParams<'a> {
-    keyboard_input: Res<'a, Input<KeyCode>>,
-    ev_keys: Res<'a, Events<KeyboardInput>>,
-    ev_cursor: Res<'a, Events<CursorMoved>>,
-    ev_mouse_button: Res<'a, Events<MouseButtonInput>>,
-}
-
 pub fn track_input_events(
-    mut event_reader_state: Local<EventReaderState>,
+    mut input_events: InputEvents,
     time: Res<GameTime>,
     mut debug_ui_state: ResMut<DebugUiState>,
     mut player_updates: ResMut<PlayerUpdates>,
     current_player_net_id: Res<CurrentPlayerNetId>,
     mut mouse_position: ResMut<MousePosition>,
-    input: InputParams,
+    keyboard_input: Res<Input<KeyCode>>,
 ) {
-    if input.keyboard_input.just_pressed(KeyCode::Period) {
+    if keyboard_input.just_pressed(KeyCode::Period) {
         debug_ui_state.show = !debug_ui_state.show;
     }
 
@@ -61,19 +53,18 @@ pub fn track_input_events(
             time.frame_number,
             COMPONENT_FRAMEBUFFER_LIMIT,
         );
-        let mut direction = Vec2::zero();
-        if input.keyboard_input.pressed(KeyCode::A) || input.keyboard_input.pressed(KeyCode::Left) {
+        let mut direction = Vec2::ZERO;
+        if keyboard_input.pressed(KeyCode::A) || keyboard_input.pressed(KeyCode::Left) {
             direction.x += 1.0;
         }
-        if input.keyboard_input.pressed(KeyCode::D) || input.keyboard_input.pressed(KeyCode::Right)
-        {
+        if keyboard_input.pressed(KeyCode::D) || keyboard_input.pressed(KeyCode::Right) {
             direction.x -= 1.0;
         }
 
-        if input.keyboard_input.pressed(KeyCode::W) || input.keyboard_input.pressed(KeyCode::Up) {
+        if keyboard_input.pressed(KeyCode::W) || keyboard_input.pressed(KeyCode::Up) {
             direction.y += 1.0;
         }
-        if input.keyboard_input.pressed(KeyCode::S) || input.keyboard_input.pressed(KeyCode::Down) {
+        if keyboard_input.pressed(KeyCode::S) || keyboard_input.pressed(KeyCode::Down) {
             direction.y -= 1.0;
         }
         direction_updates.insert(
@@ -84,7 +75,7 @@ pub fn track_input_events(
             }),
         );
     }
-    for ev in event_reader_state.keys.iter(&input.ev_keys) {
+    for ev in input_events.keys.iter() {
         if ev.state.is_pressed() {
             log::trace!("Just pressed key: {:?}", ev.key_code);
         } else {
@@ -93,12 +84,12 @@ pub fn track_input_events(
     }
 
     // Absolute cursor position (in window coordinates).
-    if let Some(ev) = event_reader_state.cursor.latest(&input.ev_cursor) {
+    if let Some(ev) = input_events.cursor.iter().next_back() {
         mouse_position.0 = ev.position;
     }
 
     // Mouse buttons.
-    for ev in event_reader_state.mouse_button.iter(&input.ev_mouse_button) {
+    for ev in input_events.mouse_button.iter() {
         if ev.state.is_pressed() {
             log::trace!("Just pressed mouse button: {:?}", ev.button);
         } else {
