@@ -41,13 +41,13 @@ pub enum AcknowledgeError {
     InvalidStep,
     #[error("acknowledged frame is out of stored range")]
     OutOfRange,
-    #[error("acknowledgement for outcoming packets is inconsistent with the previous one")]
+    #[error("acknowledgement for outgoing packets is inconsistent with the previous one")]
     Inconsistent,
 }
 
 #[derive(Debug, Error)]
-pub enum AddOutcomingPacketError {
-    #[error("adding a new outcoming packet would pop an unacknowledged one")]
+pub enum AddOutgoingPacketError {
+    #[error("adding a new outgoing packet would pop an unacknowledged one")]
     WouldLoseUnacknowledged,
 }
 
@@ -63,7 +63,7 @@ pub struct ConnectionState {
     incoming_packets_acks: u64,
     // Packets that we send to a peer represented by this connection.
     // Here we store acks sent to us by that peer.
-    outcoming_packets_acks: VecDeque<Acknowledgment>,
+    outgoing_packets_acks: VecDeque<Acknowledgment>,
     packet_loss: f32,
     jitter_millis: f32,
     last_increased_jitter: Instant,
@@ -78,7 +78,7 @@ impl Default for ConnectionState {
             status_updated_at: Instant::now(),
             newest_acknowledged_incoming_packet: None,
             incoming_packets_acks: u64::MAX - 1,
-            outcoming_packets_acks: VecDeque::new(),
+            outgoing_packets_acks: VecDeque::new(),
             packet_loss: 0.0,
             jitter_millis: 0.0,
             last_increased_jitter: Instant::now()
@@ -120,19 +120,19 @@ impl ConnectionState {
         )
     }
 
-    pub fn outcoming_acknowledgments_bit_set(&self) -> u64 {
+    pub fn outgoing_acknowledgments_bit_set(&self) -> u64 {
         std::iter::repeat(true)
             .take(self.frames_to_fill())
             .chain(
-                self.outcoming_packets_acks
+                self.outgoing_packets_acks
                     .iter()
                     .map(|ack| ack.acknowledged),
             )
             .fold(0, |bitset, ack| bitset << 1 | ack as u64)
     }
 
-    pub fn first_unacknowledged_outcoming_packet(&self) -> Option<FrameNumber> {
-        self.outcoming_packets_acks
+    pub fn first_unacknowledged_outgoing_packet(&self) -> Option<FrameNumber> {
+        self.outgoing_packets_acks
             .iter()
             .find(|ack| !ack.acknowledged)
             .map(|ack| ack.frame_number)
@@ -147,11 +147,11 @@ impl ConnectionState {
         self.session_id = session_id;
     }
 
-    pub fn add_outcoming_packet(&mut self, frame_number: FrameNumber, sent: Instant) {
-        if self.outcoming_packets_acks.len() == 64 {
-            self.outcoming_packets_acks.pop_front();
+    pub fn add_outgoing_packet(&mut self, frame_number: FrameNumber, sent: Instant) {
+        if self.outgoing_packets_acks.len() == 64 {
+            self.outgoing_packets_acks.pop_front();
         }
-        if let Some(prev_packet) = self.outcoming_packets_acks.back() {
+        if let Some(prev_packet) = self.outgoing_packets_acks.back() {
             if prev_packet.frame_number + FrameNumber::new(TICKS_PER_NETWORK_BROADCAST)
                 != frame_number
             {
@@ -163,7 +163,7 @@ impl ConnectionState {
                 );
             }
         }
-        self.outcoming_packets_acks.push_back(Acknowledgment {
+        self.outgoing_packets_acks.push_back(Acknowledgment {
             frame_number,
             acknowledged: false,
             acknowledged_at: None,
@@ -214,13 +214,13 @@ impl ConnectionState {
         Ok(())
     }
 
-    pub fn apply_outcoming_acknowledgements(
+    pub fn apply_outgoing_acknowledgements(
         &mut self,
         frame_number: FrameNumber,
         mut acknowledgment_bit_set: u64,
     ) -> Result<(), AcknowledgeError> {
         let now = Instant::now();
-        if self.outcoming_packets_acks.is_empty() {
+        if self.outgoing_packets_acks.is_empty() {
             return Ok(());
         }
         let last_bit_is_set = acknowledgment_bit_set & 1 == 1u64;
@@ -229,7 +229,7 @@ impl ConnectionState {
         }
 
         let requested_frame_position = self
-            .outcoming_packets_acks
+            .outgoing_packets_acks
             .iter()
             .rev()
             .position(|ack| ack.frame_number == frame_number);
@@ -239,7 +239,7 @@ impl ConnectionState {
         };
 
         let frames_to_forget = skip + self.frames_to_fill();
-        let frames_to_set = self.outcoming_packets_acks.len() - skip;
+        let frames_to_set = self.outgoing_packets_acks.len() - skip;
 
         acknowledgment_bit_set <<= frames_to_forget;
 
@@ -248,11 +248,11 @@ impl ConnectionState {
             / frames_to_set as f32;
 
         let last_acknowledged = self
-            .outcoming_packets_acks
+            .outgoing_packets_acks
             .iter()
             .rfind(|ack| ack.acknowledged)
             .map(|ack| ack.frame_number);
-        for acknowledgment in self.outcoming_packets_acks.iter_mut().take(frames_to_set) {
+        for acknowledgment in self.outgoing_packets_acks.iter_mut().take(frames_to_set) {
             let acknowledged = acknowledgment_bit_set >> 63 != 0;
             let is_not_outdated =
                 last_acknowledged.map_or(true, |last_ack_frame| frame_number > last_ack_frame);
@@ -266,7 +266,7 @@ impl ConnectionState {
         }
 
         assert!(frames_to_set > 0);
-        let ack = &mut self.outcoming_packets_acks[frames_to_set - 1];
+        let ack = &mut self.outgoing_packets_acks[frames_to_set - 1];
         assert_eq!(ack.frame_number, frame_number);
         ack.acknowledged_at = Some(now);
 
@@ -278,26 +278,26 @@ impl ConnectionState {
     fn update_stats(&mut self, frame_number: FrameNumber) {
         // Position of the acknowledged frame + 1 (basically the length, but it should also take into account unordered updates).
         let expected_acknowledged_count = self
-            .outcoming_packets_acks
+            .outgoing_packets_acks
             .iter()
             .position(|ack| ack.frame_number == frame_number)
             .map(|pos| pos + 1)
             .unwrap_or(0);
 
         // Calculating packet loss.
-        let outcoming_unacknowledged_count = self
-            .outcoming_packets_acks
+        let outgoing_unacknowledged_count = self
+            .outgoing_packets_acks
             .iter()
             .take(expected_acknowledged_count)
             .fold(0u32, |acc, ack| acc + !ack.acknowledged as u32);
         let incoming_unacknowledged_count = self.incoming_packets_acks.count_zeros();
-        self.packet_loss = (outcoming_unacknowledged_count + incoming_unacknowledged_count) as f32
+        self.packet_loss = (outgoing_unacknowledged_count + incoming_unacknowledged_count) as f32
             / (expected_acknowledged_count + 64) as f32;
 
         // Calculating rtt.
         if expected_acknowledged_count > 0 {
             let acknowledged_frame = self
-                .outcoming_packets_acks
+                .outgoing_packets_acks
                 .get(expected_acknowledged_count - 1)
                 .unwrap();
             // TODO: fix this somehow to be callable on acknowledging incoming packets?
@@ -314,7 +314,7 @@ impl ConnectionState {
         let mut acc = 0.0;
         let mut count = 0;
         for rtt in self
-            .outcoming_packets_acks
+            .outgoing_packets_acks
             .iter()
             .filter_map(|ack| ack.rtt_millis())
         {
@@ -326,7 +326,7 @@ impl ConnectionState {
         // Calculating jitter.
         let mut jitter = 0.0f32;
         for rtt in self
-            .outcoming_packets_acks
+            .outgoing_packets_acks
             .iter()
             .filter_map(|ack| ack.rtt_millis())
         {
@@ -343,7 +343,7 @@ impl ConnectionState {
     }
 
     fn frames_to_fill(&self) -> usize {
-        64 - self.outcoming_packets_acks.len()
+        64 - self.outgoing_packets_acks.len()
     }
 }
 
@@ -480,7 +480,7 @@ mod tests {
             status_updated_at: Instant::now(),
             newest_acknowledged_incoming_packet: None,
             incoming_packets_acks: 0,
-            outcoming_packets_acks: VecDeque::from(acknowledgments),
+            outgoing_packets_acks: VecDeque::from(acknowledgments),
             packet_loss: 0.0,
             jitter_millis: 0.0,
             last_increased_jitter: Instant::now(),
@@ -550,53 +550,53 @@ mod tests {
     }
 
     #[test]
-    fn test_outcoming_acknowledgment() {
+    fn test_outgoing_acknowledgment() {
         let mut connection_state = init_connection_state(Some(vec![false, false, true]));
         assert_eq_bitset!(
-            connection_state.outcoming_acknowledgments_bit_set(),
+            connection_state.outgoing_acknowledgments_bit_set(),
             0b1111111111111111111111111111111111111111111111111111111111111001,
         );
         connection_state
-            .apply_outcoming_acknowledgements(FrameNumber::new(1), u64::MAX - 2)
+            .apply_outgoing_acknowledgements(FrameNumber::new(1), u64::MAX - 2)
             .unwrap();
         assert_eq_bitset!(
-            connection_state.outcoming_acknowledgments_bit_set(),
+            connection_state.outgoing_acknowledgments_bit_set(),
             0b1111111111111111111111111111111111111111111111111111111111111011,
         );
 
         let mut connection_state = init_connection_state(Some(vec![false; 64]));
         assert_eq_bitset!(
-            connection_state.outcoming_acknowledgments_bit_set(),
+            connection_state.outgoing_acknowledgments_bit_set(),
             0b0000000000000000000000000000000000000000000000000000000000000000,
         );
         connection_state
-            .apply_outcoming_acknowledgements(
+            .apply_outgoing_acknowledgements(
                 FrameNumber::new(15),
                 0b1111111111111111000000000000000000000000000000000000000000000001,
             )
             .unwrap();
         assert_eq_bitset!(
-            connection_state.outcoming_acknowledgments_bit_set(),
+            connection_state.outgoing_acknowledgments_bit_set(),
             0b0000000000000001000000000000000000000000000000000000000000000000,
         );
         connection_state
-            .apply_outcoming_acknowledgements(
+            .apply_outgoing_acknowledgements(
                 FrameNumber::new(63),
                 0b1111111100000001000000000000000000000000000000000000000000000001,
             )
             .unwrap();
         assert_eq_bitset!(
-            connection_state.outcoming_acknowledgments_bit_set(),
+            connection_state.outgoing_acknowledgments_bit_set(),
             0b1111111100000001000000000000000000000000000000000000000000000001,
         );
         connection_state
-            .apply_outcoming_acknowledgements(
+            .apply_outgoing_acknowledgements(
                 FrameNumber::new(63),
                 0b1111111111111111000000000000000000000000000000000000000000000001,
             )
             .unwrap();
         assert_eq_bitset!(
-            connection_state.outcoming_acknowledgments_bit_set(),
+            connection_state.outgoing_acknowledgments_bit_set(),
             0b1111111111111111000000000000000000000000000000000000000000000001,
         );
     }

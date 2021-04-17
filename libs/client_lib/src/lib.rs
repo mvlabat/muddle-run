@@ -17,7 +17,7 @@ use bevy::{
         world::World,
     },
     math::Vec3,
-    pbr::LightBundle,
+    pbr::{Light, LightBundle},
     render::entity::PerspectiveCameraBundle,
     transform::components::Transform,
 };
@@ -28,7 +28,6 @@ use mr_shared_lib::{
     MuddleSharedPlugin, SimulationTime, SIMULATIONS_PER_SECOND,
 };
 use std::{borrow::Cow, time::Instant};
-use bevy::pbr::Light;
 
 mod helpers;
 mod input;
@@ -166,7 +165,7 @@ fn basic_scene(mut commands: Commands) {
         light: Light {
             range: 200.0,
             intensity: 400.0,
-            .. Default::default()
+            ..Default::default()
         },
         transform: Transform::from_translation(Vec3::new(4.0, 10.0, -14.0)),
         ..Default::default()

@@ -214,11 +214,11 @@ pub fn process_network_events(
                     }
                     if let (Some(frame_number), ack_bit_set) = update.acknowledgments {
                         if let Err(err) = connection_state
-                            .apply_outcoming_acknowledgements(frame_number, ack_bit_set)
+                            .apply_outgoing_acknowledgements(frame_number, ack_bit_set)
                         {
                             // TODO: disconnect players.
                             log::error!(
-                                "Failed to apply outcoming packet acknowledgments (update frame: {}, current frame: {}): {:?}",
+                                "Failed to apply outgoing packet acknowledgments (update frame: {}, current frame: {}): {:?}",
                                 update.frame_number,
                                 time.frame_number,
                                 err
@@ -464,7 +464,7 @@ fn broadcast_delta_update_messages(
         log::error!("Failed to send a message: {:?}", err);
     }
 
-    connection_state.add_outcoming_packet(time.frame_number, Instant::now());
+    connection_state.add_outgoing_packet(time.frame_number, Instant::now());
 }
 
 fn broadcast_new_player_messages(
@@ -609,7 +609,7 @@ fn create_player_state(
     let updates_start_frame = if connection_state.packet_loss() > 0.0 {
         // TODO: avoid doing the same searches when gathering updates for every player?
         connection_state
-            .first_unacknowledged_outcoming_packet()
+            .first_unacknowledged_outgoing_packet()
             .unwrap_or(time.frame_number)
     } else {
         time.frame_number

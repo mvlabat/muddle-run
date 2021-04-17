@@ -130,7 +130,7 @@ pub fn process_network_events(
                     if let (Some(ack_frame_number), ack_bit_set) = update.acknowledgments {
                         match network_params
                             .connection_state
-                            .apply_outcoming_acknowledgements(ack_frame_number, ack_bit_set)
+                            .apply_outgoing_acknowledgements(ack_frame_number, ack_bit_set)
                         {
                             Err(AcknowledgeError::OutOfRange) => {
                                 log::warn!(
@@ -279,10 +279,10 @@ pub fn send_network_updates(
     network_params
         .connection_state
         // Clients don't resend updates, so we can forget about unacknowledged packets.
-        .add_outcoming_packet(time.frame_number, Instant::now());
+        .add_outgoing_packet(time.frame_number, Instant::now());
     let first_unacknowledged_frame = network_params
         .connection_state
-        .first_unacknowledged_outcoming_packet()
+        .first_unacknowledged_outgoing_packet()
         .expect("Expected at least the new packet for the current frame");
     let mut inputs: Vec<PlayerInput> = Vec::new();
     // TODO: deduplicate updates (the same code is written for server).
