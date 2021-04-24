@@ -14,7 +14,7 @@ use mr_shared_lib::{
 use std::collections::HashMap;
 
 pub const SERVER_UPDATES_LIMIT: u16 = 64;
-pub const MAX_LAG_COMPENSATION_MSEC: u16 = 200;
+pub const MAX_LAG_COMPENSATION_MILLIS: u16 = 200;
 
 pub struct DeferredUpdates<T> {
     updates: HashMap<PlayerNetId, Vec<T>>,
@@ -48,7 +48,7 @@ pub fn process_player_input_updates(
     mut deferred_updates: ResMut<DeferredUpdates<PlayerInput>>,
 ) {
     let lag_compensated_frames =
-        (MAX_LAG_COMPENSATION_MSEC as f32 / (1000.0 / SIMULATIONS_PER_SECOND as f32)) as u16;
+        (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / SIMULATIONS_PER_SECOND as f32)) as u16;
     let min_frame_number = time.frame_number - FrameNumber::new(lag_compensated_frames);
 
     let deferred_updates = deferred_updates.drain();

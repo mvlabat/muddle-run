@@ -14,7 +14,10 @@ use mr_shared_lib::{
         PlayerUpdate, ReliableClientMessage, ReliableServerMessage, StartGame,
         UnreliableClientMessage, UnreliableServerMessage,
     },
-    net::{AcknowledgeError, ConnectionState, ConnectionStatus, SessionId},
+    net::{
+        AcknowledgeError, ConnectionState, ConnectionStatus, MessageId, SessionId,
+        CONNECTION_TIMEOUT_MILLIS,
+    },
     player::{Player, PlayerDirectionUpdate, PlayerUpdates},
     registry::EntityRegistry,
     GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
@@ -22,19 +25,10 @@ use mr_shared_lib::{
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 const DEFAULT_SERVER_PORT: u16 = 3455;
-
-pub fn initiate_connection(mut net: ResMut<NetworkResource>) {
-    if net.connections.is_empty() {
-        let server_socket_addr = server_addr().expect("cannot find current ip address");
-
-        log::info!("Starting the client");
-        net.connect(server_socket_addr);
-    }
-}
 
 #[derive(SystemParam)]
 pub struct UpdateParams<'a> {
@@ -68,28 +62,43 @@ pub fn process_network_events(
     for event in network_events.iter() {
         match event {
             NetworkEvent::Connected(handle) => {
+                // It doesn't actually mean that we've connected: bevy_networking_turbulence
+                // fires the event as soon as we launch. But we also get this even after resetting
+                // a connection.
                 log::info!("Connected: {}", handle);
+                log::info!(
+                    "Sending a Connect message: {}",
+                    network_params.connection_state.handshake_id
+                );
                 if let Err(err) = network_params.net.send_message(
                     *handle,
                     Message {
                         // The server is expected to accept any session id for this message.
                         session_id: SessionId::new(0),
-                        message: ReliableClientMessage::Handshake,
+                        message: UnreliableClientMessage::Connect(
+                            network_params.connection_state.handshake_id,
+                        ),
                     },
                 ) {
                     log::error!("Failed to send a Handshake message: {:?}", err);
                 }
                 update_params.initial_rtt.sent_at = Some(Instant::now());
+                network_params.connection_state.handshake_id += MessageId::new(1);
                 network_params
                     .connection_state
-                    .set_status(ConnectionStatus::Handshaking);
+                    .set_status(ConnectionStatus::Connecting);
             }
             NetworkEvent::Disconnected(handle) => {
                 log::info!("Disconnected: {}", handle);
             }
+            NetworkEvent::Error(handle, err) => {
+                log::error!("Network error ({}): {:?}", handle, err);
+            }
             _ => {}
         }
     }
+
+    let mut handshake_message_to_send = None;
 
     for (handle, connection) in network_params.net.connections.iter_mut() {
         let channels = connection.channels().unwrap();
@@ -100,12 +109,18 @@ pub fn process_network_events(
                 handle,
                 message
             );
+            network_params.connection_state.last_message_received_at = Instant::now();
             let Message {
                 message,
                 session_id,
             } = message;
 
-            if session_id != network_params.connection_state.session_id {
+            if session_id != network_params.connection_state.session_id
+                && matches!(
+                    network_params.connection_state.status(),
+                    ConnectionStatus::Connected
+                )
+            {
                 log::warn!(
                     "Ignoring a server message: sent session id {} doesn't match {}",
                     session_id,
@@ -115,6 +130,35 @@ pub fn process_network_events(
             }
 
             match message {
+                UnreliableServerMessage::Handshake(message_id) => {
+                    log::info!("Received Handshake message: {}", message_id);
+                    let expected_handshake_id =
+                        network_params.connection_state.handshake_id - MessageId::new(1);
+                    if !matches!(
+                        network_params.connection_state.status(),
+                        ConnectionStatus::Connecting
+                    ) || message_id != expected_handshake_id
+                    {
+                        log::warn!(
+                            "Ignoring Handshake message. Connection status: {:?}, expected handshake id: {}, received handshake id: {}",
+                            network_params.connection_state.status(),
+                            network_params.connection_state.handshake_id,
+                            message_id
+                        );
+                        continue;
+                    }
+                    network_params
+                        .connection_state
+                        .set_status(ConnectionStatus::Handshaking);
+                    update_params.initial_rtt.received_at = Some(Instant::now());
+                    handshake_message_to_send = Some((
+                        *handle,
+                        Message {
+                            session_id: MessageId::new(0),
+                            message: ReliableClientMessage::Handshake(message_id),
+                        },
+                    ));
+                }
                 UnreliableServerMessage::DeltaUpdate(update) => {
                     if let Err(err) = network_params
                         .connection_state
@@ -167,6 +211,7 @@ pub fn process_network_events(
                 handle,
                 message
             );
+            network_params.connection_state.last_message_received_at = Instant::now();
             let Message {
                 message,
                 session_id,
@@ -188,6 +233,17 @@ pub fn process_network_events(
 
             match message {
                 ReliableServerMessage::StartGame(start_game) => {
+                    let expected_handshake_id =
+                        network_params.connection_state.handshake_id - MessageId::new(1);
+                    if start_game.handshake_id != expected_handshake_id {
+                        log::warn!(
+                            "Ignoring a StartGame message: handshake id {} doesn't match {}",
+                            start_game.handshake_id,
+                            expected_handshake_id
+                        );
+                        continue;
+                    }
+
                     network_params.connection_state.session_id = session_id;
                     network_params
                         .connection_state
@@ -244,6 +300,36 @@ pub fn process_network_events(
         while channels.recv::<Message<ReliableClientMessage>>().is_some() {
             log::error!("Unexpected ReliableClientMessage received on [{}]", handle);
         }
+    }
+
+    if let Some((handle, message)) = handshake_message_to_send {
+        if let Err(err) = network_params.net.send_message(handle, message) {
+            log::error!("Failed to send Handshake message: {:?}", err);
+        }
+    }
+}
+
+pub fn maintain_connection(mut network_params: NetworkParams, mut initial_rtt: ResMut<InitialRtt>) {
+    // TODO: we also need some logic aware of game updates. If a client isn't getting any
+    //  updates, we pause the game and wait for some time for a server to respond.
+    let needs_resetting = Instant::now()
+        .duration_since(network_params.connection_state.last_message_received_at)
+        > Duration::from_millis(CONNECTION_TIMEOUT_MILLIS);
+
+    if needs_resetting {
+        log::warn!("Connection timeout, resetting");
+        network_params.net.connections.clear();
+        initial_rtt.sent_at = None;
+        network_params
+            .connection_state
+            .set_status(ConnectionStatus::Uninitialized);
+    }
+
+    if network_params.net.connections.is_empty() {
+        let server_socket_addr = server_addr().expect("cannot find current ip address");
+
+        log::info!("Connecting to {}", server_socket_addr);
+        network_params.net.connect(server_socket_addr);
     }
 }
 
@@ -387,7 +473,6 @@ fn process_delta_update_message(
         .collect();
 
     for player_net_id in players_to_remove {
-        players.remove(&player_net_id);
         update_params.despawn_player_commands.push(DespawnPlayer {
             net_id: player_net_id,
             frame_number: delta_update.frame_number,
@@ -491,7 +576,8 @@ fn process_start_game_message(
     players: &mut HashMap<PlayerNetId, Player>,
     update_params: &mut UpdateParams,
 ) {
-    update_params.initial_rtt.received_at = Some(Instant::now());
+    let initial_rtt = update_params.initial_rtt.duration_secs().unwrap() * 1000.0;
+    log::debug!("Initial rtt: {}", initial_rtt);
     connection_state
         .set_initial_rtt_millis(update_params.initial_rtt.duration_secs().unwrap() * 1000.0);
 

@@ -1,6 +1,6 @@
 use crate::{
     input::MouseRay,
-    net::{initiate_connection, process_network_events, send_network_updates},
+    net::{maintain_connection, process_network_events, send_network_updates},
     ui::debug_ui::update_debug_ui_state,
 };
 use bevy::{
@@ -43,6 +43,7 @@ impl Plugin for MuddleClientPlugin {
         let input_stage = SystemStage::single_threaded()
             // Processing network events should happen before tracking input
             // because we reset current's player inputs on each delta update.
+            .with_system(maintain_connection.system())
             .with_system(process_network_events.system())
             .with_system(input::track_input_events.system())
             .with_system(input::cast_mouse_ray.system());
@@ -59,8 +60,6 @@ impl Plugin for MuddleClientPlugin {
             .init_resource::<input::MousePosition>()
             // Startup systems.
             .add_startup_system(basic_scene.system())
-            // Networking.
-            .add_startup_system(initiate_connection.system())
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
                 NetAdaptiveTimestemp::default(),

@@ -1,3 +1,5 @@
+#![feature(bool_to_option)]
+
 use crate::{
     net::{process_network_events, send_network_updates, startup, PlayerConnections},
     player_updates::{process_player_input_updates, DeferredUpdates},

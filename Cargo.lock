@@ -598,7 +598,7 @@ dependencies = [
 [[package]]
 name = "bevy_networking_turbulence"
 version = "0.2.0"
-source = "git+https://github.com/mvlabat/bevy_networking_turbulence.git#90319f9963225e4eb353ad4a42c883e6189de84b"
+source = "git+https://github.com/mvlabat/bevy_networking_turbulence.git#f2e5ce1b6318671b50287c8c96d935382c95eb5d"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -2718,8 +2718,7 @@ dependencies = [
 [[package]]
 name = "naia-client-socket"
 version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52f3197e89674e48acc5a5c3c2e54cacf7e6c60662792fbfc080405fcf3e01cb"
+source = "git+https://github.com/mvlabat/naia-socket.git#5a6cdb659f783b43538c6b5b1d063bf6a2456c11"
 dependencies = [
  "cfg-if 0.1.10",
  "js-sys",
@@ -2735,8 +2734,7 @@ dependencies = [
 [[package]]
 name = "naia-server-socket"
 version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a885cef55af672d74010a91ee8ba090950a0c0af0f2192fb099dc8507d70071c"
+source = "git+https://github.com/mvlabat/naia-socket.git#5a6cdb659f783b43538c6b5b1d063bf6a2456c11"
 dependencies = [
  "async-dup",
  "async-io",
@@ -2755,8 +2753,7 @@ dependencies = [
 [[package]]
 name = "naia-socket-shared"
 version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10b6c2bbecfd8f15f857ad7a9a4800ceb0f06b34f0dd3451ce157da3081e0ceb"
+source = "git+https://github.com/mvlabat/naia-socket.git#5a6cdb659f783b43538c6b5b1d063bf6a2456c11"
 dependencies = [
  "byteorder",
  "cfg-if 0.1.10",

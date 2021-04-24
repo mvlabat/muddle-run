@@ -18,14 +18,17 @@ use std::{
 };
 use thiserror::Error;
 
+pub const CONNECTION_TIMEOUT_MILLIS: u64 = 2000;
 const RTT_UPDATE_FACTOR: f32 = 0.2;
 const JITTER_DECREASE_THRESHOLD_SECS: u64 = 1;
 
+pub type MessageId = WrappedCounter<u16>;
 pub type SessionId = WrappedCounter<u16>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ConnectionStatus {
     Uninitialized,
+    Connecting,
     Handshaking,
     Connected,
     /// We've received a `Disconnect` event or triggered the process manually. After we finish
@@ -54,7 +57,9 @@ pub enum AddOutgoingPacketError {
 // Note: We don't expect clients or server to re-send lost packets. If we detect packet loss,
 // we enable redundancy to include the lost updates in future packets.
 pub struct ConnectionState {
+    pub handshake_id: MessageId,
     pub session_id: SessionId,
+    pub last_message_received_at: Instant,
     status: ConnectionStatus,
     status_updated_at: Instant,
     newest_acknowledged_incoming_packet: Option<FrameNumber>,
@@ -73,7 +78,9 @@ pub struct ConnectionState {
 impl Default for ConnectionState {
     fn default() -> Self {
         Self {
+            handshake_id: MessageId::new(0),
             session_id: SessionId::new(0),
+            last_message_received_at: Instant::now(),
             status: ConnectionStatus::Uninitialized,
             status_updated_at: Instant::now(),
             newest_acknowledged_incoming_packet: None,
@@ -140,11 +147,13 @@ impl ConnectionState {
 
     pub fn set_status(&mut self, status: ConnectionStatus) {
         let session_id = self.session_id;
+        let handshake_id = self.handshake_id;
 
         *self = Self::default();
         self.status = status;
         self.status_updated_at = Instant::now();
         self.session_id = session_id;
+        self.handshake_id = handshake_id;
     }
 
     pub fn add_outgoing_packet(&mut self, frame_number: FrameNumber, sent: Instant) {
@@ -441,7 +450,7 @@ const SERVER_DELTA_UPDATE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChan
 mod tests {
     use crate::{
         framebuffer::FrameNumber,
-        net::{Acknowledgment, ConnectionState, ConnectionStatus, SessionId},
+        net::{Acknowledgment, ConnectionState, ConnectionStatus, MessageId, SessionId},
         TICKS_PER_NETWORK_BROADCAST,
     };
     use std::{collections::VecDeque, time::Instant};
@@ -475,7 +484,9 @@ mod tests {
             .collect::<Vec<_>>();
 
         ConnectionState {
+            handshake_id: MessageId::new(0),
             session_id: SessionId::new(0),
+            last_message_received_at: Instant::now(),
             status: ConnectionStatus::Uninitialized,
             status_updated_at: Instant::now(),
             newest_acknowledged_incoming_packet: None,

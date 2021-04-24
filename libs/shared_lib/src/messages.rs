@@ -1,7 +1,7 @@
 use crate::{
     framebuffer::FrameNumber,
     game::commands::{DespawnLevelObject, SpawnLevelObject},
-    net::SessionId,
+    net::{MessageId, SessionId},
     registry::IncrementId,
 };
 use bevy::math::Vec2;
@@ -48,16 +48,19 @@ pub struct Message<T> {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum UnreliableClientMessage {
+    Connect(MessageId),
     PlayerUpdate(PlayerUpdate),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ReliableClientMessage {
-    Handshake,
+    /// Is sent as a response to server's `UnreliableServerMessage::Handshake`.
+    Handshake(MessageId),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ReliableServerMessage {
+    /// Is sent as a response to client's `ReliableClientMessage::Handshake`.
     StartGame(StartGame),
     ConnectedPlayer(ConnectedPlayer),
     DisconnectedPlayer(DisconnectedPlayer),
@@ -75,11 +78,15 @@ pub struct PlayerUpdate {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum UnreliableServerMessage {
+    /// Is sent as a response to client's `UnreliableClientMessage::Connect`.
+    Handshake(MessageId),
     DeltaUpdate(DeltaUpdate),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StartGame {
+    /// Correlates to a handshake id of a client's request.
+    pub handshake_id: MessageId,
     pub net_id: PlayerNetId,
     pub nickname: String,
     pub objects: Vec<SpawnLevelObject>,

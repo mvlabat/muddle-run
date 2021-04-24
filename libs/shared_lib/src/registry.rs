@@ -62,15 +62,21 @@ impl<K: Copy + Hash + Eq> EntityRegistry<K> {
         self.id_by_entity.insert(entity, id);
     }
 
-    pub fn remove_by_entity(&mut self, entity: Entity) {
+    pub fn remove_by_entity(&mut self, entity: Entity) -> Option<K> {
         if let Some(id) = self.id_by_entity.remove(&entity) {
             self.entity_by_id.remove(&id);
+            Some(id)
+        } else {
+            None
         }
     }
 
-    pub fn remove_by_id(&mut self, id: K) {
+    pub fn remove_by_id(&mut self, id: K) -> Option<Entity> {
         if let Some(entity) = self.entity_by_id.remove(&id) {
             self.id_by_entity.remove(&entity);
+            Some(entity)
+        } else {
+            None
         }
     }
 
