@@ -6,11 +6,13 @@ use crate::{
     framebuffer::FrameNumber,
     game::{
         commands::{
-            DespawnLevelObject, DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer,
+            DespawnLevelObject, DespawnPlayer, GameCommands, RestartGame, SpawnLevelObject,
+            SpawnPlayer,
         },
         components::PlayerFrameSimulated,
         level::LevelState,
         movement::{player_movement, read_movement_updates, sync_position},
+        restart_game,
         spawn::{despawn_players, process_spawned_entities, spawn_level_objects, spawn_players},
     },
     net::network_setup,
@@ -200,10 +202,13 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         builder.add_stage_before(
             stage::MAIN_SCHEDULE,
             stage::READ_INPUT_UPDATES,
-            SystemStage::parallel().with_system_set(
-                SystemSet::on_update(GameState::Playing)
-                    .with_system(read_movement_updates.system()),
-            ),
+            SystemStage::parallel()
+                .with_system(restart_game.exclusive_system().label("restart_game"))
+                .with_system_set(
+                    SystemSet::on_update(GameState::Playing)
+                        .after("restart_game")
+                        .with_system(read_movement_updates.system()),
+                ),
         );
         builder.add_stage_before(
             stage::READ_INPUT_UPDATES,
@@ -224,6 +229,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         resources.get_resource_or_insert_with(SimulationTime::default);
         resources.get_resource_or_insert_with(LevelState::default);
         resources.get_resource_or_insert_with(PlayerUpdates::default);
+        resources.get_resource_or_insert_with(GameCommands::<RestartGame>::default);
         resources.get_resource_or_insert_with(GameCommands::<SpawnPlayer>::default);
         resources.get_resource_or_insert_with(GameCommands::<DespawnPlayer>::default);
         resources.get_resource_or_insert_with(GameCommands::<SpawnLevelObject>::default);

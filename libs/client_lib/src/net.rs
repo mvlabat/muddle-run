@@ -5,7 +5,8 @@ use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
         commands::{
-            DespawnLevelObject, DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer,
+            DespawnLevelObject, DespawnPlayer, GameCommands, RestartGame, SpawnLevelObject,
+            SpawnPlayer,
         },
         components::PlayerDirection,
     },
@@ -40,6 +41,7 @@ pub struct UpdateParams<'a> {
     player_delay: ResMut<'a, PlayerDelay>,
     initial_rtt: ResMut<'a, InitialRtt>,
     player_updates: ResMut<'a, PlayerUpdates>,
+    restart_game_commands: ResMut<'a, GameCommands<RestartGame>>,
     spawn_level_object_commands: ResMut<'a, GameCommands<SpawnLevelObject>>,
     despawn_level_object_commands: ResMut<'a, GameCommands<DespawnLevelObject>>,
     spawn_player_commands: ResMut<'a, GameCommands<SpawnPlayer>>,
@@ -158,6 +160,15 @@ pub fn process_network_events(
                             message: ReliableClientMessage::Handshake(message_id),
                         },
                     ));
+
+                    // This seems to be the most reliable place to do this. `StartGame` might come
+                    // after the first `DeltaUpdate`, so it's not super reliable to restart a game
+                    // there. `Handshake`, on the contrary, always comes before both `DeltaUpdate`
+                    // and `StartGame`. Restarting on disconnect might work just fine too, but I
+                    // thought that `Handshake` probably comes with less edge-cases, since we
+                    // always get it before starting the game.
+                    current_player_net_id.0 = None;
+                    update_params.restart_game_commands.push(RestartGame);
                 }
                 UnreliableServerMessage::DeltaUpdate(update) => {
                     if let Err(err) = network_params
@@ -454,7 +465,7 @@ fn process_delta_update_message(
     let is_not_resizing_input_buffer = update_params.target_frames_ahead.frames_count
         == update_params.simulation_time.player_frame - update_params.simulation_time.server_frame;
     if needs_compensating && is_not_resizing_input_buffer {
-        log::debug!("player delay: {}, ahread of server: {}, game frame: {}, update frame: {}, estimated server frame: {}, to be ahead: {}, rtt: {}, packet_loss: {}, jitter: {}",
+        log::trace!("player delay: {}, ahread of server: {}, game frame: {}, update frame: {}, estimated server frame: {}, to be ahead: {}, rtt: {}, packet_loss: {}, jitter: {}",
             player_delay,
             update_params.game_time.frame_number.value() as i32 - update_params.estimated_server_time.frame_number.value() as i32,
             update_params.game_time.frame_number.value(),

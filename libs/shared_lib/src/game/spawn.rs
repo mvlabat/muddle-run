@@ -112,7 +112,14 @@ pub fn despawn_players(
                 continue;
             }
         };
-        let (_, mut spawned, _) = players.get_mut(entity).unwrap();
+        let mut spawned = match players.get_mut(entity) {
+            Ok((_, spawned, _)) => spawned,
+            Err(err) => {
+                // TODO: investigate.
+                log::error!("A despawned entity doesn't exist: {:?}", err);
+                continue;
+            }
+        };
         if !spawned.is_spawned(command.frame_number) {
             log::debug!(
                 "Player ({}) is not spawned at frame {}, skipping the despawn command",

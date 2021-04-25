@@ -28,6 +28,10 @@ impl<T> GameCommands<T> {
     }
 }
 
+// NOTE: after adding a new command, remember to clean them up in the `restart_game` system.
+
+pub struct RestartGame;
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SpawnPlayer {
     pub net_id: PlayerNetId,

@@ -190,18 +190,17 @@ fn pause_simulation(
     // is pushed to the top of the stack.
     if let GameState::Paused = game_state.current() {
         if is_connected && has_server_updates {
-            log::info!("Unpausing the game");
-            game_state.pop().unwrap();
+            let result = game_state.pop();
+            match result {
+                Ok(()) => {
+                    log::info!("Unpausing the game");
+                }
+                Err(StateError::StateAlreadyQueued) => {
+                    // TODO: investigate why this runs more than once before changing the state sometimes.
+                }
+                Err(StateError::StackEmpty | StateError::AlreadyInState) => unreachable!(),
+            }
             return;
-        }
-    }
-
-    // We always assume that `GameState::Playing` is the initial state and `GameState::Paused`
-    // is pushed to the top of the stack.
-    if let GameState::Paused = game_state.current() {
-        if is_connected && has_server_updates {
-            log::info!("Unpausing the game");
-            game_state.pop().unwrap();
         }
     }
 

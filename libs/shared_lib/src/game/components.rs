@@ -4,6 +4,9 @@ use crate::{
 };
 use bevy::math::Vec2;
 
+// NOTE: After adding new components, make sure that related entities are cleaned up in the
+// `restart_game` system.
+
 /// Represents Player's input (not an actual direction of entity's movement).
 pub struct PlayerDirection {
     /// `None` indicates a missing network input.

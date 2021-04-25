@@ -2,7 +2,7 @@ use crate::{
     framebuffer::{FrameNumber, Framebuffer},
     messages::PlayerNetId,
 };
-use bevy::math::Vec2;
+use bevy::{log, math::Vec2};
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
@@ -26,6 +26,11 @@ impl PlayerUpdates {
         default_limit: u16,
     ) -> &mut Framebuffer<Option<PlayerDirectionUpdate>> {
         self.direction.entry(player_net_id).or_insert_with(|| {
+            log::debug!(
+                "Create a new direction buffer (client: {:?}, frame: {})",
+                player_net_id,
+                frame_number
+            );
             let mut buffer = Framebuffer::new(frame_number, default_limit);
             buffer.push(Some(PlayerDirectionUpdate {
                 direction: Vec2::ZERO,
@@ -42,6 +47,11 @@ impl PlayerUpdates {
         default_limit: u16,
     ) -> &mut Framebuffer<Option<Vec2>> {
         self.position.entry(player_net_id).or_insert_with(|| {
+            log::debug!(
+                "Create a new position buffer (client: {:?}, frame: {})",
+                player_net_id,
+                frame_number
+            );
             let mut buffer = Framebuffer::new(frame_number, default_limit);
             buffer.push(Some(Vec2::ZERO));
             buffer

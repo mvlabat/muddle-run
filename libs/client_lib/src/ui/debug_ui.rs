@@ -5,6 +5,7 @@ use crate::{
 use bevy::{
     diagnostic::{DiagnosticMeasurement, Diagnostics, FrameTimeDiagnosticsPlugin},
     ecs::system::SystemParam,
+    log,
     prelude::*,
 };
 use bevy_egui::{egui, EguiContext, EguiSettings};
@@ -196,13 +197,15 @@ pub fn inspect_object(
             InteractionGroups::all(),
             None,
         ) {
-            let (entity, _) = queries
+            if let Some((entity, _)) = queries
                 .colliders
                 .iter()
                 .find(|(_, collider_component)| collider_component.handle() == collider)
-                .unwrap();
-
-            inspectable_object.entity = Some(entity);
+            {
+                inspectable_object.entity = Some(entity);
+            } else {
+                log::error!("No entity with collider {:?} was found", collider);
+            }
         } else {
             inspectable_object.entity = None;
         }

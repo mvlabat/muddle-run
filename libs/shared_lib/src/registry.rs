@@ -80,6 +80,11 @@ impl<K: Copy + Hash + Eq> EntityRegistry<K> {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.entity_by_id.clear();
+        self.id_by_entity.clear();
+    }
+
     pub fn get_entity(&self, id: K) -> Option<Entity> {
         self.entity_by_id.get(&id).copied()
     }
