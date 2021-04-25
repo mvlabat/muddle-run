@@ -200,7 +200,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         builder.add_stage_before(
             stage::MAIN_SCHEDULE,
             stage::READ_INPUT_UPDATES,
-            SystemStage::parallel().with_system(read_movement_updates.system()),
+            SystemStage::parallel().with_system_set(
+                SystemSet::on_update(GameState::Playing)
+                    .with_system(read_movement_updates.system()),
+            ),
         );
         builder.add_stage_before(
             stage::READ_INPUT_UPDATES,
@@ -209,6 +212,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 .take()
                 .expect("Can't initialize the plugin more than once"),
         );
+
+        // Is `GameState::Paused` for client (see `init_state`).
+        builder.add_state(GameState::Playing);
+        builder.add_state_to_stage(stage::READ_INPUT_UPDATES, GameState::Playing);
 
         builder.add_startup_system(network_setup.system());
 
@@ -254,9 +261,12 @@ impl Plugin for RapierResourcesPlugin {
     }
 }
 
-// TODO: split into two resources for simulation and game frames to live separately?
-//  This will probably help with avoiding bugs where we mistakenly use game frame
-//  instead of simulation frame.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum GameState {
+    Paused,
+    Playing,
+}
+
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct GameTime {
     pub generation: usize,
@@ -413,6 +423,7 @@ impl Default for SimulationTickRunCriteria {
 impl SimulationTickRunCriteria {
     fn prepare_system(
         mut state: Local<SimulationTickRunCriteriaState>,
+        game_state: Res<State<GameState>>,
         game_time: Res<GameTime>,
         simulation_time: Res<SimulationTime>,
     ) -> ShouldRun {
@@ -422,6 +433,7 @@ impl SimulationTickRunCriteria {
             state.last_game_frame = Some(game_time.frame_number);
         } else if state.last_player_frame == simulation_time.player_frame
             && state.last_server_frame == simulation_time.server_frame
+            && game_state.current() == &GameState::Playing
         {
             panic!(
                 "Simulation frame hasn't advanced: {}, {}",
@@ -431,7 +443,9 @@ impl SimulationTickRunCriteria {
         state.last_player_frame = simulation_time.player_frame;
         state.last_server_frame = simulation_time.server_frame;
 
-        if state.last_player_frame <= game_time.frame_number {
+        if state.last_player_frame <= game_time.frame_number
+            && game_state.current() == &GameState::Playing
+        {
             trace!(
                 "Run and loop a simulation schedule (simulation: {}, game {})",
                 simulation_time.player_frame,

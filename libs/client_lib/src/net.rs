@@ -345,6 +345,13 @@ pub fn send_network_updates(
     player_registry: Res<EntityRegistry<PlayerNetId>>,
     player_update_params: PlayerUpdateParams,
 ) {
+    if !matches!(
+        network_params.connection_state.status(),
+        ConnectionStatus::Connected
+    ) {
+        return;
+    }
+
     log::trace!("Broadcast updates for frame {}", time.frame_number);
     let (connection_handle, address) = match network_params.net.connections.iter_mut().next() {
         Some((&handle, connection)) => (handle, connection.remote_address()),

@@ -12,10 +12,11 @@ use bevy::{
         component::ComponentId,
         entity::Entity,
         query::Access,
-        schedule::{ShouldRun, SystemStage},
+        schedule::{ShouldRun, State, StateError, SystemStage},
         system::{Commands, IntoSystem, Local, Res, ResMut, System, SystemId, SystemParam},
         world::World,
     },
+    log,
     math::Vec3,
     pbr::{Light, LightBundle},
     render::entity::PerspectiveCameraBundle,
@@ -24,8 +25,11 @@ use bevy::{
 use bevy_egui::EguiPlugin;
 use bevy_networking_turbulence::LinkConditionerConfig;
 use mr_shared_lib::{
-    framebuffer::FrameNumber, messages::PlayerNetId, net::ConnectionState, GameTime,
-    MuddleSharedPlugin, SimulationTime, SIMULATIONS_PER_SECOND,
+    framebuffer::FrameNumber,
+    messages::PlayerNetId,
+    net::{ConnectionState, ConnectionStatus},
+    GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
+    SIMULATIONS_PER_SECOND,
 };
 use std::{borrow::Cow, time::Instant};
 
@@ -50,6 +54,7 @@ impl Plugin for MuddleClientPlugin {
         let broadcast_updates_stage =
             SystemStage::parallel().with_system(send_network_updates.system());
         let post_tick_stage = SystemStage::single_threaded()
+            .with_system(pause_simulation.system())
             .with_system(control_ticking_speed.system())
             .with_system(update_debug_ui_state.system());
 
@@ -59,6 +64,7 @@ impl Plugin for MuddleClientPlugin {
             .init_resource::<WindowInnerSize>()
             .init_resource::<input::MousePosition>()
             // Startup systems.
+            .add_startup_system(init_state.system())
             .add_startup_system(basic_scene.system())
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
@@ -77,6 +83,7 @@ impl Plugin for MuddleClientPlugin {
             // Egui.
             .add_system(ui::debug_ui::update_ui_scale_factor.system())
             .add_system(ui::debug_ui::debug_ui.system())
+            .add_system(ui::overlay_ui::connection_status_overlay.system())
             .add_system(ui::debug_ui::inspect_object.system());
 
         let world = builder.world_mut();
@@ -125,6 +132,8 @@ impl InitialRtt {
 }
 
 #[derive(Default)]
+/// This resource is used for adjusting game speed.
+/// If the estimated `frame_number` falls too much behind, the game is paused.
 pub struct EstimatedServerTime {
     pub updated_at: FrameNumber,
     pub frame_number: FrameNumber,
@@ -157,6 +166,58 @@ impl Default for GameTicksPerSecond {
 pub struct CurrentPlayerNetId(pub Option<PlayerNetId>);
 
 pub struct MainCameraEntity(pub Entity);
+
+fn init_state(mut game_state: ResMut<State<GameState>>) {
+    log::info!("Pausing the game");
+    game_state.push(GameState::Paused).unwrap();
+}
+
+fn pause_simulation(
+    mut game_state: ResMut<State<GameState>>,
+    connection_state: Res<ConnectionState>,
+    game_time: Res<GameTime>,
+    estimated_server_time: Res<EstimatedServerTime>,
+) {
+    let is_connected = matches!(connection_state.status(), ConnectionStatus::Connected);
+
+    let has_server_updates = game_time
+        .frame_number
+        .value()
+        .saturating_sub(estimated_server_time.frame_number.value())
+        < COMPONENT_FRAMEBUFFER_LIMIT / 2;
+
+    // We always assume that `GameState::Playing` is the initial state and `GameState::Paused`
+    // is pushed to the top of the stack.
+    if let GameState::Paused = game_state.current() {
+        if is_connected && has_server_updates {
+            log::info!("Unpausing the game");
+            game_state.pop().unwrap();
+            return;
+        }
+    }
+
+    // We always assume that `GameState::Playing` is the initial state and `GameState::Paused`
+    // is pushed to the top of the stack.
+    if let GameState::Paused = game_state.current() {
+        if is_connected && has_server_updates {
+            log::info!("Unpausing the game");
+            game_state.pop().unwrap();
+        }
+    }
+
+    if !is_connected || !has_server_updates {
+        let result = game_state.push(GameState::Paused);
+        match result {
+            Ok(()) => {
+                log::info!("Pausing the game");
+            }
+            Err(StateError::AlreadyInState) | Err(StateError::StateAlreadyQueued) => {
+                // It's ok. Bevy won't let us push duplicate values - that's what we rely on.
+            }
+            Err(StateError::StackEmpty) => unreachable!(),
+        }
+    }
+}
 
 fn basic_scene(mut commands: Commands) {
     // Add entities to the scene.

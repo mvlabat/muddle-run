@@ -397,7 +397,6 @@ pub fn send_network_updates(
     player_entities: Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
     players_registry: Res<EntityRegistry<PlayerNetId>>,
 ) {
-    // TODO! remove players from Res<HashMap<PlayerNetId, Player>> when they are despawned.
     log::trace!("Sending network updates (frame: {})", time.frame_number);
 
     broadcast_start_game_messages(

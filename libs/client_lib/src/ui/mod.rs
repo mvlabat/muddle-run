@@ -2,6 +2,7 @@ use bevy_egui::egui::{self, Ui};
 use mr_shared_lib::game::components::{PlayerDirection, Position};
 
 pub mod debug_ui;
+pub mod overlay_ui;
 
 pub trait MuddleInspectable {
     fn inspect(&self, ui: &mut Ui);
