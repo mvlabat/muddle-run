@@ -350,10 +350,11 @@ pub fn send_network_updates(
         Some((&handle, connection)) => (handle, connection.remote_address()),
         None => return,
     };
-    let player_entity = match current_player_net_id.0 {
-        Some(net_id) => player_registry
-            .get_entity(net_id)
-            .expect("Expected a registered entity for the player"),
+    let player_entity = match current_player_net_id
+        .0
+        .and_then(|net_id| player_registry.get_entity(net_id))
+    {
+        Some(player_entity) => player_entity,
         None => return,
     };
 
