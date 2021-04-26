@@ -188,8 +188,10 @@ impl<T> Framebuffer<Option<T>> {
             });
         if result.is_none() {
             log::error!(
-                "No value found to extrapolate for frame {}",
-                frame_number.value()
+                "No value found to extrapolate for frame {} (start_frame: {}, limit: {})",
+                frame_number.value(),
+                self.start_frame.value(),
+                self.limit.value()
             );
         }
         result

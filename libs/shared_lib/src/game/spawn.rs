@@ -57,11 +57,6 @@ pub fn spawn_players(
             continue;
         }
 
-        log::info!(
-            "Spawning a new player (frame {}): {}",
-            time.server_frame,
-            command.net_id.0
-        );
         let mut entity_commands = commands.spawn();
         PlayerClientFactory::insert_components(
             &mut entity_commands,
@@ -90,6 +85,12 @@ pub fn spawn_players(
                 frames_ahead + 1,
             ))
             .insert(Spawned::new(time.server_frame));
+        log::info!(
+            "Spawning a new player (entity: {:?}, frame {}): {}",
+            entity_commands.id(),
+            time.server_frame,
+            command.net_id.0
+        );
         player_entities.register(command.net_id, entity_commands.id());
     }
 }

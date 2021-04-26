@@ -119,25 +119,28 @@ pub fn read_movement_updates(
     }
 }
 
+type PlayersQuery<'a> = (
+    Entity,
+    &'a RigidBodyHandleComponent,
+    &'a PlayerDirection,
+    &'a Position,
+    Option<&'a PlayerFrameSimulated>,
+    &'a Spawned,
+);
+
 pub fn player_movement(
     time: Res<SimulationTime>,
     mut rigid_body_set: ResMut<RigidBodySet>,
-    players: Query<(
-        &RigidBodyHandleComponent,
-        &PlayerDirection,
-        &Position,
-        Option<&PlayerFrameSimulated>,
-        &Spawned,
-    )>,
+    players: Query<PlayersQuery>,
 ) {
     log::trace!(
         "Moving players (frame {}, {})",
         time.server_frame,
         time.player_frame
     );
-    for (rigid_body, player_direction, position, player_frame_simulated, _) in players
+    for (entity, rigid_body, player_direction, position, player_frame_simulated, _) in players
         .iter()
-        .filter(|(_, _, _, player_frame_simulated, spawned)| {
+        .filter(|(_, _, _, _, player_frame_simulated, spawned)| {
             spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated))
         })
     {
@@ -148,8 +151,11 @@ pub fn player_movement(
 
         let mut body_position = *rigid_body.position();
         let current_position = position.buffer.get(frame_number).unwrap_or_else(|| {
+            // This can happen only if our `sync_position` haven't created a new position for
+            // the current frame. If we are catching this, it's definitely a bug.
             panic!(
-                "Expected position for frame {} (start frame: {}, len: {})",
+                "Expected player (entity: {:?}) position for frame {} (start frame: {}, len: {})",
+                entity,
                 time.entity_simulation_frame(player_frame_simulated),
                 position.buffer.start_frame(),
                 position.buffer.len()
@@ -161,10 +167,26 @@ pub fn player_movement(
         body_position.translation.z = current_position.y;
         rigid_body.set_position(body_position, wake_up);
 
+        let zero_vec = Vec2::new(0.0, 0.0);
         let (_, current_direction) = player_direction
             .buffer
             .get_with_extrapolation(frame_number)
-            .unwrap_or_else(|| panic!("Expected player direction for frame {}", frame_number));
+            .unwrap_or_else(|| {
+                if cfg!(debug_assertions) {
+                    // We might have an edge-case when a client had been frozen for several seconds,
+                    // didn't get any updates from a server, but failed to pause the game or
+                    // disconnect. We want to avoid such cases (i.e. we want our clients to
+                    // disconnect), but it's very difficult to catch every single one of them.
+                    // In debug this scenario is unlikely, so we're probably catching some real
+                    // bug, but in production we don't want our clients to panic.
+                    panic!(
+                        "Expected player (entity: {:?}) direction for frame {}",
+                        entity, frame_number
+                    )
+                } else {
+                    (FrameNumber::new(0), &zero_vec)
+                }
+            });
         let wake_up = current_direction.length_squared() > 0.0;
         rigid_body.set_linvel(
             Vector::new(current_direction.x, 0.0, current_direction.y),

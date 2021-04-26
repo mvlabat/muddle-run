@@ -1,4 +1,5 @@
 #![feature(bool_to_option)]
+#![feature(hash_drain_filter)]
 
 use crate::{
     net::{process_network_events, send_network_updates, startup, PlayerConnections},

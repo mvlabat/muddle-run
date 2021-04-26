@@ -187,23 +187,44 @@ pub fn process_network_events(
                             .connection_state
                             .apply_outgoing_acknowledgements(ack_frame_number, ack_bit_set)
                         {
-                            Err(AcknowledgeError::OutOfRange) => {
+                            Err(err @ AcknowledgeError::OutOfRange { .. }) => {
                                 log::warn!(
-                                    "Can't apply acknowledgments for frame {} (current frame: {})",
+                                    "Can't apply acknowledgments for frame {} (current frame: {}): {:?}",
                                     ack_frame_number,
-                                    update_params.game_time.frame_number
+                                    update_params.game_time.frame_number,
+                                    err
                                 );
                                 skip_update = true;
                             }
-                            Err(err) => panic!(
-                                "{:?} todo disconnect (frame number: {}, ack frame: {})",
-                                err, update_params.game_time.frame_number, ack_frame_number
-                            ),
+                            Err(err) => {
+                                log::error!(
+                                    "Can't apply acknowledgment for frame {} (current frame: {}): {:?}",
+                                    ack_frame_number,
+                                    update_params.game_time.frame_number,
+                                    err
+                                );
+                                network_params
+                                    .connection_state
+                                    .set_status(ConnectionStatus::Disconnecting);
+                                return;
+                            }
                             _ => {}
                         }
                     }
                     skip_update = skip_update || current_player_net_id.0.is_none();
                     if !skip_update {
+                        if !can_process_delta_update_message(&update_params.game_time, &update) {
+                            log::error!(
+                                "Can't process update for frame {} (current frame: {})",
+                                update.frame_number,
+                                update_params.game_time.frame_number
+                            );
+                            network_params
+                                .connection_state
+                                .set_status(ConnectionStatus::Disconnecting);
+                            return;
+                        }
+
                         process_delta_update_message(
                             update,
                             &network_params.connection_state,
@@ -294,7 +315,10 @@ pub fn process_network_events(
                         .push(despawn_level_object);
                 }
                 ReliableServerMessage::Disconnect => {
-                    todo!("disconnect");
+                    network_params
+                        .connection_state
+                        .set_status(ConnectionStatus::Disconnecting);
+                    return;
                 }
             }
         }
@@ -320,15 +344,46 @@ pub fn process_network_events(
     }
 }
 
-pub fn maintain_connection(mut network_params: NetworkParams, mut initial_rtt: ResMut<InitialRtt>) {
-    // TODO: we also need some logic aware of game updates. If a client isn't getting any
-    //  updates, we pause the game and wait for some time for a server to respond.
-    let needs_resetting = Instant::now()
+pub fn maintain_connection(
+    time: Res<GameTime>,
+    mut network_params: NetworkParams,
+    mut initial_rtt: ResMut<InitialRtt>,
+) {
+    // TODO: if a client isn't getting any updates, we may also want to pause the game and wait for
+    //  some time for a server to respond.
+
+    let connection_timeout = Instant::now()
         .duration_since(network_params.connection_state.last_message_received_at)
         > Duration::from_millis(CONNECTION_TIMEOUT_MILLIS);
 
-    if needs_resetting {
+    if connection_timeout {
         log::warn!("Connection timeout, resetting");
+    }
+
+    let (newest_acknowledged_incoming_packet, _) =
+        network_params.connection_state.incoming_acknowledgments();
+    let is_falling_behind = matches!(
+        network_params.connection_state.status(),
+        ConnectionStatus::Connected
+    ) && newest_acknowledged_incoming_packet.map_or(false, |packet| {
+        packet.value().saturating_sub(time.frame_number.value()) > COMPONENT_FRAMEBUFFER_LIMIT / 2
+    });
+
+    if is_falling_behind {
+        log::warn!(
+            "The client is falling behind, resetting (newest acknowledged frame: {}, current frame: {})",
+            newest_acknowledged_incoming_packet.unwrap(),
+            time.frame_number
+        );
+    }
+
+    if connection_timeout
+        || is_falling_behind
+        || matches!(
+            network_params.connection_state.status(),
+            ConnectionStatus::Disconnecting | ConnectionStatus::Disconnected
+        )
+    {
         network_params.net.connections.clear();
         initial_rtt.sent_at = None;
         network_params
@@ -420,6 +475,18 @@ pub fn send_network_updates(
     if let Err(err) = result {
         log::error!("Failed to send a message to {:?}: {:?}", address, err);
     }
+}
+
+fn can_process_delta_update_message(time: &GameTime, delta_update: &DeltaUpdate) -> bool {
+    let earliest_frame = delta_update
+        .players
+        .iter()
+        .filter_map(|player| player.inputs.iter().map(|input| input.frame_number).min())
+        .min()
+        .unwrap_or(delta_update.frame_number);
+
+    time.frame_number.abs_diff(earliest_frame) < COMPONENT_FRAMEBUFFER_LIMIT / 2
+        && time.frame_number.abs_diff(delta_update.frame_number) < COMPONENT_FRAMEBUFFER_LIMIT / 2
 }
 
 fn process_delta_update_message(

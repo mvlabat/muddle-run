@@ -1,5 +1,5 @@
 use crate::player_updates::DeferredUpdates;
-use bevy::{ecs::system::SystemParam, log, prelude::*};
+use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashSet};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use mr_shared_lib::{
     game::{
@@ -49,8 +49,8 @@ pub struct NetworkParams<'a> {
 }
 
 pub fn process_network_events(
+    mut despawned_players_for_handles: Local<HashSet<u32>>,
     time: Res<GameTime>,
-    mut prev_time: Local<GameTime>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut network_events: EventReader<NetworkEvent>,
     mut network_params: NetworkParams,
@@ -109,7 +109,9 @@ pub fn process_network_events(
     for (handle, connection) in network_params.net.connections.iter_mut() {
         let channels = connection.channels().unwrap();
 
-        while let Some(client_message) = channels.recv::<Message<UnreliableClientMessage>>() {
+        'channel: while let Some(client_message) =
+            channels.recv::<Message<UnreliableClientMessage>>()
+        {
             log::trace!(
                 "UnreliableClientMessage received on [{}]: {:?}",
                 handle,
@@ -131,7 +133,7 @@ pub fn process_network_events(
                         };
                         if current_handshake_id.map_or(false, |id| id >= *message_id) {
                             log::warn!(
-                                "Ignoring outdated handshake: {}, current: {:?}",
+                                "Ignoring Connect message with outdated handshake id: {}, current: {:?}",
                                 message_id,
                                 current_handshake_id
                             );
@@ -143,12 +145,19 @@ pub fn process_network_events(
                 };
                 let connection_state = connection_state_entry.or_default();
 
-                if !matches!(
-                    connection_state.status(),
-                    ConnectionStatus::Uninitialized | ConnectionStatus::Connecting
-                ) {
-                    connection_state.session_id += SessionId::new(1);
+                match connection_state.status() {
+                    ConnectionStatus::Uninitialized | ConnectionStatus::Connecting => {}
+                    ConnectionStatus::Disconnected => {
+                        connection_state.session_id += SessionId::new(1);
+                    }
+                    ConnectionStatus::Connected
+                    | ConnectionStatus::Handshaking
+                    | ConnectionStatus::Disconnecting => {
+                        log::warn!("Skipping Connect message for a connected client");
+                        continue;
+                    }
                 }
+
                 connection_state.set_status(ConnectionStatus::Connecting);
                 connection_state.handshake_id = *message_id;
                 connection_state.last_message_received_at = Instant::now();
@@ -199,25 +208,44 @@ pub fn process_network_events(
             match client_message {
                 UnreliableClientMessage::PlayerUpdate(update) => {
                     if let Err(err) = connection_state.acknowledge_incoming(update.frame_number) {
-                        // TODO: disconnect players.
-                        log::error!("Failed to acknowledge an incoming packet (update frame: {}, current frame: {}): {:?}", update.frame_number, time.frame_number, err);
-                        break;
+                        connection_state.set_status(ConnectionStatus::Disconnecting);
+                        log::error!(
+                            "Failed to acknowledge an incoming packet (player: {}, update frame: {}, current frame: {}), disconnecting: {:?}",
+                            player_net_id.0,
+                                    update.frame_number,
+                            time.frame_number,
+                            err
+                        );
+                        break 'channel;
                     }
                     if let (Some(frame_number), ack_bit_set) = update.acknowledgments {
                         if let Err(err) = connection_state
                             .apply_outgoing_acknowledgements(frame_number, ack_bit_set)
                         {
-                            // TODO: disconnect players.
+                            connection_state.set_status(ConnectionStatus::Disconnecting);
                             log::error!(
-                                "Failed to apply outgoing packet acknowledgments (update frame: {}, current frame: {}): {:?}",
+                                "Failed to apply outgoing packet acknowledgments (player: {}, update frame: {}, current frame: {}), disconnecting: {:?}",
+                                player_net_id.0,
                                 update.frame_number,
                                 time.frame_number,
                                 err
                             );
-                            break;
+                            break 'channel;
                         }
                     }
                     for input in update.inputs {
+                        let frame_diff = input.frame_number.max(time.frame_number)
+                            - input.frame_number.min(time.frame_number);
+                        if frame_diff.value() > COMPONENT_FRAMEBUFFER_LIMIT / 2 {
+                            log::warn!(
+                                "Player {} is out of sync (input frame {}, current frame: {}), disconnecting",
+                                player_net_id.0,
+                                input.frame_number,
+                                time.frame_number
+                            );
+                            connection_state.set_status(ConnectionStatus::Disconnecting);
+                            break 'channel;
+                        }
                         update_params
                             .deferred_player_updates
                             .push(player_net_id, input);
@@ -304,21 +332,22 @@ pub fn process_network_events(
         }
     }
 
-    // FixedTimestep may run this several times in a row. We want to process disconnects only once
-    // per a frame.
-    if *prev_time != *time {
-        disconnect_players(&time, &mut network_params, &mut update_params);
-    }
-    *prev_time = time.clone();
+    disconnect_players(
+        &mut despawned_players_for_handles,
+        &time,
+        &mut network_params,
+        &mut update_params,
+    );
 }
 
 fn disconnect_players(
+    despawned_players_for_handles: &mut HashSet<u32>,
     time: &GameTime,
     network_params: &mut NetworkParams,
     update_params: &mut UpdateParams,
 ) {
     // Disconnecting players that have been failing to deliver updates for some time.
-    for (connection_handle, connection_state) in network_params.connection_states.iter_mut() {
+    for (handle, connection_state) in network_params.connection_states.iter_mut() {
         // We might have marked a client as `Disconnecting` when processing connection events.
         if let ConnectionStatus::Disconnected | ConnectionStatus::Disconnecting =
             connection_state.status()
@@ -334,6 +363,7 @@ fn disconnect_players(
             if (time.frame_number.value() as i32 - last_incoming_frame.value() as i32).abs()
                 > (COMPONENT_FRAMEBUFFER_LIMIT / 2) as i32
             {
+                log::warn!("Disconnecting {}: lagging or falling behind", handle);
                 connection_state.set_status(ConnectionStatus::Disconnecting);
             }
         } else if Instant::now().duration_since(connection_state.status_updated_at())
@@ -342,6 +372,7 @@ fn disconnect_players(
             // Disconnect players that haven't sent any updates at all (they are likely
             // in the `Connecting` or `Handshaking` status) if they are staying in this state
             // for 5 seconds.
+            log::warn!("Disconnecting {}: handshake timeout", handle);
             connection_state.set_status(ConnectionStatus::Disconnecting);
         }
 
@@ -349,12 +380,24 @@ fn disconnect_players(
         if Instant::now().duration_since(connection_state.last_message_received_at)
             > Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
         {
+            log::warn!("Disconnecting {}: idle", handle);
             connection_state.set_status(ConnectionStatus::Disconnecting);
         }
+    }
 
+    // FixedTimestep may run this several times in a row. We want to make sure that we despawn
+    // a player only once.
+    despawned_players_for_handles
+        .drain_filter(|handle| network_params.connection_states.contains_key(handle));
+
+    for (connection_handle, connection_state) in network_params.connection_states.iter() {
         // We expect that this status lives only during this frame so despawning will be queued
         // only once. The status MUST be changed to `Disconnected` when broadcasting the updates.
         if let ConnectionStatus::Disconnecting = connection_state.status() {
+            if !despawned_players_for_handles.insert(*connection_handle) {
+                continue;
+            }
+
             if let Some(player_net_id) =
                 network_params.player_connections.get_id(*connection_handle)
             {
@@ -370,6 +413,8 @@ fn disconnect_players(
             } else {
                 log::warn!("A disconnected player wasn't in the connections list");
             }
+        } else {
+            despawned_players_for_handles.remove(connection_handle);
         }
     }
 

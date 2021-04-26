@@ -62,6 +62,7 @@ pub mod stage {
     pub const WRITE_INPUT_UPDATES: &str = "mr_shared_write_input_updates";
 
     pub const MAIN_SCHEDULE: &str = "mr_shared_main_schedule";
+    pub const STATE_DRIVER: &str = "mr_shared_state_driver";
     pub const READ_INPUT_UPDATES: &str = "mr_shared_read_input_updates";
     pub const BROADCAST_UPDATES: &str = "mr_shared_broadcast_updates";
     pub const POST_SIMULATIONS: &str = "mr_shared_post_simulations";
@@ -453,16 +454,18 @@ impl SimulationTickRunCriteria {
             && game_state.current() == &GameState::Playing
         {
             trace!(
-                "Run and loop a simulation schedule (simulation: {}, game {})",
+                "Run and loop a simulation schedule (simulation: {}, game: {}, state: {:?})",
                 simulation_time.player_frame,
-                game_time.frame_number
+                game_time.frame_number,
+                *game_state
             );
             ShouldRun::YesAndCheckAgain
         } else {
             trace!(
-                "Don't run a simulation schedule (simulation: {}, game {})",
+                "Don't run a simulation schedule (simulation: {}, game: {}, state: {:?})",
                 simulation_time.player_frame,
-                game_time.frame_number
+                game_time.frame_number,
+                *game_state
             );
             ShouldRun::No
         }

@@ -43,7 +43,10 @@ pub enum AcknowledgeError {
     #[error("invalid frame step for an incoming acknowledgment")]
     InvalidStep,
     #[error("acknowledged frame is out of stored range")]
-    OutOfRange,
+    OutOfRange {
+        start: Option<FrameNumber>,
+        end: Option<FrameNumber>,
+    },
     #[error("acknowledgement for outgoing packets is inconsistent with the previous one")]
     Inconsistent,
 }
@@ -187,12 +190,14 @@ impl ConnectionState {
         let newest_acknowledged = self
             .newest_acknowledged_incoming_packet
             .unwrap_or_else(|| frame_number - FrameNumber::new(TICKS_PER_NETWORK_BROADCAST));
-        let can_acknowledge_frame = (newest_acknowledged
-            - FrameNumber::new(TICKS_PER_NETWORK_BROADCAST * 63)
-            ..=newest_acknowledged + FrameNumber::new(TICKS_PER_NETWORK_BROADCAST * 64))
-            .contains(&frame_number);
+        let start = newest_acknowledged - FrameNumber::new(TICKS_PER_NETWORK_BROADCAST * 63);
+        let end = newest_acknowledged + FrameNumber::new(TICKS_PER_NETWORK_BROADCAST * 64);
+        let can_acknowledge_frame = (start..=end).contains(&frame_number);
         if !can_acknowledge_frame {
-            return Err(AcknowledgeError::OutOfRange);
+            return Err(AcknowledgeError::OutOfRange {
+                start: Some(start),
+                end: Some(end),
+            });
         }
 
         fn bits_for_frame_diff(d: u16) -> Result<u16, AcknowledgeError> {
@@ -215,6 +220,7 @@ impl ConnectionState {
             None => (0, 0),
         };
 
+        // TODO: debug the rare `attempt to shift left with overflow` panic.
         self.incoming_packets_acks = self.incoming_packets_acks << shift_lhs | 1 << shift_rhs;
         if newest_acknowledged < frame_number {
             self.newest_acknowledged_incoming_packet = Some(frame_number);
@@ -244,7 +250,18 @@ impl ConnectionState {
             .position(|ack| ack.frame_number == frame_number);
         let skip = match requested_frame_position {
             Some(position) => position,
-            None => return Err(AcknowledgeError::OutOfRange),
+            None => {
+                return Err(AcknowledgeError::OutOfRange {
+                    start: self
+                        .outgoing_packets_acks
+                        .front()
+                        .map(|ack| ack.frame_number),
+                    end: self
+                        .outgoing_packets_acks
+                        .back()
+                        .map(|ack| ack.frame_number),
+                })
+            }
         };
 
         let frames_to_forget = skip + self.frames_to_fill();
