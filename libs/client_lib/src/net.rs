@@ -1,6 +1,7 @@
 use crate::{CurrentPlayerNetId, EstimatedServerTime, InitialRtt, PlayerDelay, TargetFramesAhead};
 use bevy::{ecs::system::SystemParam, log, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
+use chrono::Utc;
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -26,7 +27,6 @@ use mr_shared_lib::{
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
-    time::{Duration, Instant},
 };
 
 const DEFAULT_SERVER_PORT: u16 = 3455;
@@ -84,7 +84,7 @@ pub fn process_network_events(
                 ) {
                     log::error!("Failed to send a Handshake message: {:?}", err);
                 }
-                update_params.initial_rtt.sent_at = Some(Instant::now());
+                update_params.initial_rtt.sent_at = Some(Utc::now());
                 network_params.connection_state.handshake_id += MessageId::new(1);
                 network_params
                     .connection_state
@@ -111,7 +111,7 @@ pub fn process_network_events(
                 handle,
                 message
             );
-            network_params.connection_state.last_message_received_at = Instant::now();
+            network_params.connection_state.last_message_received_at = Utc::now();
             let Message {
                 message,
                 session_id,
@@ -152,7 +152,7 @@ pub fn process_network_events(
                     network_params
                         .connection_state
                         .set_status(ConnectionStatus::Handshaking);
-                    update_params.initial_rtt.received_at = Some(Instant::now());
+                    update_params.initial_rtt.received_at = Some(Utc::now());
                     handshake_message_to_send = Some((
                         *handle,
                         Message {
@@ -243,7 +243,7 @@ pub fn process_network_events(
                 handle,
                 message
             );
-            network_params.connection_state.last_message_received_at = Instant::now();
+            network_params.connection_state.last_message_received_at = Utc::now();
             let Message {
                 message,
                 session_id,
@@ -352,9 +352,11 @@ pub fn maintain_connection(
     // TODO: if a client isn't getting any updates, we may also want to pause the game and wait for
     //  some time for a server to respond.
 
-    let connection_timeout = Instant::now()
-        .duration_since(network_params.connection_state.last_message_received_at)
-        > Duration::from_millis(CONNECTION_TIMEOUT_MILLIS);
+    let connection_timeout = Utc::now()
+        .signed_duration_since(network_params.connection_state.last_message_received_at)
+        .to_std()
+        .unwrap()
+        > std::time::Duration::from_millis(CONNECTION_TIMEOUT_MILLIS);
 
     if connection_timeout {
         log::warn!("Connection timeout, resetting");
@@ -439,7 +441,7 @@ pub fn send_network_updates(
     network_params
         .connection_state
         // Clients don't resend updates, so we can forget about unacknowledged packets.
-        .add_outgoing_packet(time.frame_number, Instant::now());
+        .add_outgoing_packet(time.frame_number, Utc::now());
     let first_unacknowledged_frame = network_params
         .connection_state
         .first_unacknowledged_outgoing_packet()

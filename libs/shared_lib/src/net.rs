@@ -12,10 +12,8 @@ use bevy_networking_turbulence::{
     ConnectionChannelsBuilder, MessageChannelMode, MessageChannelSettings, NetworkResource,
     ReliableChannelSettings,
 };
-use std::{
-    collections::VecDeque,
-    time::{Duration, Instant},
-};
+use chrono::{DateTime, Duration, Utc};
+use std::collections::VecDeque;
 use thiserror::Error;
 
 pub const CONNECTION_TIMEOUT_MILLIS: u64 = 2000;
@@ -62,9 +60,9 @@ pub enum AddOutgoingPacketError {
 pub struct ConnectionState {
     pub handshake_id: MessageId,
     pub session_id: SessionId,
-    pub last_message_received_at: Instant,
+    pub last_message_received_at: DateTime<Utc>,
     status: ConnectionStatus,
-    status_updated_at: Instant,
+    status_updated_at: DateTime<Utc>,
     newest_acknowledged_incoming_packet: Option<FrameNumber>,
     // Packets that are incoming to us (not to a peer on the other side of a connection).
     // We acknowledge these packets on receiving an unreliable message and send send the acks later.
@@ -74,7 +72,7 @@ pub struct ConnectionState {
     outgoing_packets_acks: VecDeque<Acknowledgment>,
     packet_loss: f32,
     jitter_millis: f32,
-    last_increased_jitter: Instant,
+    last_increased_jitter: DateTime<Utc>,
     rtt_millis: f32,
 }
 
@@ -83,16 +81,19 @@ impl Default for ConnectionState {
         Self {
             handshake_id: MessageId::new(0),
             session_id: SessionId::new(0),
-            last_message_received_at: Instant::now(),
+            last_message_received_at: Utc::now(),
             status: ConnectionStatus::Uninitialized,
-            status_updated_at: Instant::now(),
+            status_updated_at: Utc::now(),
             newest_acknowledged_incoming_packet: None,
             incoming_packets_acks: u64::MAX - 1,
             outgoing_packets_acks: VecDeque::new(),
             packet_loss: 0.0,
             jitter_millis: 0.0,
-            last_increased_jitter: Instant::now()
-                - Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS),
+            last_increased_jitter: Utc::now()
+                - Duration::from_std(std::time::Duration::from_secs(
+                    JITTER_DECREASE_THRESHOLD_SECS,
+                ))
+                .unwrap(),
             rtt_millis: 100.0,
         }
     }
@@ -103,7 +104,7 @@ impl ConnectionState {
         self.status
     }
 
-    pub fn status_updated_at(&self) -> Instant {
+    pub fn status_updated_at(&self) -> DateTime<Utc> {
         self.status_updated_at
     }
 
@@ -154,12 +155,12 @@ impl ConnectionState {
 
         *self = Self::default();
         self.status = status;
-        self.status_updated_at = Instant::now();
+        self.status_updated_at = Utc::now();
         self.session_id = session_id;
         self.handshake_id = handshake_id;
     }
 
-    pub fn add_outgoing_packet(&mut self, frame_number: FrameNumber, sent: Instant) {
+    pub fn add_outgoing_packet(&mut self, frame_number: FrameNumber, sent: DateTime<Utc>) {
         if self.outgoing_packets_acks.len() == 64 {
             self.outgoing_packets_acks.pop_front();
         }
@@ -234,7 +235,7 @@ impl ConnectionState {
         frame_number: FrameNumber,
         mut acknowledgment_bit_set: u64,
     ) -> Result<(), AcknowledgeError> {
-        let now = Instant::now();
+        let now = Utc::now();
         if self.outgoing_packets_acks.is_empty() {
             return Ok(());
         }
@@ -331,6 +332,8 @@ impl ConnectionState {
                 .acknowledged_at
                 .expect("Expected the currently acknowledged frame to have a timestamp")
                 - acknowledged_frame.sent_at)
+                .to_std()
+                .unwrap()
                 .as_secs_f32()
                 * 1000.0;
             self.rtt_millis += (rtt - self.rtt_millis) * RTT_UPDATE_FACTOR;
@@ -359,10 +362,13 @@ impl ConnectionState {
             jitter = jitter.max((avg_rtt - rtt).abs() * 1.1);
         }
         if jitter > self.jitter_millis {
-            self.last_increased_jitter = Instant::now();
+            self.last_increased_jitter = Utc::now();
             self.jitter_millis = jitter;
-        } else if Instant::now().duration_since(self.last_increased_jitter)
-            > Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS)
+        } else if Utc::now()
+            .signed_duration_since(self.last_increased_jitter)
+            .to_std()
+            .unwrap()
+            > std::time::Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS)
         {
             self.jitter_millis = self.jitter_millis + (jitter - self.jitter_millis) * 0.1;
         }
@@ -379,14 +385,19 @@ struct Acknowledgment {
     acknowledged: bool,
     /// This field will be left empty if a package was lost.
     /// Even if we receive related updates later, `acknowledged_at` will remain being set to `None`.
-    acknowledged_at: Option<Instant>,
-    sent_at: Instant,
+    acknowledged_at: Option<DateTime<Utc>>,
+    sent_at: DateTime<Utc>,
 }
 
 impl Acknowledgment {
     pub fn rtt_millis(&self) -> Option<f32> {
-        self.acknowledged_at
-            .map(|acknowledged_at| (acknowledged_at - self.sent_at).as_secs_f32() * 1000.0)
+        self.acknowledged_at.map(|acknowledged_at| {
+            (acknowledged_at - self.sent_at)
+                .to_std()
+                .unwrap()
+                .as_secs_f32()
+                * 1000.0
+        })
     }
 }
 
@@ -423,9 +434,9 @@ const CLIENT_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelS
             send_window_size: 1024,
             burst_bandwidth: 1024,
             init_send: 512,
-            wakeup_time: Duration::from_millis(100),
-            initial_rtt: Duration::from_millis(200),
-            max_rtt: Duration::from_secs(2),
+            wakeup_time: std::time::Duration::from_millis(100),
+            initial_rtt: std::time::Duration::from_millis(200),
+            max_rtt: std::time::Duration::from_secs(2),
             rtt_update_factor: 0.1,
             rtt_resend_factor: 1.5,
         },
@@ -444,9 +455,9 @@ const SERVER_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelS
             send_window_size: 1024,
             burst_bandwidth: 1024,
             init_send: 512,
-            wakeup_time: Duration::from_millis(100),
-            initial_rtt: Duration::from_millis(200),
-            max_rtt: Duration::from_secs(2),
+            wakeup_time: std::time::Duration::from_millis(100),
+            initial_rtt: std::time::Duration::from_millis(200),
+            max_rtt: std::time::Duration::from_secs(2),
             rtt_update_factor: 0.1,
             rtt_resend_factor: 1.5,
         },
@@ -470,7 +481,8 @@ mod tests {
         net::{Acknowledgment, ConnectionState, ConnectionStatus, MessageId, SessionId},
         TICKS_PER_NETWORK_BROADCAST,
     };
-    use std::{collections::VecDeque, time::Instant};
+    use chrono::Utc;
+    use std::{collections::VecDeque, time::Utc};
 
     macro_rules! assert_eq_bitset {
         ($left:expr, $right:expr $(,)?) => {{
@@ -488,7 +500,7 @@ mod tests {
     fn init_connection_state(acknowledgments: Option<Vec<bool>>) -> ConnectionState {
         let acknowledgments = acknowledgments.unwrap_or_else(|| vec![true; 64]);
         assert!(acknowledgments.len() <= 64);
-        let now = Instant::now();
+        let now = Utc::now();
         let acknowledgments = acknowledgments
             .iter()
             .enumerate()
@@ -503,15 +515,15 @@ mod tests {
         ConnectionState {
             handshake_id: MessageId::new(0),
             session_id: SessionId::new(0),
-            last_message_received_at: Instant::now(),
+            last_message_received_at: Utc::now(),
             status: ConnectionStatus::Uninitialized,
-            status_updated_at: Instant::now(),
+            status_updated_at: Utc::now(),
             newest_acknowledged_incoming_packet: None,
             incoming_packets_acks: 0,
             outgoing_packets_acks: VecDeque::from(acknowledgments),
             packet_loss: 0.0,
             jitter_millis: 0.0,
-            last_increased_jitter: Instant::now(),
+            last_increased_jitter: Utc::now(),
             rtt_millis: 0.0,
         }
     }

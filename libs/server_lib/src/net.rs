@@ -1,6 +1,7 @@
 use crate::player_updates::DeferredUpdates;
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashSet};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
+use chrono::Utc;
 use mr_shared_lib::{
     game::{
         commands::{DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer},
@@ -20,7 +21,6 @@ use mr_shared_lib::{
 use std::{
     collections::{hash_map::Entry, HashMap},
     net::{IpAddr, SocketAddr},
-    time::{Duration, Instant},
 };
 
 const SERVER_PORT: u16 = 3455;
@@ -160,7 +160,7 @@ pub fn process_network_events(
 
                 connection_state.set_status(ConnectionStatus::Connecting);
                 connection_state.handshake_id = *message_id;
-                connection_state.last_message_received_at = Instant::now();
+                connection_state.last_message_received_at = Utc::now();
                 handshake_messages_to_send.push((
                     *handle,
                     Message {
@@ -182,7 +182,7 @@ pub fn process_network_events(
                     break;
                 }
             };
-            connection_state.last_message_received_at = Instant::now();
+            connection_state.last_message_received_at = Utc::now();
 
             if !matches!(connection_state.status(), ConnectionStatus::Connected) {
                 log::warn!(
@@ -287,7 +287,7 @@ pub fn process_network_events(
 
                     let player_net_id = network_params.player_connections.register(*handle);
                     connection_state.set_status(ConnectionStatus::Handshaking);
-                    connection_state.last_message_received_at = Instant::now();
+                    connection_state.last_message_received_at = Utc::now();
 
                     network_params
                         .new_player_connections
@@ -366,8 +366,11 @@ fn disconnect_players(
                 log::warn!("Disconnecting {}: lagging or falling behind", handle);
                 connection_state.set_status(ConnectionStatus::Disconnecting);
             }
-        } else if Instant::now().duration_since(connection_state.status_updated_at())
-            > Duration::from_secs(5)
+        } else if Utc::now()
+            .signed_duration_since(connection_state.status_updated_at())
+            .to_std()
+            .unwrap()
+            > std::time::Duration::from_secs(5)
         {
             // Disconnect players that haven't sent any updates at all (they are likely
             // in the `Connecting` or `Handshaking` status) if they are staying in this state
@@ -377,8 +380,11 @@ fn disconnect_players(
         }
 
         // Disconnecting players that haven't sent any message for `CONNECTION_TIMEOUT_MILLIS`.
-        if Instant::now().duration_since(connection_state.last_message_received_at)
-            > Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
+        if Utc::now()
+            .signed_duration_since(connection_state.last_message_received_at)
+            .to_std()
+            .unwrap()
+            > std::time::Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
         {
             log::warn!("Disconnecting {}: idle", handle);
             connection_state.set_status(ConnectionStatus::Disconnecting);
@@ -584,7 +590,7 @@ fn broadcast_delta_update_messages(
         log::error!("Failed to send a message: {:?}", err);
     }
 
-    connection_state.add_outgoing_packet(time.frame_number, Instant::now());
+    connection_state.add_outgoing_packet(time.frame_number, Utc::now());
 }
 
 fn broadcast_new_player_messages(

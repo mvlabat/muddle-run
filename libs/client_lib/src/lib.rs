@@ -24,6 +24,7 @@ use bevy::{
 };
 use bevy_egui::EguiPlugin;
 use bevy_networking_turbulence::LinkConditionerConfig;
+use chrono::{DateTime, Utc};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     messages::PlayerNetId,
@@ -31,7 +32,7 @@ use mr_shared_lib::{
     GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
     SIMULATIONS_PER_SECOND,
 };
-use std::{borrow::Cow, time::Instant};
+use std::borrow::Cow;
 
 mod helpers;
 mod input;
@@ -114,15 +115,21 @@ pub struct ExpectedFramesAhead {
 
 #[derive(Default)]
 pub struct InitialRtt {
-    pub sent_at: Option<Instant>,
-    pub received_at: Option<Instant>,
+    pub sent_at: Option<DateTime<Utc>>,
+    pub received_at: Option<DateTime<Utc>>,
 }
 
 impl InitialRtt {
     pub fn duration_secs(&self) -> Option<f32> {
         self.sent_at
             .zip(self.received_at)
-            .map(|(sent_at, received_at)| received_at.duration_since(sent_at).as_secs_f32())
+            .map(|(sent_at, received_at)| {
+                received_at
+                    .signed_duration_since(sent_at)
+                    .to_std()
+                    .unwrap()
+                    .as_secs_f32()
+            })
     }
 
     pub fn frames(&self) -> Option<FrameNumber> {
