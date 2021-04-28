@@ -54,12 +54,16 @@ pub enum UnreliableClientMessage {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ReliableClientMessage {
+    /// A kludge message basically, to let our networking stack to initialize properly for webrtc.
+    Initialize,
     /// Is sent as a response to server's `UnreliableServerMessage::Handshake`.
     Handshake(MessageId),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ReliableServerMessage {
+    /// A kludge message basically, to let our networking stack to initialize properly for webrtc.
+    Initialize,
     /// Is sent as a response to client's `ReliableClientMessage::Handshake`.
     StartGame(StartGame),
     ConnectedPlayer(ConnectedPlayer),

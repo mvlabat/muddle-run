@@ -6,6 +6,6 @@ A home for experiments for muddle.run
 
 ```bash
 cd bins/web_client
-yarn install
-yarn build # or `yarn dev:start` for hot-reload
+wasm-pack build --target web
+basic-http-server .
 ```

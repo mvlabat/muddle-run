@@ -203,11 +203,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         builder.add_stage_before(
             stage::MAIN_SCHEDULE,
             stage::READ_INPUT_UPDATES,
-            SystemStage::parallel()
-                .with_system(restart_game.exclusive_system().label("restart_game"))
+            SystemStage::single_threaded()
+                .with_system(restart_game.exclusive_system())
                 .with_system_set(
                     SystemSet::on_update(GameState::Playing)
-                        .after("restart_game")
                         .with_system(read_movement_updates.system()),
                 ),
         );

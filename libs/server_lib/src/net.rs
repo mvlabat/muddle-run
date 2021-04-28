@@ -20,13 +20,16 @@ use mr_shared_lib::{
 };
 use std::{
     collections::{hash_map::Entry, HashMap},
-    net::{IpAddr, SocketAddr},
+    net::SocketAddr,
 };
 
 const SERVER_PORT: u16 = 3455;
 
 pub fn startup(mut net: ResMut<NetworkResource>) {
-    let socket_address: SocketAddr = SocketAddr::new(IpAddr::from([0, 0, 0, 0]), SERVER_PORT);
+    let socket_address: SocketAddr = SocketAddr::new(
+        bevy_networking_turbulence::find_my_ip_address().unwrap(),
+        SERVER_PORT,
+    );
     log::info!("Starting the server");
     net.listen(socket_address);
 }
@@ -80,6 +83,19 @@ pub fn process_network_events(
                     }
                     _ => {}
                 };
+                if let Err(err) = network_params.net.send_message(
+                    *handle,
+                    Message {
+                        session_id: SessionId::new(0),
+                        message: ReliableServerMessage::Initialize,
+                    },
+                ) {
+                    log::error!(
+                        "Failed to send Initialize message to client {}: {:?}",
+                        handle,
+                        err
+                    );
+                }
             }
             NetworkEvent::Disconnected(handle) => {
                 log::info!("Disconnected: {}", handle);
@@ -263,6 +279,9 @@ pub fn process_network_events(
             );
 
             match client_message.message {
+                ReliableClientMessage::Initialize => {
+                    log::info!("Client ({}) Initialize message", handle);
+                }
                 // NOTE: before adding new messages, make sure to ignore them if connection status
                 // is not `Connected`.
                 ReliableClientMessage::Handshake(handshake_id) => {
@@ -394,7 +413,7 @@ fn disconnect_players(
     // FixedTimestep may run this several times in a row. We want to make sure that we despawn
     // a player only once.
     despawned_players_for_handles
-        .drain_filter(|handle| network_params.connection_states.contains_key(handle));
+        .drain_filter(|handle| !network_params.connection_states.contains_key(handle));
 
     for (connection_handle, connection_state) in network_params.connection_states.iter() {
         // We expect that this status lives only during this frame so despawning will be queued

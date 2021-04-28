@@ -8,6 +8,7 @@ edition = "2018"
 
 [features]
 render = ["bevy/render"]
+web = ["chrono/wasmbind"]
 
 [dependencies]
 bevy_networking_turbulence = { version = "0.2.0", default-features = false }
@@ -22,6 +23,3 @@ thiserror = "1.0.24"
 [dependencies.bevy]
 version = "0.5"
 default-features = false
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-chrono = { version = "0.4.19", features = ["wasmbind"] }

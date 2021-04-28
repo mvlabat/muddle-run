@@ -1,5 +1,4 @@
 [workspace]
-resolver = "2"
 members = [
     "libs/client_lib",
     "libs/server_lib",

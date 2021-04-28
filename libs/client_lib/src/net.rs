@@ -77,18 +77,11 @@ pub fn process_network_events(
                     Message {
                         // The server is expected to accept any session id for this message.
                         session_id: SessionId::new(0),
-                        message: UnreliableClientMessage::Connect(
-                            network_params.connection_state.handshake_id,
-                        ),
+                        message: ReliableClientMessage::Initialize,
                     },
                 ) {
-                    log::error!("Failed to send a Handshake message: {:?}", err);
+                    log::error!("Failed to send an Initialize message: {:?}", err);
                 }
-                update_params.initial_rtt.sent_at = Some(Utc::now());
-                network_params.connection_state.handshake_id += MessageId::new(1);
-                network_params
-                    .connection_state
-                    .set_status(ConnectionStatus::Connecting);
             }
             NetworkEvent::Disconnected(handle) => {
                 log::info!("Disconnected: {}", handle);
@@ -100,6 +93,7 @@ pub fn process_network_events(
         }
     }
 
+    let mut connect_message_to_send = None;
     let mut handshake_message_to_send = None;
 
     for (handle, connection) in network_params.net.connections.iter_mut() {
@@ -264,6 +258,31 @@ pub fn process_network_events(
             }
 
             match message {
+                ReliableServerMessage::Initialize => {
+                    if !matches!(
+                        network_params.connection_state.status(),
+                        ConnectionStatus::Uninitialized
+                    ) {
+                        continue;
+                    }
+
+                    log::info!("Initialize message received");
+                    connect_message_to_send = Some((
+                        *handle,
+                        Message {
+                            // The server is expected to accept any session id for this message.
+                            session_id: SessionId::new(0),
+                            message: UnreliableClientMessage::Connect(
+                                network_params.connection_state.handshake_id,
+                            ),
+                        },
+                    ));
+                    update_params.initial_rtt.sent_at = Some(Utc::now());
+                    network_params.connection_state.handshake_id += MessageId::new(1);
+                    network_params
+                        .connection_state
+                        .set_status(ConnectionStatus::Connecting);
+                }
                 ReliableServerMessage::StartGame(start_game) => {
                     let expected_handshake_id =
                         network_params.connection_state.handshake_id - MessageId::new(1);
@@ -337,6 +356,11 @@ pub fn process_network_events(
         }
     }
 
+    if let Some((handle, message)) = connect_message_to_send {
+        if let Err(err) = network_params.net.send_message(handle, message) {
+            log::error!("Failed to send Connect message: {:?}", err);
+        }
+    }
     if let Some((handle, message)) = handshake_message_to_send {
         if let Err(err) = network_params.net.send_message(handle, message) {
             log::error!("Failed to send Handshake message: {:?}", err);
@@ -413,6 +437,11 @@ pub fn send_network_updates(
     player_registry: Res<EntityRegistry<PlayerNetId>>,
     player_update_params: PlayerUpdateParams,
 ) {
+    let (connection_handle, address) = match network_params.net.connections.iter_mut().next() {
+        Some((&handle, connection)) => (handle, connection.remote_address()),
+        None => return,
+    };
+
     if !matches!(
         network_params.connection_state.status(),
         ConnectionStatus::Connected
@@ -421,10 +450,6 @@ pub fn send_network_updates(
     }
 
     log::trace!("Broadcast updates for frame {}", time.frame_number);
-    let (connection_handle, address) = match network_params.net.connections.iter_mut().next() {
-        Some((&handle, connection)) => (handle, connection.remote_address()),
-        None => return,
-    };
     let player_entity = match current_player_net_id
         .0
         .and_then(|net_id| player_registry.get_entity(net_id))
@@ -777,7 +802,7 @@ fn server_addr() -> Option<SocketAddr> {
         .map(|port| port.parse::<u16>().expect("invalid port"))
         .unwrap_or(DEFAULT_SERVER_PORT);
 
-    let env_ip_addr = std::env::var("MUDDLE_SERVER_PORT")
+    let env_ip_addr = std::env::var("MUDDLE_SERVER_IP_ADDR")
         .ok()
         .or_else(|| std::option_env!("MUDDLE_SERVER_IP_ADDR").map(str::to_owned));
     if let Some(env_addr) = env_ip_addr {
