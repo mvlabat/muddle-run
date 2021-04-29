@@ -61,7 +61,7 @@ pub fn spawn_players(
         PlayerClientFactory::insert_components(
             &mut entity_commands,
             &mut pbr_client_params,
-            &command.is_player_frame_simulated,
+            &(command.start_position, command.is_player_frame_simulated),
         );
         entity_commands
             .insert(
@@ -163,7 +163,7 @@ pub fn spawn_level_objects(
             LevelObjectDesc::Plane(plane) => PlaneClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,
-                &(plane, cfg!(feature = "render")),
+                &(plane, cfg!(feature = "client")),
             ),
         };
         entity_commands.insert(Spawned::new(command.frame_number));

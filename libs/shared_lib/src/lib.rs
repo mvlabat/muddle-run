@@ -158,9 +158,13 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::POST_PHYSICS,
                 SystemStage::parallel()
-                    .with_system(sync_position.system())
                     .with_system(physics::destroy_body_and_collider_system.system())
-                    .with_system(physics::sync_transform_system.system()),
+                    .with_system(
+                        physics::sync_transform_system
+                            .system()
+                            .label("sync_transform"),
+                    )
+                    .with_system(sync_position.system().after("sync_transform")),
             )
             .with_stage(
                 stage::POST_GAME,
@@ -300,6 +304,9 @@ impl SimulationTime {
     }
 
     pub fn rewind(&mut self, frame_number: FrameNumber) {
+        if cfg!(not(feature = "client")) {
+            assert_eq!(self.player_frame, self.server_frame);
+        }
         let frames_ahead = self.player_frame - self.server_frame;
         self.server_frame = std::cmp::min(self.server_frame, frame_number);
         self.player_frame = self.server_frame + frames_ahead;

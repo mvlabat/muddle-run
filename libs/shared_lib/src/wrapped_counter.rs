@@ -14,20 +14,13 @@ pub trait Integer = num::Integer
 #[derive(Debug, Copy, Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WrappedCounter<T: num::Integer + Default>(T);
 
-impl<T: Integer> WrappedCounter<T>
-where
-    u8: AsPrimitive<T>,
-{
+impl<T: Integer> WrappedCounter<T> {
     pub fn new(value: T) -> Self {
         Self(value)
     }
 
     pub fn value(&self) -> T {
         self.0
-    }
-
-    pub fn abs_diff(&self, other: Self) -> T {
-        self.max(&other).value() - self.min(&other).value()
     }
 }
 

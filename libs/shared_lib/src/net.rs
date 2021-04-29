@@ -7,7 +7,7 @@ use crate::{
     wrapped_counter::WrappedCounter,
     TICKS_PER_NETWORK_BROADCAST,
 };
-use bevy::{ecs::system::ResMut, log};
+use bevy::ecs::system::ResMut;
 use bevy_networking_turbulence::{
     ConnectionChannelsBuilder, MessageChannelMode, MessageChannelSettings, NetworkResource,
     ReliableChannelSettings,

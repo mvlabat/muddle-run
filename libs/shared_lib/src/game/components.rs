@@ -38,6 +38,12 @@ impl Position {
     }
 }
 
+/// Is used only by the client, to lerp the position if an authoritative update arrives from the
+/// server.
+pub struct PredictedPosition {
+    pub value: Vec2,
+}
+
 /// The purpose of this component is providing a frame number of when a component was spawned,
 /// to be able to avoid processing an entity in case rewind game state during lag compensation.
 pub struct Spawned {

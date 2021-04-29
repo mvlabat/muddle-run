@@ -1,6 +1,8 @@
 use crate::{
     framebuffer::FrameNumber,
-    game::components::{PlayerDirection, PlayerFrameSimulated, Position, Spawned},
+    game::components::{
+        PlayerDirection, PlayerFrameSimulated, Position, PredictedPosition, Spawned,
+    },
     messages::PlayerNetId,
     player::PlayerUpdates,
     registry::EntityRegistry,
@@ -13,6 +15,7 @@ use bevy::{
     },
     log,
     math::Vec2,
+    transform::components::Transform,
 };
 use bevy_rapier3d::{
     physics::RigidBodyHandleComponent,
@@ -70,20 +73,7 @@ pub fn read_movement_updates(
                     frame_number,
                     position_update
                 );
-                let current_position = match position.buffer.get(frame_number) {
-                    Some(position) => *position,
-                    None => {
-                        // There might be an edge-case that a client is slowing down
-                        // `SimulationTime::player_frame` so that subtracting `frames_ahead` from
-                        // `player_frame` (see how we calculate `range`, also see
-                        // `control_ticking_speed`) results in an end frame number that we don't
-                        // have a start position for.
-                        break;
-                    }
-                };
-                let lerp_position =
-                    current_position + (position_update - current_position) * LERP_FACTOR;
-                position.buffer.insert(frame_number, lerp_position);
+                position.buffer.insert(frame_number, position_update);
             } else {
                 log::trace!(
                     "No updates for player {} (frame_number: {})",
@@ -106,7 +96,7 @@ pub fn read_movement_updates(
                 direction_update
                     .and_then(|direction_update| {
                         direction_update.as_mut().map(|direction_update| {
-                            if cfg!(feature = "render") {
+                            if cfg!(feature = "client") {
                                 direction_update.is_processed_client_input = Some(true);
                             }
                             direction_update.direction
@@ -195,33 +185,67 @@ pub fn player_movement(
     }
 }
 
+type SimulatedEntitiesQuery<'a> = (
+    &'a RigidBodyHandleComponent,
+    &'a mut Position,
+    Option<&'a mut Transform>,
+    Option<&'a mut PredictedPosition>,
+    Option<&'a PlayerFrameSimulated>,
+    &'a Spawned,
+);
+
 pub fn sync_position(
+    game_time: Res<GameTime>,
     time: Res<SimulationTime>,
-    rigid_body_set: Res<RigidBodySet>,
-    mut simulated_entities: Query<(
-        &RigidBodyHandleComponent,
-        &mut Position,
-        Option<&PlayerFrameSimulated>,
-        &Spawned,
-    )>,
+    mut rigid_body_set: ResMut<RigidBodySet>,
+    mut simulated_entities: Query<SimulatedEntitiesQuery>,
 ) {
     log::trace!(
         "Syncing positions (frame {}, {})",
         time.server_frame,
         time.player_frame
     );
-    for (rigid_body, mut position, player_frame_simulated, _) in simulated_entities
-        .iter_mut()
-        .filter(|(_, _, player_frame_simulated, spawned)| {
-            spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated))
-        })
+    for (
+        rigid_body,
+        mut position,
+        mut transform,
+        mut predicted_position,
+        player_frame_simulated,
+        _,
+    ) in
+        simulated_entities
+            .iter_mut()
+            .filter(|(_, _, _, _, player_frame_simulated, spawned)| {
+                spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated))
+            })
     {
         let frame_number = time.entity_simulation_frame(player_frame_simulated);
         let rigid_body = rigid_body_set
-            .get(rigid_body.handle())
+            .get_mut(rigid_body.handle())
             .expect("expected a rigid body");
 
         let body_position = *rigid_body.position();
+        let new_position = Vec2::new(body_position.translation.x, body_position.translation.z);
+        if let Some(predicted_position) = predicted_position.as_mut() {
+            let current_position = *position
+                .buffer
+                .get(frame_number)
+                .expect("Expected the current position");
+
+            let needs_lerping_predicted_position = time.player_frame == game_time.frame_number;
+            if needs_lerping_predicted_position {
+                let real_diff = new_position - current_position;
+                let new_predicted_position = predicted_position.value + real_diff;
+                let lerp =
+                    new_predicted_position + (new_position - new_predicted_position) * LERP_FACTOR;
+
+                predicted_position.value = lerp;
+                let transform = transform.as_mut().expect("Expected a Transform component if entity has PredictedPosition (is supposed to be a client)");
+                transform.translation.x = lerp.x;
+                transform.translation.z = lerp.y;
+            }
+        }
+
         // Positions buffer represents start positions before moving entities, so this is why
         // we save the new position in the next frame.
         position.buffer.insert(

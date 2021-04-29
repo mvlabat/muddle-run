@@ -467,6 +467,8 @@ pub fn send_network_updates(
         .connection_state
         // Clients don't resend updates, so we can forget about unacknowledged packets.
         .add_outgoing_packet(time.frame_number, Utc::now());
+    // TODO: this makes the client send more packets than the server actually needs, as lost packets
+    //  never get marked as acknowledged, even though we resend updates in future frames. Fix it.
     let first_unacknowledged_frame = network_params
         .connection_state
         .first_unacknowledged_outgoing_packet()
@@ -512,8 +514,12 @@ fn can_process_delta_update_message(time: &GameTime, delta_update: &DeltaUpdate)
         .min()
         .unwrap_or(delta_update.frame_number);
 
-    time.frame_number.abs_diff(earliest_frame) < COMPONENT_FRAMEBUFFER_LIMIT / 2
-        && time.frame_number.abs_diff(delta_update.frame_number) < COMPONENT_FRAMEBUFFER_LIMIT / 2
+    let diff_with_earliest =
+        (time.frame_number.value() as i32 - earliest_frame.value() as i32).abs();
+    let diff_with_latest =
+        (time.frame_number.value() as i32 - delta_update.frame_number.value() as i32).abs();
+    (diff_with_earliest as u16) < COMPONENT_FRAMEBUFFER_LIMIT / 2
+        && (diff_with_latest as u16) < COMPONENT_FRAMEBUFFER_LIMIT / 2
 }
 
 fn process_delta_update_message(

@@ -1,9 +1,15 @@
 use crate::game::level_objects::PlaneDesc;
-#[cfg(feature = "render")]
-use crate::{game::components::PlayerFrameSimulated, PLAYER_SIZE};
-use bevy::ecs::system::{EntityCommands, SystemParam};
-#[cfg(feature = "render")]
+#[cfg(feature = "client")]
+use crate::{
+    game::components::{PlayerFrameSimulated, PredictedPosition},
+    PLAYER_SIZE,
+};
+#[cfg(feature = "client")]
 use bevy::prelude::*;
+use bevy::{
+    ecs::system::{EntityCommands, SystemParam},
+    math::Vec2,
+};
 
 pub trait ClientFactory<'a> {
     type Dependencies;
@@ -23,13 +29,13 @@ pub struct PlayerClientFactory;
 
 impl<'a> ClientFactory<'a> for PlayerClientFactory {
     type Dependencies = PbrClientParams<'a>;
-    type Input = bool;
+    type Input = (Vec2, bool);
 
-    #[cfg(feature = "render")]
+    #[cfg(feature = "client")]
     fn insert_components(
         commands: &mut EntityCommands,
         deps: &mut Self::Dependencies,
-        is_player_frame_simulated: &Self::Input,
+        (position, is_player_frame_simulated): &Self::Input,
     ) {
         commands.insert_bundle(PbrBundle {
             mesh: deps
@@ -38,12 +44,13 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
             material: deps.materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
             ..Default::default()
         });
+        commands.insert(PredictedPosition { value: *position });
         if *is_player_frame_simulated {
             commands.insert(PlayerFrameSimulated);
         }
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands) {
         commands.remove::<PbrBundle>();
     }
@@ -55,7 +62,7 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
     type Dependencies = PbrClientParams<'a>;
     type Input = (PlaneDesc, bool);
 
-    #[cfg(feature = "render")]
+    #[cfg(feature = "client")]
     fn insert_components(
         commands: &mut EntityCommands,
         deps: &mut Self::Dependencies,
@@ -74,14 +81,14 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
     }
 }
 
-#[cfg(feature = "render")]
+#[cfg(feature = "client")]
 #[derive(SystemParam)]
 pub struct PbrClientParams<'a> {
     meshes: ResMut<'a, Assets<Mesh>>,
     materials: ResMut<'a, Assets<StandardMaterial>>,
 }
 
-#[cfg(not(feature = "render"))]
+#[cfg(not(feature = "client"))]
 #[derive(SystemParam)]
 pub struct PbrClientParams<'a> {
     #[system_param(ignore)]

@@ -31,4 +31,4 @@ features = [
 [dependencies.mr_shared_lib]
 version = "*"
 path = "../shared_lib"
-features = ["render"]
+features = ["client"]

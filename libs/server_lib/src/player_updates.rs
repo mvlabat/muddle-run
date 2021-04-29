@@ -73,6 +73,8 @@ pub fn process_player_input_updates(
         // A client might be able to send several messages with the same unacknowledged updates
         // between runs of this system.
         dedup_by_key_unsorted(&mut player_updates, |update| update.frame_number);
+        // We want to sort after deduping, to prevent users from re-ordering inputs.
+        player_updates.sort_by_key(|update| update.frame_number);
 
         let mut updates_iter = player_updates.iter().peekable();
         while let Some(player_update) = updates_iter.next() {
@@ -85,22 +87,22 @@ pub fn process_player_input_updates(
 
             let duplicate_updates_from =
                 std::cmp::max(player_update.frame_number, min_frame_number);
-            let duplicate_updates_to = next_player_update.map_or(player_frame_number, |update| {
-                update.frame_number - FrameNumber::new(1)
-            });
+            let duplicate_updates_to =
+                next_player_update.map_or(player_frame_number, |update| update.frame_number);
 
             let update_to_insert = Some(PlayerDirectionUpdate {
                 direction: player_update.direction,
                 is_processed_client_input: None,
             });
 
-            for frame_number in duplicate_updates_from..=duplicate_updates_to {
+            // We fill the buffer of player direction commands with the updates that come from
+            // clients. We populate each frame until a command changes or we've reached the last
+            // acknowledged client's frame (`PlayerUpdate::frame_number`).
+            for frame_number in duplicate_updates_from..duplicate_updates_to {
                 let existing_update = updates.get(frame_number);
                 // We don't want to allow re-writing updates.
                 if existing_update.is_none() && updates.can_insert(frame_number) {
-                    simulation_time.server_frame =
-                        std::cmp::min(simulation_time.server_frame, frame_number);
-                    simulation_time.player_frame = simulation_time.server_frame;
+                    simulation_time.rewind(frame_number);
                     updates.insert(
                         frame_number,
                         Some(PlayerDirectionUpdate {

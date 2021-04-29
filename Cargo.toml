@@ -15,6 +15,7 @@ opt-level = 3
 #bevy = { git = "https://github.com/bevyengine/bevy//" }
 #bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
 #bevy_webgl2 = { path = "../bevy_webgl2" }
+#egui = { path = "../egui/egui" }
 
 bevy_networking_turbulence = { git = "https://github.com/mvlabat/bevy_networking_turbulence.git" }
 naia-client-socket = { git = "https://github.com/mvlabat/naia-socket.git" }
