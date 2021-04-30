@@ -514,12 +514,13 @@ fn can_process_delta_update_message(time: &GameTime, delta_update: &DeltaUpdate)
         .min()
         .unwrap_or(delta_update.frame_number);
 
-    let diff_with_earliest =
-        (time.frame_number.value() as i32 - earliest_frame.value() as i32).abs();
-    let diff_with_latest =
-        (time.frame_number.value() as i32 - delta_update.frame_number.value() as i32).abs();
-    (diff_with_earliest as u16) < COMPONENT_FRAMEBUFFER_LIMIT / 2
-        && (diff_with_latest as u16) < COMPONENT_FRAMEBUFFER_LIMIT / 2
+    let diff_with_earliest = time.frame_number.diff_abs(earliest_frame).value();
+    let diff_with_latest = time
+        .frame_number
+        .diff_abs(delta_update.frame_number)
+        .value();
+    diff_with_earliest < COMPONENT_FRAMEBUFFER_LIMIT / 2
+        && diff_with_latest < COMPONENT_FRAMEBUFFER_LIMIT / 2
 }
 
 fn process_delta_update_message(
@@ -537,9 +538,11 @@ fn process_delta_update_message(
     let jitter_buffer = SIMULATIONS_PER_SECOND as f32 * connection_state.jitter_millis() / 1000.0;
     let frames_to_be_ahead =
         frames_rtt.ceil() + packet_loss_buffer.ceil() + jitter_buffer.ceil() + 1.0;
-    let diff = (update_params.target_frames_ahead.frames_count.value() as i32
-        - FrameNumber::new(frames_to_be_ahead.ceil() as u16).value() as i32)
-        .abs() as u16;
+    let diff = update_params
+        .target_frames_ahead
+        .frames_count
+        .diff_abs(FrameNumber::new(frames_to_be_ahead.ceil() as u16))
+        .value();
     let new_target = FrameNumber::new(frames_to_be_ahead as u16);
     if new_target > update_params.target_frames_ahead.frames_count || diff > jitter_buffer as u16 {
         update_params.target_frames_ahead.frames_count = new_target;

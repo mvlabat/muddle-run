@@ -24,6 +24,15 @@ impl<T: Integer> WrappedCounter<T> {
     }
 }
 
+impl<T: Integer> WrappedCounter<T>
+where
+    u8: AsPrimitive<T>,
+{
+    pub fn diff_abs(&self, rhs: Self) -> Self {
+        *self.max(&rhs) - *self.min(&rhs)
+    }
+}
+
 impl<T: Integer> std::fmt::Display for WrappedCounter<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)

@@ -238,9 +238,9 @@ pub fn process_network_events(
                         }
                     }
                     for input in update.inputs {
-                        let frame_diff = input.frame_number.max(time.frame_number)
-                            - input.frame_number.min(time.frame_number);
-                        if frame_diff.value() > COMPONENT_FRAMEBUFFER_LIMIT / 2 {
+                        if input.frame_number.diff_abs(time.frame_number).value()
+                            > COMPONENT_FRAMEBUFFER_LIMIT / 2
+                        {
                             log::warn!(
                                 "Player {} is out of sync (input frame {}, current frame: {}), disconnecting",
                                 player_net_id.0,
@@ -379,8 +379,8 @@ fn disconnect_players(
             // If the difference between last incoming frame and the current one is more
             // than 5 secs, we disconnect the client. Both lagging behind and being far ahead
             // isn't right.
-            if (time.frame_number.value() as i32 - last_incoming_frame.value() as i32).abs()
-                > (COMPONENT_FRAMEBUFFER_LIMIT / 2) as i32
+            if time.frame_number.diff_abs(last_incoming_frame).value()
+                > COMPONENT_FRAMEBUFFER_LIMIT / 2
             {
                 log::warn!("Disconnecting {}: lagging or falling behind", handle);
                 connection_state.set_status(ConnectionStatus::Disconnecting);
