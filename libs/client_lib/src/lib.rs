@@ -23,7 +23,6 @@ use bevy::{
     transform::components::Transform,
 };
 use bevy_egui::EguiPlugin;
-use bevy_networking_turbulence::LinkConditionerConfig;
 use chrono::{DateTime, Utc};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
@@ -73,13 +72,7 @@ impl Plugin for MuddleClientPlugin {
                 input_stage,
                 broadcast_updates_stage,
                 post_tick_stage,
-                // None,
-                Some(LinkConditionerConfig {
-                    incoming_latency: 100,
-                    incoming_jitter: 20,
-                    incoming_loss: 0.0,
-                    incoming_corruption: 0.0,
-                }),
+                None,
             ))
             // Egui.
             .add_system(ui::debug_ui::update_ui_scale_factor.system())

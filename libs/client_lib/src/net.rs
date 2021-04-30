@@ -69,7 +69,7 @@ pub fn process_network_events(
                 // a connection.
                 log::info!("Connected: {}", handle);
                 log::info!(
-                    "Sending a Connect message: {}",
+                    "Sending an Initialize message: {}",
                     network_params.connection_state.handshake_id
                 );
                 if let Err(err) = network_params.net.send_message(

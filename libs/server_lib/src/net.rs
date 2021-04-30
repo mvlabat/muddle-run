@@ -83,19 +83,6 @@ pub fn process_network_events(
                     }
                     _ => {}
                 };
-                if let Err(err) = network_params.net.send_message(
-                    *handle,
-                    Message {
-                        session_id: SessionId::new(0),
-                        message: ReliableServerMessage::Initialize,
-                    },
-                ) {
-                    log::error!(
-                        "Failed to send Initialize message to client {}: {:?}",
-                        handle,
-                        err
-                    );
-                }
             }
             NetworkEvent::Disconnected(handle) => {
                 log::info!("Disconnected: {}", handle);
@@ -119,6 +106,7 @@ pub fn process_network_events(
         }
     }
 
+    let mut initialize_messages_to_send = Vec::new();
     let mut handshake_messages_to_send = Vec::new();
 
     // Reading message channels.
@@ -281,6 +269,13 @@ pub fn process_network_events(
             match client_message.message {
                 ReliableClientMessage::Initialize => {
                     log::info!("Client ({}) Initialize message", handle);
+                    initialize_messages_to_send.push((
+                        *handle,
+                        Message {
+                            session_id: SessionId::new(0),
+                            message: ReliableServerMessage::Initialize,
+                        },
+                    ));
                 }
                 // NOTE: before adding new messages, make sure to ignore them if connection status
                 // is not `Connected`.
@@ -345,6 +340,11 @@ pub fn process_network_events(
         }
     }
 
+    for (handle, message) in initialize_messages_to_send {
+        if let Err(err) = network_params.net.send_message(handle, message) {
+            log::error!("Failed to send Initialize message: {:?}", err);
+        }
+    }
     for (handle, message) in handshake_messages_to_send {
         if let Err(err) = network_params.net.send_message(handle, message) {
             log::error!("Failed to send Handshake message: {:?}", err);

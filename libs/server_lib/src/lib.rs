@@ -6,7 +6,6 @@ use crate::{
     player_updates::{process_player_input_updates, DeferredUpdates},
 };
 use bevy::{core::FixedTimestep, prelude::*};
-use bevy_networking_turbulence::LinkConditionerConfig;
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -50,13 +49,7 @@ impl Plugin for MuddleServerPlugin {
             input_stage,
             broadcast_updates_stage,
             SystemStage::single_threaded(),
-            // None,
-            Some(LinkConditionerConfig {
-                incoming_latency: 100,
-                incoming_jitter: 20,
-                incoming_loss: 0.1,
-                incoming_corruption: 0.0,
-            }),
+            None,
         ));
 
         let resources = builder.world_mut();
