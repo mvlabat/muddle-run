@@ -45,11 +45,10 @@ pub fn read_movement_updates(
             .get_id(entity)
             .expect("Expected a registered player");
 
-        let frames_ahead = simulation_time.player_frame - simulation_time.server_frame;
         let range = if player_frame_simulated.is_some() {
             simulation_time.player_frame..=time.frame_number
         } else {
-            simulation_time.server_frame..=time.frame_number - frames_ahead
+            simulation_time.server_frame..=time.frame_number
         };
         log::trace!(
             "Reading updates for player {}: {:?}",

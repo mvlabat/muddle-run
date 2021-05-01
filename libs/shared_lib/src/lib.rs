@@ -306,6 +306,8 @@ impl SimulationTime {
     pub fn rewind(&mut self, frame_number: FrameNumber) {
         if cfg!(not(feature = "client")) {
             assert_eq!(self.player_frame, self.server_frame);
+        } else {
+            assert!(self.player_frame >= self.server_frame);
         }
         let frames_ahead = self.player_frame - self.server_frame;
         self.server_frame = std::cmp::min(self.server_frame, frame_number);
