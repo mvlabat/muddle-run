@@ -482,7 +482,7 @@ mod tests {
         TICKS_PER_NETWORK_BROADCAST,
     };
     use chrono::Utc;
-    use std::{collections::VecDeque, time::Utc};
+    use std::collections::VecDeque;
 
     macro_rules! assert_eq_bitset {
         ($left:expr, $right:expr $(,)?) => {{

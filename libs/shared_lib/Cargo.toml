@@ -23,3 +23,6 @@ thiserror = "1.0.24"
 [dependencies.bevy]
 version = "0.5"
 default-features = false
+
+[dev-dependencies]
+bevy_networking_turbulence = { version = "0.2.0", features = ["use-udp"] } # for being able to run the tests
