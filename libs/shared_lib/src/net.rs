@@ -590,6 +590,37 @@ mod tests {
     }
 
     #[test]
+    fn test_incoming_acknowledgment_with_overflow() {
+        let mut connection_state = ConnectionState::default();
+        let (frame_number, acks) = connection_state.incoming_acknowledgments();
+        assert_eq!(frame_number, None);
+        assert_eq_bitset!(
+            acks,
+            0b1111111111111111111111111111111111111111111111111111111111111110
+        );
+
+        connection_state
+            .acknowledge_incoming(FrameNumber::new(u16::MAX - 1))
+            .unwrap();
+        let (frame_number, acks) = connection_state.incoming_acknowledgments();
+        assert_eq!(frame_number, Some(FrameNumber::new(u16::MAX - 1)));
+        assert_eq_bitset!(
+            acks,
+            0b1111111111111111111111111111111111111111111111111111111111111111
+        );
+
+        connection_state
+            .acknowledge_incoming(FrameNumber::new(u16::MAX - 1) + FrameNumber::new(2))
+            .unwrap();
+        let (frame_number, acks) = connection_state.incoming_acknowledgments();
+        assert_eq!(frame_number, Some(FrameNumber::new(0)));
+        assert_eq_bitset!(
+            acks,
+            0b1111111111111111111111111111111111111111111111111111111111111111
+        );
+    }
+
+    #[test]
     fn test_outgoing_acknowledgment() {
         let mut connection_state = init_connection_state(Some(vec![false, false, true]));
         assert_eq_bitset!(
