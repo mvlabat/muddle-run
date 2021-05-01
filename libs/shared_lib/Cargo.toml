@@ -1,0 +1,28 @@
+[package]
+name = "mr_shared_lib"
+version = "0.1.0"
+authors = ["mvlabat <mvlabat@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+client = ["bevy/render"]
+web = ["chrono/wasmbind"]
+
+[dependencies]
+bevy_networking_turbulence = { version = "0.2.0", default-features = false }
+bevy_rapier3d = { version = "0.9.0", features = ["wasm-bindgen"] }
+bincode = "1.3.1"
+chrono = "0.4.19"
+names = { version = "0.11.0", default-features = false }
+num = "0.3.1"
+serde = "1.0.120"
+thiserror = "1.0.24"
+
+[dependencies.bevy]
+version = "0.5"
+default-features = false
+
+[dev-dependencies]
+bevy_networking_turbulence = { version = "0.2.0", features = ["use-udp"] } # for being able to run the tests

@@ -1,16 +1,30 @@
 [workspace]
 members = [
-    "libs/client_shared",
+    "libs/client_lib",
+    "libs/server_lib",
+    "libs/shared_lib",
     "bins/desktop_client",
     "bins/web_client",
     "bins/server",
 ]
 
+[profile.dev.package."*"]
+opt-level = 3
+
 [patch.crates-io]
 #bevy = { git = "https://github.com/bevyengine/bevy//" }
-#bevy_rapier3d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
-#bevy_megaui = { path = "../bevy_megaui" }
+#bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
 #bevy_webgl2 = { path = "../bevy_webgl2" }
+#egui = { path = "../egui/egui" }
+
+bevy_networking_turbulence = { git = "https://github.com/mvlabat/bevy_networking_turbulence.git" }
+naia-client-socket = { git = "https://github.com/mvlabat/naia-socket.git" }
+naia-server-socket = { git = "https://github.com/mvlabat/naia-socket.git" }
+#bevy_networking_turbulence = { path = "../bevy_networking_turbulence" }
+#naia-client-socket = { path = "../naia-socket/client" }
+#naia-server-socket = { path = "../naia-socket/server" }
+
+#bevy-inspector-egui = { git = "https://github.com/jakobhellermann/bevy-inspector-egui.git", branch = "main" }
 
 #[patch.'https://github.com/bevyengine/bevy']
 #bevy = { git = "https://github.com/bevyengine/bevy//" }

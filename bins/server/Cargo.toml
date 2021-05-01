@@ -6,4 +6,12 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+use-udp = ["mr_server_lib/use-udp"]
+use-webrtc = ["mr_server_lib/use-webrtc"]
+
 [dependencies]
+bevy = { version = "0.5", default-features = false }
+env_logger = "0.8.1"
+mr_server_lib = { path = "../../libs/server_lib" }

@@ -1,13 +1,13 @@
 use bevy::prelude::*;
-use mr_client_shared::MuddlePlugin;
+use mr_client_lib::MuddleClientPlugin;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
 pub fn main() {
     App::build()
-        .add_resource(Msaa { samples: 4 })
+        .insert_resource(Msaa { samples: 4 })
         .add_plugins(bevy_webgl2::DefaultPlugins)
-        .add_plugin(MuddlePlugin)
+        .add_plugin(MuddleClientPlugin)
         .add_system(resize_canvas.system())
         .run();
 }

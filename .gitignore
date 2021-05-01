@@ -3,9 +3,5 @@
 
 # Build artifacts
 target
-dist
 pkg
-
-# NodeJS
-node_modules
-yarn-error.log
+/bins/LICENSE
