@@ -392,7 +392,11 @@ pub fn maintain_connection(
         network_params.connection_state.status(),
         ConnectionStatus::Connected
     ) && newest_acknowledged_incoming_packet.map_or(false, |packet| {
-        packet.value().saturating_sub(time.frame_number.value()) > COMPONENT_FRAMEBUFFER_LIMIT / 2
+        if packet > time.frame_number {
+            (packet - time.frame_number).value() > COMPONENT_FRAMEBUFFER_LIMIT / 2
+        } else {
+            false
+        }
     });
 
     if is_falling_behind {

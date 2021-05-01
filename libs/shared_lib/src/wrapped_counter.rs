@@ -175,4 +175,12 @@ mod tests {
             WrappedCounter::new(u16::MAX) + WrappedCounter::new(1) > WrappedCounter::new(u16::MAX)
         );
     }
+
+    #[test]
+    fn abs_diff() {
+        assert_eq!(
+            WrappedCounter::new(u16::MAX).diff_abs(WrappedCounter::new(0)),
+            WrappedCounter::new(1)
+        );
+    }
 }
