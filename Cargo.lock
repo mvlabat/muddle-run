@@ -2829,7 +2829,7 @@ dependencies = [
 [[package]]
 name = "naia-client-socket"
 version = "0.5.3"
-source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#4956f916270a120be458e60a64f6da421aac1053"
+source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#b7d679be96ddf6f76451259d8359485200b30069"
 dependencies = [
  "cfg-if 0.1.10",
  "js-sys",
@@ -2845,7 +2845,7 @@ dependencies = [
 [[package]]
 name = "naia-server-socket"
 version = "0.4.3"
-source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#4956f916270a120be458e60a64f6da421aac1053"
+source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#b7d679be96ddf6f76451259d8359485200b30069"
 dependencies = [
  "async-dup",
  "async-io",
@@ -2864,7 +2864,7 @@ dependencies = [
 [[package]]
 name = "naia-socket-shared"
 version = "0.4.1"
-source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#4956f916270a120be458e60a64f6da421aac1053"
+source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#b7d679be96ddf6f76451259d8359485200b30069"
 dependencies = [
  "byteorder",
  "cfg-if 0.1.10",
@@ -4352,9 +4352,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.2.17"
+version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "705096c6f83bf68ea5d357a6aa01829ddbdac531b357b45abeca842938085baa"
+checksum = "aa5553bf0883ba7c9cbe493b085c29926bd41b66afc31ff72cf17ff4fb60dcd5"
 dependencies = [
  "ansi_term",
  "chrono",
