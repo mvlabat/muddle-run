@@ -20,18 +20,15 @@ use mr_shared_lib::{
 };
 use std::{
     collections::{hash_map::Entry, HashMap},
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
-const SERVER_PORT: u16 = 3455;
-
 pub fn startup(mut net: ResMut<NetworkResource>) {
-    let socket_address: SocketAddr = SocketAddr::new(
-        bevy_networking_turbulence::find_my_ip_address().unwrap(),
-        SERVER_PORT,
-    );
     log::info!("Starting the server");
-    net.listen(socket_address);
+    let (listen, public) = listen_addr()
+        .zip(public_id_addr())
+        .expect("Expected MUDDLE_LISTEN_PORT and MUDDLE_PUBLIC_IP_ADDR env variables");
+    net.listen(listen, public);
 }
 
 pub type PlayerConnections = Registry<PlayerNetId, u32>;
@@ -797,4 +794,41 @@ fn create_player_state(
             }),
         inputs,
     })
+}
+
+fn listen_addr() -> Option<SocketAddr> {
+    let server_port = std::env::var("MUDDLE_LISTEN_PORT")
+        .ok()
+        .or_else(|| std::option_env!("MUDDLE_LISTEN_PORT").map(str::to_owned))
+        .map(|port| port.parse::<u16>().expect("invalid port"))?;
+
+    let env_ip_addr = std::env::var("MUDDLE_LISTEN_IP_ADDR")
+        .ok()
+        .or_else(|| std::option_env!("MUDDLE_LISTEN_IP_ADDR").map(str::to_owned));
+    if let Some(env_addr) = env_ip_addr {
+        return Some(SocketAddr::new(
+            env_addr.parse::<IpAddr>().expect("invalid socket address"),
+            server_port,
+        ));
+    }
+
+    Some(SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+        server_port,
+    ))
+}
+
+fn public_id_addr() -> Option<IpAddr> {
+    let env_ip_addr = std::env::var("MUDDLE_PUBLIC_IP_ADDR")
+        .ok()
+        .or_else(|| std::option_env!("MUDDLE_PUBLIC_IP_ADDR").map(str::to_owned));
+    if let Some(env_addr) = env_ip_addr {
+        return Some(env_addr.parse::<IpAddr>().expect("invalid socket address"));
+    }
+
+    if let Some(addr) = bevy_networking_turbulence::find_my_ip_address() {
+        return Some(addr);
+    }
+
+    None
 }
