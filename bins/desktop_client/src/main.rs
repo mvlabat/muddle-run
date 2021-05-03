@@ -3,6 +3,12 @@ use mr_client_lib::MuddleClientPlugin;
 
 fn main() {
     env_logger::init();
+
+    let _guard = sentry::init(sentry::ClientOptions {
+        release: sentry::release_name!(),
+        ..Default::default()
+    });
+
     App::build()
         // Window and rendering.
         .insert_resource(WindowDescriptor {

@@ -12,6 +12,8 @@ use-udp = ["mr_server_lib/use-udp"]
 use-webrtc = ["mr_server_lib/use-webrtc"]
 
 [dependencies]
+mr_server_lib = { path = "../../libs/server_lib" }
+
 bevy = { version = "0.5", default-features = false }
 env_logger = "0.8.1"
-mr_server_lib = { path = "../../libs/server_lib" }
+sentry = "0.21.0"
