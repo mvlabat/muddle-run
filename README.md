@@ -50,6 +50,7 @@ cargo run -p mr_desktop_client
 
 ```bash
 # Running the server
+# (Note that 127.0.0.1 might not work for Firefox, you can use your local network instead, like 192.168.x.x)
 MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server --features use-webrtc
 # Running the client
 cd bins/web_client
@@ -66,7 +67,8 @@ a binary take higher priority.
 #### `mr_server`
 
 - `MUDDLE_PUBLIC_IP_ADDR` (mandatory)
-  - it can't equal to `0.0.0.0`, use `127.0.0.1` if you want to connect to localhost, for instance
+  - It can't equal to `0.0.0.0`, use `127.0.0.1` if you want to connect to localhost, for instance.
+  - Also, note that `127.0.0.1` might not work for Firefox, you can use your local network instead, like `192.168.x.x`.
 - `MUDDLE_LISTEN_IP_ADDR` (defaults to `0.0.0.0`)
 - `MUDDLE_LISTEN_PORT` (mandatory)
 
