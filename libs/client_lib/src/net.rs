@@ -30,6 +30,7 @@ use std::{
 };
 
 const DEFAULT_SERVER_PORT: u16 = 3455;
+const DEFAULT_SERVER_IP_ADDR: &str = "127.0.0.1";
 
 #[derive(SystemParam)]
 pub struct UpdateParams<'a> {
@@ -422,7 +423,7 @@ pub fn maintain_connection(
     }
 
     if network_params.net.connections.is_empty() {
-        let server_socket_addr = server_addr().expect("cannot find current ip address");
+        let server_socket_addr = server_addr();
 
         log::info!("Connecting to {}", server_socket_addr);
         network_params.net.connect(server_socket_addr);
@@ -808,7 +809,7 @@ fn player_start_position(player_net_id: PlayerNetId, delta_update: &DeltaUpdate)
         .map(|player_state| player_state.position)
 }
 
-fn server_addr() -> Option<SocketAddr> {
+fn server_addr() -> SocketAddr {
     let server_port = std::env::var("MUDDLE_SERVER_PORT")
         .ok()
         .or_else(|| std::option_env!("MUDDLE_SERVER_PORT").map(str::to_owned))
@@ -818,17 +819,11 @@ fn server_addr() -> Option<SocketAddr> {
     let env_ip_addr = std::env::var("MUDDLE_SERVER_IP_ADDR")
         .ok()
         .or_else(|| std::option_env!("MUDDLE_SERVER_IP_ADDR").map(str::to_owned));
-    if let Some(env_addr) = env_ip_addr {
-        return Some(SocketAddr::new(
-            env_addr.parse::<IpAddr>().expect("invalid socket address"),
-            server_port,
-        ));
-    }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    if let Some(addr) = bevy_networking_turbulence::find_my_ip_address() {
-        return Some(SocketAddr::new(addr, server_port));
-    }
+    let ip_addr = env_ip_addr.as_deref().unwrap_or(DEFAULT_SERVER_IP_ADDR);
 
-    None
+    SocketAddr::new(
+        ip_addr.parse::<IpAddr>().expect("invalid socket address"),
+        server_port,
+    )
 }
