@@ -41,7 +41,10 @@ The workspace contains the following binary projects:
 
 ```bash
 # Running the server
+# (Note that 127.0.0.1 might not work for Windows, you can use your local network ip instead, like 192.168.x.x)
+# (See https://github.com/naia-rs/naia-socket/issues/24)
 MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server --features use-udp
+
 # Running the client
 cargo run -p mr_desktop_client
 ```
@@ -50,8 +53,9 @@ cargo run -p mr_desktop_client
 
 ```bash
 # Running the server
-# (Note that 127.0.0.1 might not work for Firefox, you can use your local network instead, like 192.168.x.x)
+# (Note that 127.0.0.1 might not work for Firefox, you can use your local network ip instead, like 192.168.x.x)
 MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server --features use-webrtc
+
 # Running the client
 cd bins/web_client
 wasm-pack build --target web
