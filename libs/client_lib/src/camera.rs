@@ -2,6 +2,8 @@ use crate::{CurrentPlayerNetId, MainCameraEntity};
 use bevy::prelude::*;
 use mr_shared_lib::{player::PlayerUpdates, GameTime, COMPONENT_FRAMEBUFFER_LIMIT};
 
+pub const CAMERA_OFFSET: (f32, f32, f32) = (5.0, 10.0, -14.0);
+
 pub fn camera_follow_player(
     time: Res<GameTime>,
     mut player_updates: ResMut<PlayerUpdates>,
@@ -22,7 +24,11 @@ pub fn camera_follow_player(
                 .get_mut(main_camera_entity.0)
                 .expect("expected a main camera");
 
-            camera_transform.translation = Vec3::new(5.0 + position.x, 10.0, -14.0 + position.y);
+            camera_transform.translation = Vec3::new(
+                CAMERA_OFFSET.0 + position.x,
+                CAMERA_OFFSET.1,
+                CAMERA_OFFSET.2 + position.y,
+            );
         }
     }
 }

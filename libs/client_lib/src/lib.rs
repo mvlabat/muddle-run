@@ -232,9 +232,14 @@ fn basic_scene(mut commands: Commands) {
         ..Default::default()
     });
     // Camera.
+    let camera_translation = Vec3::new(
+        camera::CAMERA_OFFSET.0,
+        camera::CAMERA_OFFSET.1,
+        camera::CAMERA_OFFSET.2,
+    );
     let main_camera_entity = commands
         .spawn_bundle(PerspectiveCameraBundle {
-            transform: Transform::from_translation(Vec3::new(5.0, 10.0, -14.0))
+            transform: Transform::from_translation(camera_translation)
                 .looking_at(Vec3::default(), Vec3::Y),
             ..Default::default()
         })
