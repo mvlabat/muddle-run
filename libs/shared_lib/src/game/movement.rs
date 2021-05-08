@@ -25,6 +25,9 @@ use bevy_rapier3d::{
 /// Positions should align in half a second.
 const LERP_FACTOR: f32 = 1.0 / SIMULATIONS_PER_SECOND as f32 * 2.0;
 
+// The scaling factor for the player's linear velocity
+const PLAYER_MOVEMENT_SPEED: f32 = 1.0;
+
 pub fn read_movement_updates(
     time: Res<GameTime>,
     simulation_time: Res<SimulationTime>,
@@ -176,9 +179,10 @@ pub fn player_movement(
                     (FrameNumber::new(0), &zero_vec)
                 }
             });
-        let wake_up = current_direction.length_squared() > 0.0;
+        let current_direction_norm = current_direction.normalize_or_zero() * PLAYER_MOVEMENT_SPEED;
+        let wake_up = current_direction_norm.length_squared() > 0.0;
         rigid_body.set_linvel(
-            Vector::new(current_direction.x, 0.0, current_direction.y),
+            Vector::new(current_direction_norm.x, 0.0, current_direction_norm.y),
             wake_up,
         );
     }
