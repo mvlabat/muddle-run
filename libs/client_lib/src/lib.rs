@@ -33,6 +33,7 @@ use mr_shared_lib::{
 };
 use std::borrow::Cow;
 
+mod camera;
 mod helpers;
 mod input;
 mod net;
@@ -50,7 +51,8 @@ impl Plugin for MuddleClientPlugin {
             .with_system(maintain_connection.system())
             .with_system(process_network_events.system())
             .with_system(input::track_input_events.system())
-            .with_system(input::cast_mouse_ray.system());
+            .with_system(input::cast_mouse_ray.system())
+            .with_system(camera::camera_follow_player.system());
         let broadcast_updates_stage =
             SystemStage::parallel().with_system(send_network_updates.system());
         let post_tick_stage = SystemStage::single_threaded()
