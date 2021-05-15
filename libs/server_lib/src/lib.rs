@@ -3,18 +3,19 @@
 
 use crate::{
     net::{process_network_events, send_network_updates, startup, PlayerConnections},
-    player_updates::{process_player_input_updates, DeferredUpdates},
+    player_updates::{process_player_input_updates, process_switch_role_requests},
 };
 use bevy::{core::FixedTimestep, prelude::*};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
-        commands::{GameCommands, SpawnLevelObject},
+        commands::{DeferredPlayerQueues, DeferredQueue, SpawnLevelObject},
         level::{LevelObject, LevelObjectDesc},
         level_objects::PlaneDesc,
     },
-    messages::{EntityNetId, PlayerInput, PlayerNetId},
+    messages::{EntityNetId, PlayerNetId, RunnerInput},
     net::ConnectionState,
+    player::PlayerRole,
     registry::IncrementId,
     MuddleSharedPlugin, PLANE_SIZE, SIMULATIONS_PER_SECOND,
 };
@@ -37,9 +38,10 @@ impl Plugin for MuddleServerPlugin {
         builder.add_startup_system(init_level.system());
         builder.add_startup_system(startup.system());
 
-        let input_stage = SystemStage::single_threaded()
-            .with_system(process_network_events.system())
-            .with_system(process_player_input_updates.system());
+        let input_stage = SystemStage::parallel()
+            .with_system(process_network_events.system().label("net"))
+            .with_system(process_player_input_updates.system().after("net"))
+            .with_system(process_switch_role_requests.system().after("net"));
         let broadcast_updates_stage =
             SystemStage::parallel().with_system(send_network_updates.system());
 
@@ -58,13 +60,14 @@ impl Plugin for MuddleServerPlugin {
         resources.get_resource_or_insert_with(PlayerConnections::default);
         resources.get_resource_or_insert_with(Vec::<(PlayerNetId, u32)>::default);
         resources.get_resource_or_insert_with(HashMap::<u32, ConnectionState>::default);
-        resources.get_resource_or_insert_with(DeferredUpdates::<PlayerInput>::default);
+        resources.get_resource_or_insert_with(DeferredPlayerQueues::<RunnerInput>::default);
+        resources.get_resource_or_insert_with(DeferredPlayerQueues::<PlayerRole>::default);
     }
 }
 
 pub fn init_level(
     mut entity_net_id_counter: ResMut<EntityNetId>,
-    mut spawn_level_object_commands: ResMut<GameCommands<SpawnLevelObject>>,
+    mut spawn_level_object_commands: ResMut<DeferredQueue<SpawnLevelObject>>,
 ) {
     spawn_level_object_commands.push(SpawnLevelObject {
         frame_number: FrameNumber::new(0),

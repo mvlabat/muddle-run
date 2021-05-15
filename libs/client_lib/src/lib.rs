@@ -1,6 +1,6 @@
 use crate::{
-    input::MouseRay,
-    net::{maintain_connection, process_network_events, send_network_updates},
+    input::{MouseRay, PlayerRequestsQueue},
+    net::{maintain_connection, process_network_events, send_network_updates, send_requests},
     ui::debug_ui::update_debug_ui_state,
 };
 use bevy::{
@@ -51,8 +51,9 @@ impl Plugin for MuddleClientPlugin {
             .with_system(process_network_events.system())
             .with_system(input::track_input_events.system())
             .with_system(input::cast_mouse_ray.system());
-        let broadcast_updates_stage =
-            SystemStage::parallel().with_system(send_network_updates.system());
+        let broadcast_updates_stage = SystemStage::parallel()
+            .with_system(send_network_updates.system())
+            .with_system(send_requests.system());
         let post_tick_stage = SystemStage::single_threaded()
             .with_system(pause_simulation.system())
             .with_system(control_ticking_speed.system())
@@ -90,6 +91,7 @@ impl Plugin for MuddleClientPlugin {
         world.get_resource_or_insert_with(ui::debug_ui::DebugUiState::default);
         world.get_resource_or_insert_with(CurrentPlayerNetId::default);
         world.get_resource_or_insert_with(ConnectionState::default);
+        world.get_resource_or_insert_with(PlayerRequestsQueue::default);
         world.get_resource_or_insert_with(MouseRay::default);
     }
 }

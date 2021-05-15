@@ -3,25 +3,23 @@ use crate::{
         client_factories::{
             ClientFactory, PbrClientParams, PlaneClientFactory, PlayerClientFactory,
         },
-        commands::{DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer},
+        commands::{DeferredQueue, DespawnPlayer, SpawnLevelObject, SpawnPlayer},
         components::{PlayerDirection, Position, Spawned},
         level::{LevelObjectDesc, LevelState},
     },
     messages::{EntityNetId, PlayerNetId},
-    player::Player,
     registry::EntityRegistry,
     util::dedup_by_key_unsorted,
     GameTime, SimulationTime, PLAYER_SIZE,
 };
 use bevy::{log, prelude::*};
 use bevy_rapier3d::rapier::{dynamics::RigidBodyBuilder, geometry::ColliderBuilder};
-use std::collections::HashMap;
 
 pub fn spawn_players(
     mut commands: Commands,
     time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
-    mut spawn_player_commands: ResMut<GameCommands<SpawnPlayer>>,
+    mut spawn_player_commands: ResMut<DeferredQueue<SpawnPlayer>>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
     mut players: Query<(Entity, &mut Spawned, &mut Position, &mut PlayerDirection)>,
 ) {
@@ -97,7 +95,7 @@ pub fn spawn_players(
 
 pub fn despawn_players(
     mut commands: Commands,
-    mut despawn_player_commands: ResMut<GameCommands<DespawnPlayer>>,
+    mut despawn_player_commands: ResMut<DeferredQueue<DespawnPlayer>>,
     player_entities: Res<EntityRegistry<PlayerNetId>>,
     mut players: Query<(Entity, &mut Spawned, &PlayerDirection)>,
 ) {
@@ -143,7 +141,7 @@ pub fn despawn_players(
 pub fn spawn_level_objects(
     mut commands: Commands,
     mut pbr_client_params: PbrClientParams,
-    mut spawn_level_object_commands: ResMut<GameCommands<SpawnLevelObject>>,
+    mut spawn_level_object_commands: ResMut<DeferredQueue<SpawnLevelObject>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
     mut level_state: ResMut<LevelState>,
 ) {
@@ -174,7 +172,6 @@ pub fn spawn_level_objects(
 pub fn process_spawned_entities(
     mut commands: Commands,
     game_time: Res<GameTime>,
-    mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
     mut spawned_entities: Query<(Entity, &mut Spawned)>,
@@ -184,9 +181,7 @@ pub fn process_spawned_entities(
         if spawned.can_be_removed(game_time.frame_number) {
             log::debug!("Despawning entity {:?}", entity);
             commands.entity(entity).despawn();
-            if let Some(player_net_id) = player_entities.remove_by_entity(entity) {
-                players.remove(&player_net_id);
-            }
+            player_entities.remove_by_entity(entity);
             object_entities.remove_by_entity(entity);
         }
     }

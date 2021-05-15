@@ -1,20 +1,21 @@
-use crate::player_updates::DeferredUpdates;
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashSet};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
 use mr_shared_lib::{
     game::{
-        commands::{DespawnPlayer, GameCommands, SpawnLevelObject, SpawnPlayer},
+        commands::{
+            DeferredPlayerQueues, DeferredQueue, DespawnPlayer, SpawnLevelObject, SpawnPlayer,
+        },
         components::{PlayerDirection, Position, Spawned},
         level::LevelState,
     },
     messages::{
-        ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, Message, PlayerInput, PlayerNetId,
-        PlayerState, ReliableClientMessage, ReliableServerMessage, StartGame,
-        UnreliableClientMessage, UnreliableServerMessage,
+        ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId,
+        PlayerState, ReliableClientMessage, ReliableServerMessage, RunnerInput, StartGame,
+        SwitchRole, UnreliableClientMessage, UnreliableServerMessage,
     },
     net::{ConnectionState, ConnectionStatus, SessionId, CONNECTION_TIMEOUT_MILLIS},
-    player::{random_name, Player},
+    player::{random_name, Player, PlayerRole},
     registry::{EntityRegistry, Registry},
     GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
@@ -35,9 +36,10 @@ pub type PlayerConnections = Registry<PlayerNetId, u32>;
 
 #[derive(SystemParam)]
 pub struct UpdateParams<'a> {
-    deferred_player_updates: ResMut<'a, DeferredUpdates<PlayerInput>>,
-    spawn_player_commands: ResMut<'a, GameCommands<SpawnPlayer>>,
-    despawn_player_commands: ResMut<'a, GameCommands<DespawnPlayer>>,
+    deferred_player_updates: ResMut<'a, DeferredPlayerQueues<RunnerInput>>,
+    switch_role_requests: ResMut<'a, DeferredPlayerQueues<PlayerRole>>,
+    spawn_player_commands: ResMut<'a, DeferredQueue<SpawnPlayer>>,
+    despawn_player_commands: ResMut<'a, DeferredQueue<DespawnPlayer>>,
 }
 
 #[derive(SystemParam)]
@@ -234,22 +236,24 @@ pub fn process_network_events(
                             break 'channel;
                         }
                     }
-                    for input in update.inputs {
-                        if input.frame_number.diff_abs(time.frame_number).value()
-                            > COMPONENT_FRAMEBUFFER_LIMIT / 2
-                        {
-                            log::warn!(
-                                "Player {} is out of sync (input frame {}, current frame: {}), disconnecting",
-                                player_net_id.0,
-                                input.frame_number,
-                                time.frame_number
-                            );
-                            connection_state.set_status(ConnectionStatus::Disconnecting);
-                            break 'channel;
+                    if let PlayerInputs::Runner { inputs } = update.inputs {
+                        for input in inputs {
+                            if input.frame_number.diff_abs(time.frame_number).value()
+                                > COMPONENT_FRAMEBUFFER_LIMIT / 2
+                            {
+                                log::warn!(
+                                    "Player {} is out of sync (input frame {}, current frame: {}), disconnecting",
+                                    player_net_id.0,
+                                    input.frame_number,
+                                    time.frame_number
+                                );
+                                connection_state.set_status(ConnectionStatus::Disconnecting);
+                                break 'channel;
+                            }
+                            update_params
+                                .deferred_player_updates
+                                .push(player_net_id, input);
                         }
-                        update_params
-                            .deferred_player_updates
-                            .push(player_net_id, input);
                     }
                 }
                 UnreliableClientMessage::Connect(_) => {}
@@ -305,7 +309,10 @@ pub fn process_network_events(
                         .push((player_net_id, *handle));
 
                     let nickname = random_name();
-                    players.insert(player_net_id, Player { nickname });
+                    players.insert(
+                        player_net_id,
+                        Player::new_with_nickname(PlayerRole::Runner, nickname),
+                    );
                     update_params.spawn_player_commands.push(SpawnPlayer {
                         net_id: player_net_id,
                         start_position: Vec2::ZERO,
@@ -314,11 +321,26 @@ pub fn process_network_events(
                     // Add an initial update to have something to extrapolate from.
                     update_params.deferred_player_updates.push(
                         player_net_id,
-                        PlayerInput {
+                        RunnerInput {
                             frame_number: time.frame_number,
                             direction: Vec2::ZERO,
                         },
                     );
+                }
+                ReliableClientMessage::SwitchRole(role) => {
+                    log::info!("Client ({}) requests to switch role to {:?}", handle, role);
+                    let connection_state = network_params
+                        .connection_states
+                        .get_mut(handle)
+                        .expect("Expected a connection state for an existing connection");
+                    if !matches!(connection_state.status(), ConnectionStatus::Connected) {
+                        continue;
+                    }
+                    let player_net_id = network_params
+                        .player_connections
+                        .get_id(*handle)
+                        .expect("Expected a registered player net id for an existing connection");
+                    update_params.switch_role_requests.push(player_net_id, role);
                 }
             }
         }
@@ -353,6 +375,7 @@ pub fn process_network_events(
         &time,
         &mut network_params,
         &mut update_params,
+        &mut players,
     );
 }
 
@@ -361,6 +384,7 @@ fn disconnect_players(
     time: &GameTime,
     network_params: &mut NetworkParams,
     update_params: &mut UpdateParams,
+    players: &mut HashMap<PlayerNetId, Player>,
 ) {
     // Disconnecting players that have been failing to deliver updates for some time.
     for (handle, connection_state) in network_params.connection_states.iter_mut() {
@@ -432,6 +456,10 @@ fn disconnect_players(
                     net_id: player_net_id,
                     frame_number: time.frame_number,
                 });
+                players
+                    .get_mut(&player_net_id)
+                    .expect("Expected a registered player with an existing player_net_id")
+                    .is_connected = false;
             } else {
                 log::warn!("A disconnected player wasn't in the connections list");
             }
@@ -463,6 +491,7 @@ pub fn send_network_updates(
     players: Res<HashMap<PlayerNetId, Player>>,
     player_entities: Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
     players_registry: Res<EntityRegistry<PlayerNetId>>,
+    mut switch_role_messages: ResMut<DeferredQueue<SwitchRole>>,
 ) {
     log::trace!("Sending network updates (frame: {})", time.frame_number);
 
@@ -498,13 +527,21 @@ pub fn send_network_updates(
             connection_state,
         );
 
-        broadcast_new_player_messages(
+        send_new_player_messages(
             &mut network_params.net,
             &network_params.new_player_connections,
             &players,
             connection_handle,
             connection_state,
         )
+    }
+
+    for switch_role_message in switch_role_messages.drain().into_iter() {
+        broadcast_reliable_game_message(
+            &mut network_params.net,
+            &network_params.connection_states,
+            ReliableServerMessage::SwitchRole(switch_role_message),
+        );
     }
 }
 
@@ -609,12 +646,12 @@ fn broadcast_delta_update_messages(
     connection_state.add_outgoing_packet(time.frame_number, Utc::now());
 }
 
-fn broadcast_new_player_messages(
+fn send_new_player_messages(
     net: &mut NetworkResource,
     new_player_connections: &[(PlayerNetId, u32)],
     players: &HashMap<PlayerNetId, Player>,
     connection_handle: u32,
-    connection_state: &mut ConnectionState,
+    connection_state: &ConnectionState,
 ) {
     // Broadcasting updates about new connected players.
     for (connected_player_net_id, _connection_handle) in new_player_connections.iter() {
@@ -625,16 +662,7 @@ fn broadcast_new_player_messages(
             net_id: *connected_player_net_id,
             nickname: player.nickname.clone(),
         });
-
-        if let Err(err) = net.send_message(
-            connection_handle,
-            Message {
-                session_id: connection_state.session_id,
-                message,
-            },
-        ) {
-            log::error!("Failed to send a message: {:?}", err);
-        }
+        send_reliable_game_message(net, connection_handle, connection_state, message);
     }
 }
 
@@ -759,7 +787,7 @@ fn create_player_state(
     };
 
     // TODO: deduplicate updates (the same code is written for client).
-    let mut inputs: Vec<PlayerInput> = Vec::new();
+    let mut inputs: Vec<RunnerInput> = Vec::new();
     for (frame_number, &direction) in player_direction
         .buffer
         // TODO: avoid iterating from the beginning?
@@ -767,7 +795,7 @@ fn create_player_state(
         .skip_while(|(frame_number, _)| *frame_number < updates_start_frame)
     {
         if Some(direction) != inputs.last().map(|i| i.direction) {
-            inputs.push(PlayerInput {
+            inputs.push(RunnerInput {
                 frame_number,
                 direction,
             });
@@ -794,6 +822,37 @@ fn create_player_state(
             }),
         inputs,
     })
+}
+
+fn broadcast_reliable_game_message(
+    net: &mut NetworkResource,
+    connection_states: &HashMap<u32, ConnectionState>,
+    message: ReliableServerMessage,
+) {
+    for (&connection_handle, connection_state) in connection_states.iter() {
+        if !matches!(connection_state.status(), ConnectionStatus::Connected) {
+            continue;
+        }
+
+        send_reliable_game_message(net, connection_handle, connection_state, message.clone());
+    }
+}
+
+fn send_reliable_game_message(
+    net: &mut NetworkResource,
+    connection_handle: u32,
+    connection_state: &ConnectionState,
+    message: ReliableServerMessage,
+) {
+    if let Err(err) = net.send_message(
+        connection_handle,
+        Message {
+            session_id: connection_state.session_id,
+            message,
+        },
+    ) {
+        log::error!("Failed to send a message: {:?}", err);
+    }
 }
 
 fn listen_addr() -> Option<SocketAddr> {

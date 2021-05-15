@@ -3,6 +3,7 @@ use crate::{
     messages::PlayerNetId,
 };
 use bevy::{log, math::Vec2};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
@@ -62,6 +63,32 @@ impl PlayerUpdates {
 #[derive(Clone)]
 pub struct Player {
     pub nickname: String,
+    pub role: PlayerRole,
+    pub is_connected: bool,
+}
+
+impl Player {
+    pub fn new(role: PlayerRole) -> Player {
+        Player {
+            nickname: "?".to_owned(),
+            role,
+            is_connected: true,
+        }
+    }
+
+    pub fn new_with_nickname(role: PlayerRole, nickname: String) -> Player {
+        Player {
+            nickname,
+            role,
+            is_connected: true,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub enum PlayerRole {
+    Runner,
+    Builder,
 }
 
 pub fn random_name() -> String {

@@ -1,3 +1,4 @@
+#![feature(hash_drain_filter)]
 #![feature(step_trait)]
 #![feature(step_trait_ext)]
 #![feature(trait_alias)]
@@ -6,15 +7,17 @@ use crate::{
     framebuffer::FrameNumber,
     game::{
         commands::{
-            DespawnLevelObject, DespawnPlayer, GameCommands, RestartGame, SpawnLevelObject,
-            SpawnPlayer,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnLevelObject,
+            SpawnPlayer, SwitchPlayerRole,
         },
         components::PlayerFrameSimulated,
         level::LevelState,
         movement::{player_movement, read_movement_updates, sync_position},
-        restart_game,
+        remove_disconnected_players, restart_game,
         spawn::{despawn_players, process_spawned_entities, spawn_level_objects, spawn_players},
+        switch_player_role,
     },
+    messages::SwitchRole,
     net::network_setup,
     player::{Player, PlayerUpdates},
     registry::EntityRegistry,
@@ -136,9 +139,15 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_run_criteria(SimulationTickRunCriteria::default())
             .with_stage(
                 stage::SPAWN,
-                SystemStage::single_threaded()
-                    .with_system(despawn_players.system())
-                    .with_system(spawn_players.system())
+                SystemStage::parallel()
+                    .with_system(switch_player_role.system().label("player_role"))
+                    .with_system(
+                        despawn_players
+                            .system()
+                            .label("despawn")
+                            .after("player_role"),
+                    )
+                    .with_system(spawn_players.system().after("despawn"))
                     .with_system(spawn_level_objects.system()),
             )
             .with_stage(
@@ -189,7 +198,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 stage::POST_SIMULATIONS,
                 SystemStage::single_threaded()
                     .with_system(tick_game_frame.system())
-                    .with_system(process_spawned_entities.system()),
+                    .with_system(process_spawned_entities.system())
+                    .with_system(remove_disconnected_players.system()),
             )
             .with_stage(
                 stage::POST_TICK,
@@ -233,11 +243,13 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         resources.get_resource_or_insert_with(SimulationTime::default);
         resources.get_resource_or_insert_with(LevelState::default);
         resources.get_resource_or_insert_with(PlayerUpdates::default);
-        resources.get_resource_or_insert_with(GameCommands::<RestartGame>::default);
-        resources.get_resource_or_insert_with(GameCommands::<SpawnPlayer>::default);
-        resources.get_resource_or_insert_with(GameCommands::<DespawnPlayer>::default);
-        resources.get_resource_or_insert_with(GameCommands::<SpawnLevelObject>::default);
-        resources.get_resource_or_insert_with(GameCommands::<DespawnLevelObject>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<RestartGame>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<SpawnPlayer>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<DespawnPlayer>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<SpawnLevelObject>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<DespawnLevelObject>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<SwitchPlayerRole>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<SwitchRole>::default);
         resources.get_resource_or_insert_with(EntityRegistry::<PlayerNetId>::default);
         resources.get_resource_or_insert_with(EntityRegistry::<EntityNetId>::default);
         resources.get_resource_or_insert_with(HashMap::<PlayerNetId, Player>::default);

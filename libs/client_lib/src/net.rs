@@ -1,4 +1,7 @@
-use crate::{CurrentPlayerNetId, EstimatedServerTime, InitialRtt, PlayerDelay, TargetFramesAhead};
+use crate::{
+    input::PlayerRequestsQueue, CurrentPlayerNetId, EstimatedServerTime, InitialRtt, PlayerDelay,
+    TargetFramesAhead,
+};
 use bevy::{ecs::system::SystemParam, log, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
@@ -6,21 +9,21 @@ use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
         commands::{
-            DespawnLevelObject, DespawnPlayer, GameCommands, RestartGame, SpawnLevelObject,
-            SpawnPlayer,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnLevelObject,
+            SpawnPlayer, SwitchPlayerRole,
         },
         components::PlayerDirection,
     },
     messages::{
-        ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, Message, PlayerInput, PlayerNetId,
-        PlayerUpdate, ReliableClientMessage, ReliableServerMessage, StartGame,
+        ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId,
+        PlayerUpdate, ReliableClientMessage, ReliableServerMessage, RunnerInput, StartGame,
         UnreliableClientMessage, UnreliableServerMessage,
     },
     net::{
         AcknowledgeError, ConnectionState, ConnectionStatus, MessageId, SessionId,
         CONNECTION_TIMEOUT_MILLIS,
     },
-    player::{Player, PlayerDirectionUpdate, PlayerUpdates},
+    player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     registry::EntityRegistry,
     GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
 };
@@ -42,11 +45,12 @@ pub struct UpdateParams<'a> {
     player_delay: ResMut<'a, PlayerDelay>,
     initial_rtt: ResMut<'a, InitialRtt>,
     player_updates: ResMut<'a, PlayerUpdates>,
-    restart_game_commands: ResMut<'a, GameCommands<RestartGame>>,
-    spawn_level_object_commands: ResMut<'a, GameCommands<SpawnLevelObject>>,
-    despawn_level_object_commands: ResMut<'a, GameCommands<DespawnLevelObject>>,
-    spawn_player_commands: ResMut<'a, GameCommands<SpawnPlayer>>,
-    despawn_player_commands: ResMut<'a, GameCommands<DespawnPlayer>>,
+    restart_game_commands: ResMut<'a, DeferredQueue<RestartGame>>,
+    spawn_level_object_commands: ResMut<'a, DeferredQueue<SpawnLevelObject>>,
+    despawn_level_object_commands: ResMut<'a, DeferredQueue<DespawnLevelObject>>,
+    spawn_player_commands: ResMut<'a, DeferredQueue<SpawnPlayer>>,
+    despawn_player_commands: ResMut<'a, DeferredQueue<DespawnPlayer>>,
+    switch_role_commands: ResMut<'a, DeferredQueue<SwitchPlayerRole>>,
 }
 
 #[derive(SystemParam)]
@@ -316,7 +320,7 @@ pub fn process_network_events(
                     process_connected_player_message(connected_player, &mut players);
                 }
                 ReliableServerMessage::DisconnectedPlayer(disconnected_player) => {
-                    process_disconnected_player_message(disconnected_player);
+                    process_disconnected_player_message(disconnected_player, &mut players);
                 }
                 ReliableServerMessage::SpawnLevelObject(spawn_level_object) => {
                     update_params
@@ -333,6 +337,22 @@ pub fn process_network_events(
                     update_params
                         .despawn_level_object_commands
                         .push(despawn_level_object);
+                }
+                ReliableServerMessage::SwitchRole(switch_role) => {
+                    update_params
+                        .simulation_time
+                        .rewind(switch_role.frame_number);
+                    let net_id = switch_role.net_id;
+                    update_params.switch_role_commands.push(SwitchPlayerRole {
+                        net_id,
+                        role: switch_role.role,
+                        frame_number: switch_role.frame_number,
+                        is_player_frame_simulated: current_player_net_id
+                            .0
+                            .map_or(false, |current_player_net_id| {
+                                current_player_net_id == net_id
+                            }),
+                    });
                 }
                 ReliableServerMessage::Disconnect => {
                     network_params
@@ -439,6 +459,7 @@ pub fn send_network_updates(
     time: Res<GameTime>,
     mut network_params: NetworkParams,
     current_player_net_id: Res<CurrentPlayerNetId>,
+    players: Res<HashMap<PlayerNetId, Player>>,
     player_registry: Res<EntityRegistry<PlayerNetId>>,
     player_update_params: PlayerUpdateParams,
 ) {
@@ -455,44 +476,59 @@ pub fn send_network_updates(
     }
 
     log::trace!("Broadcast updates for frame {}", time.frame_number);
-    let player_entity = match current_player_net_id
-        .0
-        .and_then(|net_id| player_registry.get_entity(net_id))
-    {
-        Some(player_entity) => player_entity,
+    let current_player_net_id = match current_player_net_id.0 {
+        Some(net_id) => net_id,
         None => return,
     };
 
-    let player_direction = player_update_params
-        .player_directions
-        .get(player_entity)
-        .expect("Expected a created spawned player");
+    let player = players
+        .get(&current_player_net_id)
+        .expect("Expected a registered player when current_player_net_id is set");
+
+    let player_entity = player_registry.get_entity(current_player_net_id);
+    if matches!(player.role, PlayerRole::Runner) && player_entity.is_none() {
+        return;
+    }
 
     network_params
         .connection_state
         // Clients don't resend updates, so we can forget about unacknowledged packets.
         .add_outgoing_packet(time.frame_number, Utc::now());
-    // TODO: this makes the client send more packets than the server actually needs, as lost packets
-    //  never get marked as acknowledged, even though we resend updates in future frames. Fix it.
-    let first_unacknowledged_frame = network_params
-        .connection_state
-        .first_unacknowledged_outgoing_packet()
-        .expect("Expected at least the new packet for the current frame");
-    let mut inputs: Vec<PlayerInput> = Vec::new();
-    // TODO: deduplicate updates (the same code is written for server).
-    for (frame_number, &direction) in player_direction
-        .buffer
-        .iter_with_interpolation()
-        // TODO: should client always sent redundant inputs or only the current ones (unless packet loss is detected)?
-        .skip_while(|(frame_number, _)| *frame_number < first_unacknowledged_frame)
-    {
-        if Some(direction) != inputs.last().map(|i| i.direction) {
-            inputs.push(PlayerInput {
-                frame_number,
-                direction,
-            });
+
+    let inputs = match player.role {
+        PlayerRole::Runner => {
+            let player_entity = player_entity.unwrap(); // is checked above
+
+            let player_direction = player_update_params
+                .player_directions
+                .get(player_entity)
+                .expect("Expected a created spawned player");
+
+            // TODO: this makes the client send more packets than the server actually needs, as lost packets
+            //  never get marked as acknowledged, even though we resend updates in future frames. Fix it.
+            let first_unacknowledged_frame = network_params
+                .connection_state
+                .first_unacknowledged_outgoing_packet()
+                .expect("Expected at least the new packet for the current frame");
+            let mut inputs: Vec<RunnerInput> = Vec::new();
+            // TODO: deduplicate updates (the same code is written for server).
+            for (frame_number, &direction) in player_direction
+                .buffer
+                .iter_with_interpolation()
+                // TODO: should client always sent redundant inputs or only the current ones (unless packet loss is detected)?
+                .skip_while(|(frame_number, _)| *frame_number < first_unacknowledged_frame)
+            {
+                if Some(direction) != inputs.last().map(|i| i.direction) {
+                    inputs.push(RunnerInput {
+                        frame_number,
+                        direction,
+                    });
+                }
+            }
+            PlayerInputs::Runner { inputs }
         }
-    }
+        PlayerRole::Builder => PlayerInputs::Builder,
+    };
 
     let message = UnreliableClientMessage::PlayerUpdate(PlayerUpdate {
         frame_number: time.frame_number,
@@ -508,6 +544,36 @@ pub fn send_network_updates(
     );
     if let Err(err) = result {
         log::error!("Failed to send a message to {:?}: {:?}", address, err);
+    }
+}
+
+pub fn send_requests(
+    mut network_params: NetworkParams,
+    mut player_requests: ResMut<PlayerRequestsQueue>,
+) {
+    let (connection_handle, _) = match network_params.net.connections.iter_mut().next() {
+        Some((&handle, connection)) => (handle, connection.remote_address()),
+        None => return,
+    };
+
+    // TODO: refactor this to be a run-criteria.
+    if !matches!(
+        network_params.connection_state.status(),
+        ConnectionStatus::Connected
+    ) {
+        return;
+    }
+
+    for switch_role_request in std::mem::take(&mut player_requests.switch_role) {
+        if let Err(err) = network_params.net.send_message(
+            connection_handle,
+            Message {
+                session_id: network_params.connection_state.session_id,
+                message: ReliableClientMessage::SwitchRole(switch_role_request),
+            },
+        ) {
+            log::error!("Failed to send SwitchRole message: {:?}", err);
+        }
     }
 }
 
@@ -589,13 +655,18 @@ fn process_delta_update_message(
 
     // Despawning players that aren't mentioned in the delta update.
     let players_to_remove: Vec<PlayerNetId> = players
-        .keys()
-        .copied()
-        .filter(|player_net_id| {
-            !delta_update
+        .iter()
+        .filter_map(|(player_net_id, player)| {
+            if !delta_update
                 .players
                 .iter()
                 .any(|player| player.net_id == *player_net_id)
+                && matches!(player.role, PlayerRole::Runner)
+            {
+                Some(*player_net_id)
+            } else {
+                None
+            }
         })
         .collect();
 
@@ -620,9 +691,7 @@ fn process_delta_update_message(
             });
             players
                 .entry(player_state.net_id)
-                .or_insert_with(|| Player {
-                    nickname: "?".to_owned(),
-                });
+                .or_insert_with(|| Player::new(PlayerRole::Runner));
         }
 
         let player_frames_ahead = if current_player_net_id == Some(player_state.net_id) {
@@ -712,9 +781,7 @@ fn process_start_game_message(
         current_player_net_id.0 = Some(start_game.net_id);
         players.insert(
             start_game.net_id,
-            Player {
-                nickname: start_game.nickname,
-            },
+            Player::new_with_nickname(PlayerRole::Runner, start_game.nickname),
         );
         update_params.game_time.generation += 1;
         let rtt_frames = FrameNumber::new(
@@ -755,9 +822,7 @@ fn process_start_game_message(
             log::info!("Spawning player {}: {}", player.net_id.0, player.nickname);
             players.insert(
                 player.net_id,
-                Player {
-                    nickname: player.nickname,
-                },
+                Player::new_with_nickname(PlayerRole::Runner, player.nickname),
             );
             update_params.spawn_player_commands.push(SpawnPlayer {
                 net_id: player.net_id,
@@ -788,17 +853,27 @@ fn process_connected_player_message(
         connected_player.net_id.0,
         connected_player.nickname
     );
-    players.insert(
-        connected_player.net_id,
-        Player {
-            nickname: connected_player.nickname,
-        },
-    );
+    players
+        .entry(connected_player.net_id)
+        .and_modify(|player| player.nickname = connected_player.nickname.clone())
+        .or_insert_with(|| {
+            Player::new_with_nickname(PlayerRole::Runner, connected_player.nickname)
+        });
 }
 
-fn process_disconnected_player_message(disconnected_player: DisconnectedPlayer) {
-    // We actually remove players if there's no mention of them in a DeltaUpdate message.
+fn process_disconnected_player_message(
+    disconnected_player: DisconnectedPlayer,
+    players: &mut HashMap<PlayerNetId, Player>,
+) {
     log::info!("A player ({}) disconnected", disconnected_player.net_id.0);
+    if let Some(player) = players.get_mut(&disconnected_player.net_id) {
+        player.is_connected = false;
+    } else {
+        log::error!(
+            "A disconnected player didn't exist: {}",
+            disconnected_player.net_id.0
+        );
+    }
 }
 
 fn player_start_position(player_net_id: PlayerNetId, delta_update: &DeltaUpdate) -> Option<Vec2> {

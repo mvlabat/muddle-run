@@ -5,9 +5,10 @@ use bevy::{
 };
 use mr_shared_lib::{
     framebuffer::FrameNumber,
-    messages::{PlayerInput, PlayerNetId},
+    game::commands::{DeferredPlayerQueues, DeferredQueue, SwitchPlayerRole},
+    messages::RunnerInput,
     net::ConnectionState,
-    player::{PlayerDirectionUpdate, PlayerUpdates},
+    player::{PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     util::dedup_by_key_unsorted,
     GameTime, SimulationTime, SIMULATIONS_PER_SECOND,
 };
@@ -16,36 +17,13 @@ use std::collections::HashMap;
 pub const SERVER_UPDATES_LIMIT: u16 = 64;
 pub const MAX_LAG_COMPENSATION_MILLIS: u16 = 200;
 
-pub struct DeferredUpdates<T> {
-    updates: HashMap<PlayerNetId, Vec<T>>,
-}
-
-impl<T> Default for DeferredUpdates<T> {
-    fn default() -> Self {
-        Self {
-            updates: HashMap::new(),
-        }
-    }
-}
-
-impl<T> DeferredUpdates<T> {
-    pub fn push(&mut self, player_net_id: PlayerNetId, update: T) {
-        let player_updates = self.updates.entry(player_net_id).or_default();
-        player_updates.push(update);
-    }
-
-    pub fn drain(&mut self) -> HashMap<PlayerNetId, Vec<T>> {
-        std::mem::take(&mut self.updates)
-    }
-}
-
 pub fn process_player_input_updates(
     time: Res<GameTime>,
     player_connections: Res<PlayerConnections>,
     connection_states: Res<HashMap<u32, ConnectionState>>,
     mut simulation_time: ResMut<SimulationTime>,
     mut updates: ResMut<PlayerUpdates>,
-    mut deferred_updates: ResMut<DeferredUpdates<PlayerInput>>,
+    mut deferred_updates: ResMut<DeferredPlayerQueues<RunnerInput>>,
 ) {
     let lag_compensated_frames =
         (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / SIMULATIONS_PER_SECOND as f32)) as u16;
@@ -120,6 +98,23 @@ pub fn process_player_input_updates(
                     );
                 }
             }
+        }
+    }
+}
+
+pub fn process_switch_role_requests(
+    time: Res<GameTime>,
+    mut switch_role_requests: ResMut<DeferredPlayerQueues<PlayerRole>>,
+    mut switch_role_commands: ResMut<DeferredQueue<SwitchPlayerRole>>,
+) {
+    for (player_net_id, player_role_requests) in switch_role_requests.drain().into_iter() {
+        for player_role in player_role_requests.into_iter() {
+            switch_role_commands.push(SwitchPlayerRole {
+                net_id: player_net_id,
+                role: player_role,
+                frame_number: time.frame_number,
+                is_player_frame_simulated: false,
+            });
         }
     }
 }

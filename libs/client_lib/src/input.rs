@@ -7,10 +7,21 @@ use bevy::{
     render::camera::CameraProjection,
 };
 use bevy_rapier3d::{na, rapier::geometry::Ray};
+use chrono::{DateTime, Utc};
 use mr_shared_lib::{
-    player::{PlayerDirectionUpdate, PlayerUpdates},
+    messages::PlayerNetId,
+    player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
+use std::collections::HashMap;
+
+const SWITCH_ROLE_COOLDOWN_SECS: i64 = 1;
+
+/// Is drained by `send_requests`.
+#[derive(Default)]
+pub struct PlayerRequestsQueue {
+    pub switch_role: Vec<PlayerRole>,
+}
 
 #[derive(SystemParam)]
 pub struct InputEvents<'a> {
@@ -33,22 +44,32 @@ impl Default for MouseRay {
     }
 }
 
+#[derive(SystemParam)]
+pub struct PlayerUpdatesParams<'a> {
+    switched_role_at: Local<'a, Option<DateTime<Utc>>>,
+    current_player_net_id: Res<'a, CurrentPlayerNetId>,
+    players: Res<'a, HashMap<PlayerNetId, Player>>,
+    player_updates: ResMut<'a, PlayerUpdates>,
+    player_requests: ResMut<'a, PlayerRequestsQueue>,
+}
+
 pub fn track_input_events(
     mut input_events: InputEvents,
     time: Res<GameTime>,
     mut debug_ui_state: ResMut<DebugUiState>,
-    mut player_updates: ResMut<PlayerUpdates>,
-    current_player_net_id: Res<CurrentPlayerNetId>,
+    mut player_updates_params: PlayerUpdatesParams,
     mut mouse_position: ResMut<MousePosition>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::Period) {
-        debug_ui_state.show = !debug_ui_state.show;
-    }
+    process_hotkeys(
+        &keyboard_input,
+        &mut debug_ui_state,
+        &mut player_updates_params,
+    );
 
     // Keyboard input.
-    if let Some(player_net_id) = current_player_net_id.0 {
-        let direction_updates = player_updates.get_direction_mut(
+    if let Some(player_net_id) = player_updates_params.current_player_net_id.0 {
+        let direction_updates = player_updates_params.player_updates.get_direction_mut(
             player_net_id,
             time.frame_number,
             COMPONENT_FRAMEBUFFER_LIMIT,
@@ -119,4 +140,39 @@ pub fn cast_mouse_ray(
         &camera_transform.compute_matrix(),
         &camera_projection.get_projection_matrix(),
     );
+}
+
+fn process_hotkeys(
+    keyboard_input: &Input<KeyCode>,
+    debug_ui_state: &mut DebugUiState,
+    player_updates_params: &mut PlayerUpdatesParams,
+) {
+    if keyboard_input.just_pressed(KeyCode::Period) {
+        debug_ui_state.show = !debug_ui_state.show;
+    }
+
+    let net_id = player_updates_params.current_player_net_id.0;
+    let player = net_id.and_then(|net_id| player_updates_params.players.get(&net_id));
+    if let Some((_, player)) = net_id.zip(player) {
+        let active_cooldown =
+            player_updates_params
+                .switched_role_at
+                .map_or(false, |switched_role_at| {
+                    Utc::now()
+                        .signed_duration_since(switched_role_at)
+                        .num_seconds()
+                        < SWITCH_ROLE_COOLDOWN_SECS
+                });
+        if keyboard_input.just_pressed(KeyCode::Escape) && !active_cooldown {
+            let new_role = match player.role {
+                PlayerRole::Runner => PlayerRole::Builder,
+                PlayerRole::Builder => PlayerRole::Runner,
+            };
+            player_updates_params
+                .player_requests
+                .switch_role
+                .push(new_role);
+            *player_updates_params.switched_role_at = Some(Utc::now());
+        }
+    }
 }
