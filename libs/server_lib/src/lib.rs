@@ -3,17 +3,21 @@
 
 use crate::{
     net::{process_network_events, send_network_updates, startup, PlayerConnections},
-    player_updates::{process_player_input_updates, process_switch_role_requests},
+    player_updates::{
+        process_despawn_level_object_requests, process_player_input_updates,
+        process_spawn_level_object_requests, process_switch_role_requests,
+        process_update_level_object_requests,
+    },
 };
 use bevy::{core::FixedTimestep, prelude::*};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
-        commands::{DeferredPlayerQueues, DeferredQueue, SpawnLevelObject},
+        commands::{DeferredPlayerQueues, DeferredQueue, DespawnLevelObject, SpawnLevelObject},
         level::{LevelObject, LevelObjectDesc},
         level_objects::PlaneDesc,
     },
-    messages::{EntityNetId, PlayerNetId, RunnerInput},
+    messages::{self, DeferredMessagesQueue, EntityNetId, PlayerNetId, RunnerInput, SwitchRole},
     net::ConnectionState,
     player::PlayerRole,
     registry::IncrementId,
@@ -41,7 +45,12 @@ impl Plugin for MuddleServerPlugin {
         let input_stage = SystemStage::parallel()
             .with_system(process_network_events.system().label("net"))
             .with_system(process_player_input_updates.system().after("net"))
-            .with_system(process_switch_role_requests.system().after("net"));
+            .with_system(process_switch_role_requests.system().after("net"))
+            // It's ok to run the following in random order since object updates aren't possible
+            // on the client before an authoritative confirmation that an object has been spawned.
+            .with_system(process_spawn_level_object_requests.system().after("net"))
+            .with_system(process_update_level_object_requests.system().after("net"))
+            .with_system(process_despawn_level_object_requests.system().after("net"));
         let broadcast_updates_stage =
             SystemStage::parallel().with_system(send_network_updates.system());
 
@@ -62,6 +71,13 @@ impl Plugin for MuddleServerPlugin {
         resources.get_resource_or_insert_with(HashMap::<u32, ConnectionState>::default);
         resources.get_resource_or_insert_with(DeferredPlayerQueues::<RunnerInput>::default);
         resources.get_resource_or_insert_with(DeferredPlayerQueues::<PlayerRole>::default);
+        resources.get_resource_or_insert_with(
+            DeferredPlayerQueues::<messages::SpawnLevelObject>::default,
+        );
+        resources.get_resource_or_insert_with(DeferredPlayerQueues::<LevelObject>::default);
+        resources.get_resource_or_insert_with(DeferredPlayerQueues::<EntityNetId>::default);
+        resources.get_resource_or_insert_with(DeferredMessagesQueue::<SpawnLevelObject>::default);
+        resources.get_resource_or_insert_with(DeferredMessagesQueue::<DespawnLevelObject>::default);
     }
 }
 

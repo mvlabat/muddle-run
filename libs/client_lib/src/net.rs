@@ -322,7 +322,7 @@ pub fn process_network_events(
                 ReliableServerMessage::DisconnectedPlayer(disconnected_player) => {
                     process_disconnected_player_message(disconnected_player, &mut players);
                 }
-                ReliableServerMessage::SpawnLevelObject(spawn_level_object) => {
+                ReliableServerMessage::UpdateLevelObject(spawn_level_object) => {
                     update_params
                         .simulation_time
                         .rewind(spawn_level_object.frame_number);

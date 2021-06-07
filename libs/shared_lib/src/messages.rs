@@ -1,12 +1,37 @@
 use crate::{
     framebuffer::FrameNumber,
-    game::commands::{DespawnLevelObject, SpawnLevelObject},
+    game::{
+        commands,
+        level::{LevelObject, LevelObjectDesc},
+    },
     net::{MessageId, SessionId},
     player::PlayerRole,
     registry::IncrementId,
 };
 use bevy::math::Vec2;
 use serde::{Deserialize, Serialize};
+
+pub struct DeferredMessagesQueue<T: Serialize> {
+    messages: Vec<T>,
+}
+
+impl<T: Serialize> Default for DeferredMessagesQueue<T> {
+    fn default() -> Self {
+        Self {
+            messages: Vec::new(),
+        }
+    }
+}
+
+impl<T: Serialize> DeferredMessagesQueue<T> {
+    pub fn push(&mut self, message: T) {
+        self.messages.push(message);
+    }
+
+    pub fn drain(&mut self) -> Vec<T> {
+        std::mem::take(&mut self.messages)
+    }
+}
 
 #[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct EntityNetId(pub u16);
@@ -60,6 +85,15 @@ pub enum ReliableClientMessage {
     /// Is sent as a response to server's `UnreliableServerMessage::Handshake`.
     Handshake(MessageId),
     SwitchRole(PlayerRole),
+    SpawnLevelObject(SpawnLevelObject),
+    UpdateLevelObject(LevelObject),
+    DespawnLevelObject(EntityNetId),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum SpawnLevelObject {
+    New(LevelObjectDesc),
+    Copy(EntityNetId),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -70,8 +104,8 @@ pub enum ReliableServerMessage {
     StartGame(StartGame),
     ConnectedPlayer(ConnectedPlayer),
     DisconnectedPlayer(DisconnectedPlayer),
-    SpawnLevelObject(SpawnLevelObject),
-    DespawnLevelObject(DespawnLevelObject),
+    UpdateLevelObject(commands::SpawnLevelObject),
+    DespawnLevelObject(commands::DespawnLevelObject),
     SwitchRole(SwitchRole),
     Disconnect,
 }
@@ -102,7 +136,7 @@ pub struct StartGame {
     pub handshake_id: MessageId,
     pub net_id: PlayerNetId,
     pub nickname: String,
-    pub objects: Vec<SpawnLevelObject>,
+    pub objects: Vec<commands::SpawnLevelObject>,
     pub players: Vec<ConnectedPlayer>,
     /// Full game state encoded as a DeltaUpdate.
     pub game_state: DeltaUpdate,
@@ -124,7 +158,6 @@ pub struct DeltaUpdate {
     pub frame_number: FrameNumber,
     pub acknowledgments: (Option<FrameNumber>, u64),
     pub players: Vec<PlayerState>,
-    pub confirmed_actions: Vec<ConfirmedAction>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -139,15 +172,6 @@ pub struct PlayerState {
 pub struct RunnerInput {
     pub frame_number: FrameNumber,
     pub direction: Vec2,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ConfirmedAction {
-    /// ID of an action from a user's request.
-    pub id: ActionNetId,
-    /// Indicates which frame will contain the action.
-    /// If the value is set to `None`, the action was discarded by the server.
-    pub confirmed_frame: Option<FrameNumber>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

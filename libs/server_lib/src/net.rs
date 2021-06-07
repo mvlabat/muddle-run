@@ -3,16 +3,15 @@ use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
 use mr_shared_lib::{
     game::{
-        commands::{
-            DeferredPlayerQueues, DeferredQueue, DespawnPlayer, SpawnLevelObject, SpawnPlayer,
-        },
+        commands::{self, DeferredPlayerQueues, DeferredQueue},
         components::{PlayerDirection, Position, Spawned},
-        level::LevelState,
+        level::{LevelObject, LevelState},
     },
     messages::{
-        ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId,
-        PlayerState, ReliableClientMessage, ReliableServerMessage, RunnerInput, StartGame,
-        SwitchRole, UnreliableClientMessage, UnreliableServerMessage,
+        ConnectedPlayer, DeferredMessagesQueue, DeltaUpdate, DisconnectedPlayer, EntityNetId,
+        Message, PlayerInputs, PlayerNetId, PlayerState, ReliableClientMessage,
+        ReliableServerMessage, RunnerInput, SpawnLevelObject, StartGame, SwitchRole,
+        UnreliableClientMessage, UnreliableServerMessage,
     },
     net::{ConnectionState, ConnectionStatus, SessionId, CONNECTION_TIMEOUT_MILLIS},
     player::{random_name, Player, PlayerRole},
@@ -38,8 +37,11 @@ pub type PlayerConnections = Registry<PlayerNetId, u32>;
 pub struct UpdateParams<'a> {
     deferred_player_updates: ResMut<'a, DeferredPlayerQueues<RunnerInput>>,
     switch_role_requests: ResMut<'a, DeferredPlayerQueues<PlayerRole>>,
-    spawn_player_commands: ResMut<'a, DeferredQueue<SpawnPlayer>>,
-    despawn_player_commands: ResMut<'a, DeferredQueue<DespawnPlayer>>,
+    spawn_level_object_requests: ResMut<'a, DeferredPlayerQueues<SpawnLevelObject>>,
+    update_level_object_requests: ResMut<'a, DeferredPlayerQueues<LevelObject>>,
+    despawn_level_object_requests: ResMut<'a, DeferredPlayerQueues<EntityNetId>>,
+    spawn_player_commands: ResMut<'a, DeferredQueue<commands::SpawnPlayer>>,
+    despawn_player_commands: ResMut<'a, DeferredQueue<commands::DespawnPlayer>>,
 }
 
 #[derive(SystemParam)]
@@ -313,11 +315,13 @@ pub fn process_network_events(
                         player_net_id,
                         Player::new_with_nickname(PlayerRole::Runner, nickname),
                     );
-                    update_params.spawn_player_commands.push(SpawnPlayer {
-                        net_id: player_net_id,
-                        start_position: Vec2::ZERO,
-                        is_player_frame_simulated: false,
-                    });
+                    update_params
+                        .spawn_player_commands
+                        .push(commands::SpawnPlayer {
+                            net_id: player_net_id,
+                            start_position: Vec2::ZERO,
+                            is_player_frame_simulated: false,
+                        });
                     // Add an initial update to have something to extrapolate from.
                     update_params.deferred_player_updates.push(
                         player_net_id,
@@ -341,6 +345,69 @@ pub fn process_network_events(
                         .get_id(*handle)
                         .expect("Expected a registered player net id for an existing connection");
                     update_params.switch_role_requests.push(player_net_id, role);
+                }
+                ReliableClientMessage::SpawnLevelObject(spawn_level_object) => {
+                    log::info!(
+                        "Client ({}) requests to spawn a new object: {:?}",
+                        handle,
+                        spawn_level_object
+                    );
+                    let connection_state = network_params
+                        .connection_states
+                        .get_mut(handle)
+                        .expect("Expected a connection state for an existing connection");
+                    if !matches!(connection_state.status(), ConnectionStatus::Connected) {
+                        continue;
+                    }
+                    let player_net_id = network_params
+                        .player_connections
+                        .get_id(*handle)
+                        .expect("Expected a registered player net id for an existing connection");
+                    update_params
+                        .spawn_level_object_requests
+                        .push(player_net_id, spawn_level_object);
+                }
+                ReliableClientMessage::UpdateLevelObject(update_level_object) => {
+                    log::trace!(
+                        "Client ({}) requests to update an object: {:?}",
+                        handle,
+                        update_level_object
+                    );
+                    let connection_state = network_params
+                        .connection_states
+                        .get_mut(handle)
+                        .expect("Expected a connection state for an existing connection");
+                    if !matches!(connection_state.status(), ConnectionStatus::Connected) {
+                        continue;
+                    }
+                    let player_net_id = network_params
+                        .player_connections
+                        .get_id(*handle)
+                        .expect("Expected a registered player net id for an existing connection");
+                    update_params
+                        .update_level_object_requests
+                        .push(player_net_id, update_level_object);
+                }
+                ReliableClientMessage::DespawnLevelObject(despawned_level_object_net_id) => {
+                    log::trace!(
+                        "Client ({}) requests to despawn an object: {:?}",
+                        handle,
+                        despawned_level_object_net_id
+                    );
+                    let connection_state = network_params
+                        .connection_states
+                        .get_mut(handle)
+                        .expect("Expected a connection state for an existing connection");
+                    if !matches!(connection_state.status(), ConnectionStatus::Connected) {
+                        continue;
+                    }
+                    let player_net_id = network_params
+                        .player_connections
+                        .get_id(*handle)
+                        .expect("Expected a registered player net id for an existing connection");
+                    update_params
+                        .despawn_level_object_requests
+                        .push(player_net_id, despawned_level_object_net_id);
                 }
             }
         }
@@ -452,10 +519,12 @@ fn disconnect_players(
                     time.frame_number,
                     player_net_id.0
                 );
-                update_params.despawn_player_commands.push(DespawnPlayer {
-                    net_id: player_net_id,
-                    frame_number: time.frame_number,
-                });
+                update_params
+                    .despawn_player_commands
+                    .push(commands::DespawnPlayer {
+                        net_id: player_net_id,
+                        frame_number: time.frame_number,
+                    });
                 players
                     .get_mut(&player_net_id)
                     .expect("Expected a registered player with an existing player_net_id")
@@ -484,6 +553,13 @@ fn disconnect_players(
     }
 }
 
+#[derive(SystemParam)]
+pub struct DeferredMessageQueues<'a> {
+    switch_role_messages: ResMut<'a, DeferredMessagesQueue<SwitchRole>>,
+    update_level_object_messages: ResMut<'a, DeferredMessagesQueue<commands::SpawnLevelObject>>,
+    despawn_level_object_messages: ResMut<'a, DeferredMessagesQueue<commands::DespawnLevelObject>>,
+}
+
 pub fn send_network_updates(
     mut network_params: NetworkParams,
     time: Res<GameTime>,
@@ -491,7 +567,7 @@ pub fn send_network_updates(
     players: Res<HashMap<PlayerNetId, Player>>,
     player_entities: Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
     players_registry: Res<EntityRegistry<PlayerNetId>>,
-    mut switch_role_messages: ResMut<DeferredQueue<SwitchRole>>,
+    mut deferred_message_queues: DeferredMessageQueues,
 ) {
     log::trace!("Sending network updates (frame: {})", time.frame_number);
 
@@ -536,11 +612,37 @@ pub fn send_network_updates(
         )
     }
 
-    for switch_role_message in switch_role_messages.drain().into_iter() {
+    for switch_role_message in deferred_message_queues
+        .switch_role_messages
+        .drain()
+        .into_iter()
+    {
         broadcast_reliable_game_message(
             &mut network_params.net,
             &network_params.connection_states,
             ReliableServerMessage::SwitchRole(switch_role_message),
+        );
+    }
+    for update_level_object_message in deferred_message_queues
+        .update_level_object_messages
+        .drain()
+        .into_iter()
+    {
+        broadcast_reliable_game_message(
+            &mut network_params.net,
+            &network_params.connection_states,
+            ReliableServerMessage::UpdateLevelObject(update_level_object_message),
+        );
+    }
+    for despawn_level_object_message in deferred_message_queues
+        .despawn_level_object_messages
+        .drain()
+        .into_iter()
+    {
+        broadcast_reliable_game_message(
+            &mut network_params.net,
+            &network_params.connection_states,
+            ReliableServerMessage::DespawnLevelObject(despawn_level_object_message),
         );
     }
 }
@@ -630,7 +732,6 @@ fn broadcast_delta_update_messages(
                     })
             })
             .collect(),
-        confirmed_actions: vec![],
     });
 
     if let Err(err) = net.send_message(
@@ -729,7 +830,7 @@ fn broadcast_start_game_messages(
             objects: level_state
                 .objects
                 .iter()
-                .map(|level_object| SpawnLevelObject {
+                .map(|(_, level_object)| commands::SpawnLevelObject {
                     object: level_object.clone(),
                     frame_number: time.frame_number,
                 })
@@ -745,7 +846,6 @@ fn broadcast_start_game_messages(
                 frame_number: time.frame_number,
                 acknowledgments: connection_state.incoming_acknowledgments(),
                 players: players_state,
-                confirmed_actions: Vec::new(),
             },
         });
 

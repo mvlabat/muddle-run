@@ -3,7 +3,7 @@ use crate::{
         DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnLevelObject,
         SpawnPlayer, SwitchPlayerRole,
     },
-    messages::{EntityNetId, PlayerNetId, SwitchRole},
+    messages::{DeferredMessagesQueue, EntityNetId, PlayerNetId, SwitchRole},
     player::{Player, PlayerRole, PlayerUpdates},
     registry::EntityRegistry,
     util::dedup_by_key_unsorted,
@@ -97,7 +97,7 @@ pub fn switch_player_role(
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut spawn_player_commands: ResMut<DeferredQueue<SpawnPlayer>>,
     mut despawn_player_commands: ResMut<DeferredQueue<DespawnPlayer>>,
-    mut switch_role_messages: ResMut<DeferredQueue<SwitchRole>>,
+    mut switch_role_messages: ResMut<DeferredMessagesQueue<SwitchRole>>,
 ) {
     let mut switch_role_commands = switch_role_commands.drain();
     // We want to keep the last command instead of the first one.

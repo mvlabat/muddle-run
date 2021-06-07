@@ -1,9 +1,10 @@
 use crate::{game::level_objects::PlaneDesc, messages::EntityNetId};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct LevelState {
-    pub objects: Vec<LevelObject>,
+    pub objects: HashMap<EntityNetId, LevelObject>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

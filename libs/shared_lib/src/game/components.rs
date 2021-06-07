@@ -4,8 +4,12 @@ use crate::{
 };
 use bevy::math::Vec2;
 
-// NOTE: After adding new components, make sure that related entities are cleaned up in the
-// `restart_game` system.
+// NOTE: After adding components for new archetypes, make sure that related entities are cleaned up
+// in the `restart_game` system.
+
+pub struct PlayerTag;
+
+pub struct LevelObjectTag;
 
 /// Represents Player's input (not an actual direction of entity's movement).
 pub struct PlayerDirection {
@@ -46,6 +50,7 @@ pub struct PredictedPosition {
 
 /// The purpose of this component is providing a frame number of when a component was spawned,
 /// to be able to avoid processing an entity in case rewind game state during lag compensation.
+#[derive(Clone)]
 pub struct Spawned {
     /// We store an option since FrameNumber represents a wrapped counter (i.e. cycling counter).
     /// If a component gets old enough, we set the timestamp to `None`, as we become sure that

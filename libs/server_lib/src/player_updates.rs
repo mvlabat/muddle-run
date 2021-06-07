@@ -5,10 +5,17 @@ use bevy::{
 };
 use mr_shared_lib::{
     framebuffer::FrameNumber,
-    game::commands::{DeferredPlayerQueues, DeferredQueue, SwitchPlayerRole},
-    messages::RunnerInput,
+    game::{
+        commands::{
+            DeferredPlayerQueues, DeferredQueue, DespawnLevelObject, SpawnLevelObject,
+            SwitchPlayerRole,
+        },
+        level::{LevelObject, LevelState},
+    },
+    messages::{self, DeferredMessagesQueue, EntityNetId, PlayerNetId, RunnerInput},
     net::ConnectionState,
-    player::{PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
+    player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
+    registry::IncrementId,
     util::dedup_by_key_unsorted,
     GameTime, SimulationTime, SIMULATIONS_PER_SECOND,
 };
@@ -115,6 +122,176 @@ pub fn process_switch_role_requests(
                 frame_number: time.frame_number,
                 is_player_frame_simulated: false,
             });
+        }
+    }
+}
+
+pub fn process_spawn_level_object_requests(
+    time: Res<GameTime>,
+    players: Res<HashMap<PlayerNetId, Player>>,
+    level_state: Res<LevelState>,
+    mut spawn_level_object_requests: ResMut<DeferredPlayerQueues<messages::SpawnLevelObject>>,
+    mut entity_net_id_counter: ResMut<EntityNetId>,
+    mut update_level_object_commands: ResMut<DeferredQueue<SpawnLevelObject>>,
+    mut update_level_object_messages: ResMut<DeferredMessagesQueue<SpawnLevelObject>>,
+) {
+    'player_requests: for (player_net_id, spawn_level_object_requests) in
+        spawn_level_object_requests.drain()
+    {
+        match players.get(&player_net_id) {
+            Some(Player {
+                role: PlayerRole::Builder,
+                ..
+            }) => {}
+            Some(_) => {
+                log::warn!(
+                    "Ignoring Player ({}) spawn requests: player is not a builder",
+                    player_net_id.0
+                );
+                continue 'player_requests;
+            }
+            None => {
+                log::error!(
+                    "Ignoring Player ({}) spawn requests: player is not found",
+                    player_net_id.0
+                );
+                continue 'player_requests;
+            }
+        }
+
+        for spawn_level_object_request in spawn_level_object_requests {
+            let desc = match spawn_level_object_request {
+                messages::SpawnLevelObject::New(desc) => desc,
+                messages::SpawnLevelObject::Copy(entity_net_id) => {
+                    if let Some(object) = level_state.objects.get(&entity_net_id) {
+                        object.desc.clone()
+                    } else {
+                        log::warn!(
+                            "Ignoring Player ({}) spawn request: copied level object ({}) doesn't exist",
+                            player_net_id.0,
+                            entity_net_id.0
+                        );
+                        continue;
+                    }
+                }
+            };
+            let spawn_level_object = SpawnLevelObject {
+                object: LevelObject {
+                    net_id: entity_net_id_counter.increment(),
+                    desc,
+                },
+                frame_number: time.frame_number,
+            };
+            update_level_object_commands.push(spawn_level_object.clone());
+            update_level_object_messages.push(spawn_level_object);
+        }
+    }
+}
+
+pub fn process_update_level_object_requests(
+    time: Res<GameTime>,
+    players: Res<HashMap<PlayerNetId, Player>>,
+    level_state: Res<LevelState>,
+    mut update_level_object_requests: ResMut<DeferredPlayerQueues<LevelObject>>,
+    mut spawn_level_object_commands: ResMut<DeferredQueue<SpawnLevelObject>>,
+    mut update_level_object_messages: ResMut<DeferredMessagesQueue<SpawnLevelObject>>,
+) {
+    'player_requests: for (player_net_id, update_level_object_requests) in
+        update_level_object_requests.drain()
+    {
+        match players.get(&player_net_id) {
+            Some(Player {
+                role: PlayerRole::Builder,
+                ..
+            }) => {}
+            Some(_) => {
+                log::warn!(
+                    "Ignoring Player ({}) update requests: player is not a builder",
+                    player_net_id.0
+                );
+                continue 'player_requests;
+            }
+            None => {
+                log::error!(
+                    "Ignoring Player ({}) update requests: player is not found",
+                    player_net_id.0
+                );
+                continue 'player_requests;
+            }
+        }
+
+        for update_level_object_request in update_level_object_requests {
+            if !level_state
+                .objects
+                .contains_key(&update_level_object_request.net_id)
+            {
+                log::warn!(
+                    "Ignoring Player ({}) update request: updated level object ({}) doesn't exist",
+                    player_net_id.0,
+                    update_level_object_request.net_id.0
+                );
+                continue;
+            }
+            let spawn_level_object = SpawnLevelObject {
+                object: update_level_object_request,
+                frame_number: time.frame_number,
+            };
+            spawn_level_object_commands.push(spawn_level_object.clone());
+            update_level_object_messages.push(spawn_level_object);
+        }
+    }
+}
+
+pub fn process_despawn_level_object_requests(
+    time: Res<GameTime>,
+    players: Res<HashMap<PlayerNetId, Player>>,
+    level_state: Res<LevelState>,
+    mut despawn_level_object_requests: ResMut<DeferredPlayerQueues<EntityNetId>>,
+    mut despawn_level_object_commands: ResMut<DeferredQueue<DespawnLevelObject>>,
+    mut despawn_level_object_messages: ResMut<DeferredMessagesQueue<DespawnLevelObject>>,
+) {
+    'player_requests: for (player_net_id, despawn_level_object_requests) in
+        despawn_level_object_requests.drain()
+    {
+        match players.get(&player_net_id) {
+            Some(Player {
+                role: PlayerRole::Builder,
+                ..
+            }) => {}
+            Some(_) => {
+                log::warn!(
+                    "Ignoring Player ({}) despawn requests: player is not a builder",
+                    player_net_id.0
+                );
+                continue 'player_requests;
+            }
+            None => {
+                log::error!(
+                    "Ignoring Player ({}) despawn requests: player is not found",
+                    player_net_id.0
+                );
+                continue 'player_requests;
+            }
+        }
+
+        for despawned_level_object_net_id in despawn_level_object_requests {
+            if !level_state
+                .objects
+                .contains_key(&despawned_level_object_net_id)
+            {
+                log::warn!(
+                    "Ignoring Player ({}) despawn request: updated level object ({}) doesn't exist",
+                    player_net_id.0,
+                    despawned_level_object_net_id.0
+                );
+                continue;
+            }
+            let despawn_level_object = DespawnLevelObject {
+                net_id: despawned_level_object_net_id,
+                frame_number: time.frame_number,
+            };
+            despawn_level_object_commands.push(despawn_level_object.clone());
+            despawn_level_object_messages.push(despawn_level_object);
         }
     }
 }

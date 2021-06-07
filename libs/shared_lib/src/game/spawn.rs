@@ -3,8 +3,10 @@ use crate::{
         client_factories::{
             ClientFactory, PbrClientParams, PlaneClientFactory, PlayerClientFactory,
         },
-        commands::{DeferredQueue, DespawnPlayer, SpawnLevelObject, SpawnPlayer},
-        components::{PlayerDirection, Position, Spawned},
+        commands::{
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnLevelObject, SpawnPlayer,
+        },
+        components::{LevelObjectTag, PlayerDirection, PlayerTag, Position, Spawned},
         level::{LevelObjectDesc, LevelState},
     },
     messages::{EntityNetId, PlayerNetId},
@@ -62,6 +64,7 @@ pub fn spawn_players(
             &(command.start_position, command.is_player_frame_simulated),
         );
         entity_commands
+            .insert(PlayerTag)
             .insert(
                 RigidBodyBuilder::new_dynamic()
                     .translation(0.0, PLAYER_SIZE / 2.0, 0.0)
@@ -97,7 +100,7 @@ pub fn despawn_players(
     mut commands: Commands,
     mut despawn_player_commands: ResMut<DeferredQueue<DespawnPlayer>>,
     player_entities: Res<EntityRegistry<PlayerNetId>>,
-    mut players: Query<(Entity, &mut Spawned, &PlayerDirection)>,
+    mut players: Query<(Entity, &mut Spawned, &PlayerTag)>,
 ) {
     for command in despawn_player_commands.drain() {
         let entity = match player_entities.get_entity(command.net_id) {
@@ -114,8 +117,7 @@ pub fn despawn_players(
         let mut spawned = match players.get_mut(entity) {
             Ok((_, spawned, _)) => spawned,
             Err(err) => {
-                // TODO: investigate.
-                log::error!("A despawned entity doesn't exist: {:?}", err);
+                log::error!("A despawned player entity doesn't exist: {:?}", err);
                 continue;
             }
         };
@@ -138,24 +140,34 @@ pub fn despawn_players(
     }
 }
 
-pub fn spawn_level_objects(
+pub fn update_level_objects(
     mut commands: Commands,
     mut pbr_client_params: PbrClientParams,
-    mut spawn_level_object_commands: ResMut<DeferredQueue<SpawnLevelObject>>,
+    mut update_level_object_commands: ResMut<DeferredQueue<SpawnLevelObject>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
     mut level_state: ResMut<LevelState>,
+    mut level_objects: Query<(Entity, &mut Spawned, &LevelObjectTag)>,
 ) {
-    for command in spawn_level_object_commands.drain() {
-        if object_entities.get_entity(command.object.net_id).is_some() {
-            log::debug!(
-                "Object ({}) entity is already registered, skipping",
-                command.object.net_id.0
+    for command in update_level_object_commands.drain() {
+        let mut spawned_component = Spawned::new(command.frame_number);
+        if let Some(existing_entity) = object_entities.get_entity(command.object.net_id) {
+            log::trace!(
+                "Replacing an object ({}): {:?}",
+                command.object.net_id.0,
+                command.object
             );
-            continue;
+            object_entities.remove_by_id(command.object.net_id);
+            commands.entity(existing_entity).despawn();
+            let (_, spawned, _) = level_objects
+                .get_mut(existing_entity)
+                .expect("Expected a registered level object entity to exist");
+            spawned_component = spawned.clone();
         }
 
         log::info!("Spawning an object: {:?}", command);
-        level_state.objects.push(command.object.clone());
+        level_state
+            .objects
+            .insert(command.object.net_id, command.object.clone());
         let mut entity_commands = commands.spawn();
         match command.object.desc {
             LevelObjectDesc::Plane(plane) => PlaneClientFactory::insert_components(
@@ -164,8 +176,64 @@ pub fn spawn_level_objects(
                 &(plane, cfg!(feature = "client")),
             ),
         };
-        entity_commands.insert(Spawned::new(command.frame_number));
+        entity_commands
+            .insert(LevelObjectTag)
+            .insert(spawned_component);
         object_entities.register(command.object.net_id, entity_commands.id());
+    }
+}
+
+pub fn despawn_level_objects(
+    mut commands: Commands,
+    mut despawn_level_object_commands: ResMut<DeferredQueue<DespawnLevelObject>>,
+    object_entities: Res<EntityRegistry<EntityNetId>>,
+    mut level_state: ResMut<LevelState>,
+    mut level_objects: Query<(Entity, &mut Spawned, &LevelObjectTag)>,
+) {
+    for command in despawn_level_object_commands.drain() {
+        let entity = match object_entities.get_entity(command.net_id) {
+            Some(entity) => entity,
+            None => {
+                log::error!(
+                    "Level object ({}) entity doesn't exist, skipping (frame: {})",
+                    command.net_id.0,
+                    command.frame_number
+                );
+                continue;
+            }
+        };
+        let mut spawned = match level_objects.get_mut(entity) {
+            Ok((_, spawned, _)) => spawned,
+            Err(err) => {
+                log::error!("A despawned level object entity doesn't exist: {:?}", err);
+                continue;
+            }
+        };
+        if !spawned.is_spawned(command.frame_number) {
+            log::debug!(
+                "Level object ({}) is not spawned at frame {}, skipping the despawn command",
+                command.net_id.0,
+                command.frame_number
+            );
+            continue;
+        }
+
+        log::info!(
+            "Despawning level object {} (frame {})",
+            command.net_id.0,
+            command.frame_number
+        );
+        match level_state
+            .objects
+            .remove(&command.net_id)
+            .expect("Expected a removed level object to exist in the level state")
+            .desc
+        {
+            LevelObjectDesc::Plane(_) => {
+                PlaneClientFactory::remove_components(&mut commands.entity(entity))
+            }
+        }
+        spawned.set_despawned_at(command.frame_number);
     }
 }
 
