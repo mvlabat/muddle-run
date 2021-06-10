@@ -89,7 +89,7 @@ pub fn process_network_events(
                 log::info!("Disconnected: {}", handle);
                 let connection_state = network_params
                     .connection_states
-                    .get_mut(&handle)
+                    .get_mut(handle)
                     .expect("Expected a connection when receiving a Disconnect event");
                 if matches!(
                     connection_state.status(),
@@ -736,10 +736,10 @@ fn broadcast_delta_update_messages(
                     .and_then(|entity| {
                         create_player_state(
                             player_net_id,
-                            &time,
+                            time,
                             connection_state,
                             entity,
-                            &player_entities,
+                            player_entities,
                         )
                     })
             })
@@ -769,7 +769,7 @@ fn send_new_player_messages(
     // Broadcasting updates about new connected players.
     for (connected_player_net_id, _connection_handle) in new_player_connections.iter() {
         let player = players
-            .get(&connected_player_net_id)
+            .get(connected_player_net_id)
             .expect("Expected a registered Player");
         let message = ReliableServerMessage::ConnectedPlayer(ConnectedPlayer {
             net_id: *connected_player_net_id,
@@ -820,10 +820,10 @@ fn broadcast_start_game_messages(
                         } else {
                             create_player_state(
                                 iter_player_net_id,
-                                &time,
+                                time,
                                 connection_state,
                                 entity,
-                                &player_entities,
+                                player_entities,
                             )
                         }
                     })

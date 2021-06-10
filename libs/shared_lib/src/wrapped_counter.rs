@@ -97,7 +97,7 @@ where
     }
 }
 
-unsafe impl<T: 'static + Integer> std::iter::Step for WrappedCounter<T>
+impl<T: 'static + Integer> std::iter::Step for WrappedCounter<T>
 where
     u8: AsPrimitive<T>,
     usize: AsPrimitive<T>,

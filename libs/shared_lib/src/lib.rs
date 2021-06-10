@@ -1,6 +1,5 @@
 #![feature(hash_drain_filter)]
 #![feature(step_trait)]
-#![feature(step_trait_ext)]
 #![feature(trait_alias)]
 
 use crate::{
