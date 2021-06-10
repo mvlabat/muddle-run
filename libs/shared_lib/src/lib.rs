@@ -7,8 +7,8 @@ use crate::{
     framebuffer::FrameNumber,
     game::{
         commands::{
-            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnLevelObject,
-            SpawnPlayer, SwitchPlayerRole,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
+            SwitchPlayerRole, UpdateLevelObject,
         },
         components::PlayerFrameSimulated,
         level::LevelState,
@@ -246,7 +246,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         resources.get_resource_or_insert_with(DeferredQueue::<RestartGame>::default);
         resources.get_resource_or_insert_with(DeferredQueue::<SpawnPlayer>::default);
         resources.get_resource_or_insert_with(DeferredQueue::<DespawnPlayer>::default);
-        resources.get_resource_or_insert_with(DeferredQueue::<SpawnLevelObject>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<UpdateLevelObject>::default);
         resources.get_resource_or_insert_with(DeferredQueue::<DespawnLevelObject>::default);
         resources.get_resource_or_insert_with(DeferredQueue::<SwitchPlayerRole>::default);
         resources.get_resource_or_insert_with(EntityRegistry::<PlayerNetId>::default);

@@ -1,5 +1,5 @@
 use crate::{
-    input::{MouseRay, PlayerRequestsQueue},
+    input::{LevelObjectRequestsQueue, MouseRay, PlayerRequestsQueue},
     net::{maintain_connection, process_network_events, send_network_updates, send_requests},
     ui::debug_ui::update_debug_ui_state,
 };
@@ -21,13 +21,14 @@ use bevy::{
     pbr::{Light, LightBundle},
     render::entity::PerspectiveCameraBundle,
     transform::components::Transform,
+    utils::HashMap,
 };
 use bevy_egui::EguiPlugin;
 use chrono::{DateTime, Utc};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
-    messages::PlayerNetId,
-    net::{ConnectionState, ConnectionStatus},
+    messages::{EntityNetId, PlayerNetId},
+    net::{ConnectionState, ConnectionStatus, MessageId},
     GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
     SIMULATIONS_PER_SECOND,
 };
@@ -79,7 +80,8 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::update_ui_scale_factor.system())
             .add_system(ui::debug_ui::debug_ui.system())
             .add_system(ui::overlay_ui::connection_status_overlay.system())
-            .add_system(ui::debug_ui::inspect_object.system());
+            .add_system(ui::debug_ui::inspect_object.system())
+            .add_system(ui::builder_ui::builder_ui.system());
 
         let world = builder.world_mut();
         world.get_resource_or_insert_with(InitialRtt::default);
@@ -92,6 +94,8 @@ impl Plugin for MuddleClientPlugin {
         world.get_resource_or_insert_with(CurrentPlayerNetId::default);
         world.get_resource_or_insert_with(ConnectionState::default);
         world.get_resource_or_insert_with(PlayerRequestsQueue::default);
+        world.get_resource_or_insert_with(LevelObjectRequestsQueue::default);
+        world.get_resource_or_insert_with(LevelObjectCorrelations::default);
         world.get_resource_or_insert_with(MouseRay::default);
     }
 }
@@ -166,6 +170,30 @@ impl Default for GameTicksPerSecond {
 
 #[derive(Default)]
 pub struct CurrentPlayerNetId(pub Option<PlayerNetId>);
+
+#[derive(Default)]
+pub struct LevelObjectCorrelations {
+    correlations: HashMap<MessageId, EntityNetId>,
+    last_correlation_id: MessageId,
+}
+
+impl LevelObjectCorrelations {
+    pub fn next_correlation_id(&mut self) -> MessageId {
+        let old = self.last_correlation_id;
+        self.last_correlation_id += MessageId::new(1);
+        old
+    }
+
+    pub fn correlate(&mut self, message_id: MessageId, entity_net_id: EntityNetId) {
+        self.correlations.insert(message_id, entity_net_id);
+    }
+
+    pub fn query(&mut self, message_id: MessageId) -> Option<EntityNetId> {
+        let entity_net_id = self.correlations.get(&message_id).copied();
+        self.correlations.clear();
+        entity_net_id
+    }
+}
 
 pub struct MainCameraEntity(pub Entity);
 

@@ -7,8 +7,8 @@ use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
         commands::{
-            DeferredPlayerQueues, DeferredQueue, DespawnLevelObject, SpawnLevelObject,
-            SwitchPlayerRole,
+            DeferredPlayerQueues, DeferredQueue, DespawnLevelObject, SwitchPlayerRole,
+            UpdateLevelObject,
         },
         level::{LevelObject, LevelState},
     },
@@ -130,10 +130,12 @@ pub fn process_spawn_level_object_requests(
     time: Res<GameTime>,
     players: Res<HashMap<PlayerNetId, Player>>,
     level_state: Res<LevelState>,
-    mut spawn_level_object_requests: ResMut<DeferredPlayerQueues<messages::SpawnLevelObject>>,
+    mut spawn_level_object_requests: ResMut<
+        DeferredPlayerQueues<messages::SpawnLevelObjectRequest>,
+    >,
     mut entity_net_id_counter: ResMut<EntityNetId>,
-    mut update_level_object_commands: ResMut<DeferredQueue<SpawnLevelObject>>,
-    mut update_level_object_messages: ResMut<DeferredMessagesQueue<SpawnLevelObject>>,
+    mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
+    mut spawn_level_object_messages: ResMut<DeferredMessagesQueue<messages::SpawnLevelObject>>,
 ) {
     'player_requests: for (player_net_id, spawn_level_object_requests) in
         spawn_level_object_requests.drain()
@@ -160,9 +162,9 @@ pub fn process_spawn_level_object_requests(
         }
 
         for spawn_level_object_request in spawn_level_object_requests {
-            let desc = match spawn_level_object_request {
-                messages::SpawnLevelObject::New(desc) => desc,
-                messages::SpawnLevelObject::Copy(entity_net_id) => {
+            let desc = match spawn_level_object_request.body {
+                messages::SpawnLevelObjectRequestBody::New(desc) => desc,
+                messages::SpawnLevelObjectRequestBody::Copy(entity_net_id) => {
                     if let Some(object) = level_state.objects.get(&entity_net_id) {
                         object.desc.clone()
                     } else {
@@ -175,7 +177,7 @@ pub fn process_spawn_level_object_requests(
                     }
                 }
             };
-            let spawn_level_object = SpawnLevelObject {
+            let spawn_level_object = UpdateLevelObject {
                 object: LevelObject {
                     net_id: entity_net_id_counter.increment(),
                     desc,
@@ -183,7 +185,10 @@ pub fn process_spawn_level_object_requests(
                 frame_number: time.frame_number,
             };
             update_level_object_commands.push(spawn_level_object.clone());
-            update_level_object_messages.push(spawn_level_object);
+            spawn_level_object_messages.push(messages::SpawnLevelObject {
+                correlation_id: spawn_level_object_request.correlation_id,
+                command: spawn_level_object,
+            });
         }
     }
 }
@@ -193,8 +198,8 @@ pub fn process_update_level_object_requests(
     players: Res<HashMap<PlayerNetId, Player>>,
     level_state: Res<LevelState>,
     mut update_level_object_requests: ResMut<DeferredPlayerQueues<LevelObject>>,
-    mut spawn_level_object_commands: ResMut<DeferredQueue<SpawnLevelObject>>,
-    mut update_level_object_messages: ResMut<DeferredMessagesQueue<SpawnLevelObject>>,
+    mut spawn_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
+    mut update_level_object_messages: ResMut<DeferredMessagesQueue<UpdateLevelObject>>,
 ) {
     'player_requests: for (player_net_id, update_level_object_requests) in
         update_level_object_requests.drain()
@@ -232,7 +237,7 @@ pub fn process_update_level_object_requests(
                 );
                 continue;
             }
-            let spawn_level_object = SpawnLevelObject {
+            let spawn_level_object = UpdateLevelObject {
                 object: update_level_object_request,
                 frame_number: time.frame_number,
             };

@@ -9,7 +9,8 @@ use bevy::{
 use bevy_rapier3d::{na, rapier::geometry::Ray};
 use chrono::{DateTime, Utc};
 use mr_shared_lib::{
-    messages::PlayerNetId,
+    game::level::LevelObject,
+    messages::{EntityNetId, PlayerNetId, SpawnLevelObjectRequest},
     player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
@@ -21,6 +22,14 @@ const SWITCH_ROLE_COOLDOWN_SECS: i64 = 1;
 #[derive(Default)]
 pub struct PlayerRequestsQueue {
     pub switch_role: Vec<PlayerRole>,
+}
+
+/// Is drained by `send_requests`.
+#[derive(Default)]
+pub struct LevelObjectRequestsQueue {
+    pub spawn_requests: Vec<SpawnLevelObjectRequest>,
+    pub update_requests: Vec<LevelObject>,
+    pub despawn_requests: Vec<EntityNetId>,
 }
 
 #[derive(SystemParam)]

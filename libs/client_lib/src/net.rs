@@ -1,5 +1,6 @@
 use crate::{
-    input::PlayerRequestsQueue, CurrentPlayerNetId, EstimatedServerTime, InitialRtt, PlayerDelay,
+    input::{LevelObjectRequestsQueue, PlayerRequestsQueue},
+    CurrentPlayerNetId, EstimatedServerTime, InitialRtt, LevelObjectCorrelations, PlayerDelay,
     TargetFramesAhead,
 };
 use bevy::{ecs::system::SystemParam, log, prelude::*};
@@ -9,8 +10,8 @@ use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
         commands::{
-            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnLevelObject,
-            SpawnPlayer, SwitchPlayerRole,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
+            SwitchPlayerRole, UpdateLevelObject,
         },
         components::PlayerDirection,
     },
@@ -46,7 +47,8 @@ pub struct UpdateParams<'a> {
     initial_rtt: ResMut<'a, InitialRtt>,
     player_updates: ResMut<'a, PlayerUpdates>,
     restart_game_commands: ResMut<'a, DeferredQueue<RestartGame>>,
-    spawn_level_object_commands: ResMut<'a, DeferredQueue<SpawnLevelObject>>,
+    level_object_correlations: ResMut<'a, LevelObjectCorrelations>,
+    spawn_level_object_commands: ResMut<'a, DeferredQueue<UpdateLevelObject>>,
     despawn_level_object_commands: ResMut<'a, DeferredQueue<DespawnLevelObject>>,
     spawn_player_commands: ResMut<'a, DeferredQueue<SpawnPlayer>>,
     despawn_player_commands: ResMut<'a, DeferredQueue<DespawnPlayer>>,
@@ -322,13 +324,25 @@ pub fn process_network_events(
                 ReliableServerMessage::DisconnectedPlayer(disconnected_player) => {
                     process_disconnected_player_message(disconnected_player, &mut players);
                 }
-                ReliableServerMessage::UpdateLevelObject(spawn_level_object) => {
+                ReliableServerMessage::SpawnLevelObject(spawn_level_object) => {
                     update_params
                         .simulation_time
-                        .rewind(spawn_level_object.frame_number);
+                        .rewind(spawn_level_object.command.frame_number);
+                    update_params.level_object_correlations.correlate(
+                        spawn_level_object.correlation_id,
+                        spawn_level_object.command.object.net_id,
+                    );
                     update_params
                         .spawn_level_object_commands
-                        .push(spawn_level_object);
+                        .push(spawn_level_object.command);
+                }
+                ReliableServerMessage::UpdateLevelObject(update_level_object) => {
+                    update_params
+                        .simulation_time
+                        .rewind(update_level_object.frame_number);
+                    update_params
+                        .spawn_level_object_commands
+                        .push(update_level_object);
                 }
                 ReliableServerMessage::DespawnLevelObject(despawn_level_object) => {
                     update_params
@@ -550,6 +564,7 @@ pub fn send_network_updates(
 pub fn send_requests(
     mut network_params: NetworkParams,
     mut player_requests: ResMut<PlayerRequestsQueue>,
+    mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
 ) {
     let (connection_handle, _) = match network_params.net.connections.iter_mut().next() {
         Some((&handle, connection)) => (handle, connection.remote_address()),
@@ -570,6 +585,39 @@ pub fn send_requests(
             Message {
                 session_id: network_params.connection_state.session_id,
                 message: ReliableClientMessage::SwitchRole(switch_role_request),
+            },
+        ) {
+            log::error!("Failed to send SwitchRole message: {:?}", err);
+        }
+    }
+    for spawn_request in std::mem::take(&mut level_object_requests.spawn_requests) {
+        if let Err(err) = network_params.net.send_message(
+            connection_handle,
+            Message {
+                session_id: network_params.connection_state.session_id,
+                message: ReliableClientMessage::SpawnLevelObject(spawn_request),
+            },
+        ) {
+            log::error!("Failed to send SwitchRole message: {:?}", err);
+        }
+    }
+    for update_request in std::mem::take(&mut level_object_requests.update_requests) {
+        if let Err(err) = network_params.net.send_message(
+            connection_handle,
+            Message {
+                session_id: network_params.connection_state.session_id,
+                message: ReliableClientMessage::UpdateLevelObject(update_request),
+            },
+        ) {
+            log::error!("Failed to send SwitchRole message: {:?}", err);
+        }
+    }
+    for despawn_request in std::mem::take(&mut level_object_requests.despawn_requests) {
+        if let Err(err) = network_params.net.send_message(
+            connection_handle,
+            Message {
+                session_id: network_params.connection_state.session_id,
+                message: ReliableClientMessage::DespawnLevelObject(despawn_request),
             },
         ) {
             log::error!("Failed to send SwitchRole message: {:?}", err);

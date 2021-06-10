@@ -2,6 +2,7 @@ use crate::{
     framebuffer::FrameNumber,
     game::{
         commands,
+        commands::UpdateLevelObject,
         level::{LevelObject, LevelObjectDesc},
     },
     net::{MessageId, SessionId},
@@ -33,6 +34,7 @@ impl<T: Serialize> DeferredMessagesQueue<T> {
     }
 }
 
+// TODO: refactor to be a part of entity registry, implement reclaiming ids of removed entities.
 #[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct EntityNetId(pub u16);
 
@@ -44,21 +46,11 @@ impl IncrementId for EntityNetId {
     }
 }
 
+// TODO: refactor to be a part of player registry, implement reclaiming ids of removed players.
 #[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct PlayerNetId(pub u16);
 
 impl IncrementId for PlayerNetId {
-    fn increment(&mut self) -> Self {
-        let old = *self;
-        self.0 += 1;
-        old
-    }
-}
-
-#[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct ActionNetId(pub u16);
-
-impl IncrementId for ActionNetId {
     fn increment(&mut self) -> Self {
         let old = *self;
         self.0 += 1;
@@ -85,13 +77,19 @@ pub enum ReliableClientMessage {
     /// Is sent as a response to server's `UnreliableServerMessage::Handshake`.
     Handshake(MessageId),
     SwitchRole(PlayerRole),
-    SpawnLevelObject(SpawnLevelObject),
+    SpawnLevelObject(SpawnLevelObjectRequest),
     UpdateLevelObject(LevelObject),
     DespawnLevelObject(EntityNetId),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum SpawnLevelObject {
+pub struct SpawnLevelObjectRequest {
+    pub correlation_id: MessageId,
+    pub body: SpawnLevelObjectRequestBody,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum SpawnLevelObjectRequestBody {
     New(LevelObjectDesc),
     Copy(EntityNetId),
 }
@@ -104,7 +102,8 @@ pub enum ReliableServerMessage {
     StartGame(StartGame),
     ConnectedPlayer(ConnectedPlayer),
     DisconnectedPlayer(DisconnectedPlayer),
-    UpdateLevelObject(commands::SpawnLevelObject),
+    SpawnLevelObject(SpawnLevelObject),
+    UpdateLevelObject(commands::UpdateLevelObject),
     DespawnLevelObject(commands::DespawnLevelObject),
     SwitchRole(SwitchRole),
     Disconnect,
@@ -136,7 +135,7 @@ pub struct StartGame {
     pub handshake_id: MessageId,
     pub net_id: PlayerNetId,
     pub nickname: String,
-    pub objects: Vec<commands::SpawnLevelObject>,
+    pub objects: Vec<commands::UpdateLevelObject>,
     pub players: Vec<ConnectedPlayer>,
     /// Full game state encoded as a DeltaUpdate.
     pub game_state: DeltaUpdate,
@@ -172,6 +171,12 @@ pub struct PlayerState {
 pub struct RunnerInput {
     pub frame_number: FrameNumber,
     pub direction: Vec2,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct SpawnLevelObject {
+    pub correlation_id: MessageId,
+    pub command: UpdateLevelObject,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

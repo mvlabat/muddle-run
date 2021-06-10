@@ -55,7 +55,7 @@ pub struct DespawnPlayer {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct SpawnLevelObject {
+pub struct UpdateLevelObject {
     pub object: LevelObject,
     pub frame_number: FrameNumber,
 }

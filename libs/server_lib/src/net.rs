@@ -10,8 +10,8 @@ use mr_shared_lib::{
     messages::{
         ConnectedPlayer, DeferredMessagesQueue, DeltaUpdate, DisconnectedPlayer, EntityNetId,
         Message, PlayerInputs, PlayerNetId, PlayerState, ReliableClientMessage,
-        ReliableServerMessage, RunnerInput, SpawnLevelObject, StartGame, SwitchRole,
-        UnreliableClientMessage, UnreliableServerMessage,
+        ReliableServerMessage, RunnerInput, SpawnLevelObject, SpawnLevelObjectRequest, StartGame,
+        SwitchRole, UnreliableClientMessage, UnreliableServerMessage,
     },
     net::{ConnectionState, ConnectionStatus, SessionId, CONNECTION_TIMEOUT_MILLIS},
     player::{random_name, Player, PlayerRole},
@@ -37,7 +37,7 @@ pub type PlayerConnections = Registry<PlayerNetId, u32>;
 pub struct UpdateParams<'a> {
     deferred_player_updates: ResMut<'a, DeferredPlayerQueues<RunnerInput>>,
     switch_role_requests: ResMut<'a, DeferredPlayerQueues<PlayerRole>>,
-    spawn_level_object_requests: ResMut<'a, DeferredPlayerQueues<SpawnLevelObject>>,
+    spawn_level_object_requests: ResMut<'a, DeferredPlayerQueues<SpawnLevelObjectRequest>>,
     update_level_object_requests: ResMut<'a, DeferredPlayerQueues<LevelObject>>,
     despawn_level_object_requests: ResMut<'a, DeferredPlayerQueues<EntityNetId>>,
     spawn_player_commands: ResMut<'a, DeferredQueue<commands::SpawnPlayer>>,
@@ -346,11 +346,11 @@ pub fn process_network_events(
                         .expect("Expected a registered player net id for an existing connection");
                     update_params.switch_role_requests.push(player_net_id, role);
                 }
-                ReliableClientMessage::SpawnLevelObject(spawn_level_object) => {
+                ReliableClientMessage::SpawnLevelObject(spawn_level_object_request) => {
                     log::info!(
                         "Client ({}) requests to spawn a new object: {:?}",
                         handle,
-                        spawn_level_object
+                        spawn_level_object_request
                     );
                     let connection_state = network_params
                         .connection_states
@@ -365,7 +365,7 @@ pub fn process_network_events(
                         .expect("Expected a registered player net id for an existing connection");
                     update_params
                         .spawn_level_object_requests
-                        .push(player_net_id, spawn_level_object);
+                        .push(player_net_id, spawn_level_object_request);
                 }
                 ReliableClientMessage::UpdateLevelObject(update_level_object) => {
                     log::trace!(
@@ -556,7 +556,8 @@ fn disconnect_players(
 #[derive(SystemParam)]
 pub struct DeferredMessageQueues<'a> {
     switch_role_messages: ResMut<'a, DeferredMessagesQueue<SwitchRole>>,
-    update_level_object_messages: ResMut<'a, DeferredMessagesQueue<commands::SpawnLevelObject>>,
+    spawn_level_object_messages: ResMut<'a, DeferredMessagesQueue<SpawnLevelObject>>,
+    update_level_object_messages: ResMut<'a, DeferredMessagesQueue<commands::UpdateLevelObject>>,
     despawn_level_object_messages: ResMut<'a, DeferredMessagesQueue<commands::DespawnLevelObject>>,
 }
 
@@ -621,6 +622,17 @@ pub fn send_network_updates(
             &mut network_params.net,
             &network_params.connection_states,
             ReliableServerMessage::SwitchRole(switch_role_message),
+        );
+    }
+    for spawn_level_object_message in deferred_message_queues
+        .spawn_level_object_messages
+        .drain()
+        .into_iter()
+    {
+        broadcast_reliable_game_message(
+            &mut network_params.net,
+            &network_params.connection_states,
+            ReliableServerMessage::SpawnLevelObject(spawn_level_object_message),
         );
     }
     for update_level_object_message in deferred_message_queues
@@ -830,7 +842,7 @@ fn broadcast_start_game_messages(
             objects: level_state
                 .objects
                 .iter()
-                .map(|(_, level_object)| commands::SpawnLevelObject {
+                .map(|(_, level_object)| commands::UpdateLevelObject {
                     object: level_object.clone(),
                     frame_number: time.frame_number,
                 })

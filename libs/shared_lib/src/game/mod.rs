@@ -1,7 +1,7 @@
 use crate::{
     game::commands::{
-        DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnLevelObject,
-        SpawnPlayer, SwitchPlayerRole,
+        DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
+        SwitchPlayerRole, UpdateLevelObject,
     },
     messages::{DeferredMessagesQueue, EntityNetId, PlayerNetId, SwitchRole},
     player::{Player, PlayerRole, PlayerUpdates},
@@ -82,7 +82,7 @@ pub fn restart_game(world: &mut World) {
         .unwrap()
         .drain();
     world
-        .get_resource_mut::<DeferredQueue<SpawnLevelObject>>()
+        .get_resource_mut::<DeferredQueue<UpdateLevelObject>>()
         .unwrap()
         .drain();
     world

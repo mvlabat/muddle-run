@@ -13,11 +13,14 @@ use bevy::{core::FixedTimestep, prelude::*};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
-        commands::{DeferredPlayerQueues, DeferredQueue, DespawnLevelObject, SpawnLevelObject},
+        commands::{DeferredPlayerQueues, DeferredQueue, DespawnLevelObject, UpdateLevelObject},
         level::{LevelObject, LevelObjectDesc},
         level_objects::PlaneDesc,
     },
-    messages::{self, DeferredMessagesQueue, EntityNetId, PlayerNetId, RunnerInput, SwitchRole},
+    messages::{
+        self, DeferredMessagesQueue, EntityNetId, PlayerNetId, RunnerInput, SpawnLevelObject,
+        SpawnLevelObjectRequest,
+    },
     net::ConnectionState,
     player::PlayerRole,
     registry::IncrementId,
@@ -72,20 +75,23 @@ impl Plugin for MuddleServerPlugin {
         resources.get_resource_or_insert_with(DeferredPlayerQueues::<RunnerInput>::default);
         resources.get_resource_or_insert_with(DeferredPlayerQueues::<PlayerRole>::default);
         resources.get_resource_or_insert_with(
-            DeferredPlayerQueues::<messages::SpawnLevelObject>::default,
+            DeferredPlayerQueues::<messages::SpawnLevelObjectRequestBody>::default,
         );
+        resources
+            .get_resource_or_insert_with(DeferredPlayerQueues::<SpawnLevelObjectRequest>::default);
         resources.get_resource_or_insert_with(DeferredPlayerQueues::<LevelObject>::default);
         resources.get_resource_or_insert_with(DeferredPlayerQueues::<EntityNetId>::default);
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<SpawnLevelObject>::default);
+        resources.get_resource_or_insert_with(DeferredMessagesQueue::<UpdateLevelObject>::default);
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<DespawnLevelObject>::default);
     }
 }
 
 pub fn init_level(
     mut entity_net_id_counter: ResMut<EntityNetId>,
-    mut spawn_level_object_commands: ResMut<DeferredQueue<SpawnLevelObject>>,
+    mut spawn_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
 ) {
-    spawn_level_object_commands.push(SpawnLevelObject {
+    spawn_level_object_commands.push(UpdateLevelObject {
         frame_number: FrameNumber::new(0),
         object: LevelObject {
             net_id: entity_net_id_counter.increment(),

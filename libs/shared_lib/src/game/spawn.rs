@@ -4,7 +4,7 @@ use crate::{
             ClientFactory, PbrClientParams, PlaneClientFactory, PlayerClientFactory,
         },
         commands::{
-            DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnLevelObject, SpawnPlayer,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, UpdateLevelObject,
         },
         components::{LevelObjectTag, PlayerDirection, PlayerTag, Position, Spawned},
         level::{LevelObjectDesc, LevelState},
@@ -143,7 +143,7 @@ pub fn despawn_players(
 pub fn update_level_objects(
     mut commands: Commands,
     mut pbr_client_params: PbrClientParams,
-    mut update_level_object_commands: ResMut<DeferredQueue<SpawnLevelObject>>,
+    mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
     mut level_state: ResMut<LevelState>,
     mut level_objects: Query<(Entity, &mut Spawned, &LevelObjectTag)>,
