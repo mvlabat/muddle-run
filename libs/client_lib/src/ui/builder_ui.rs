@@ -1,8 +1,14 @@
 use crate::{input::LevelObjectRequestsQueue, CurrentPlayerNetId, LevelObjectCorrelations};
-use bevy::ecs::system::{Res, ResMut};
+use bevy::{
+    ecs::system::{Res, ResMut},
+    math::Vec2,
+};
 use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::{
-    game::{level::LevelObjectDesc, level_objects::PlaneDesc},
+    game::{
+        level::LevelObjectDesc,
+        level_objects::{CubeDesc, PlaneDesc},
+    },
     messages::{PlayerNetId, SpawnLevelObjectRequest, SpawnLevelObjectRequestBody},
     player::{Player, PlayerRole},
 };
@@ -35,9 +41,22 @@ pub fn builder_ui(
                 .push(SpawnLevelObjectRequest {
                     correlation_id,
                     body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::Plane(PlaneDesc {
+                        position: Vec2::new(0.0, 0.0),
                         size: 50.0,
                     })),
-                })
+                });
+        }
+        if ui.button("Cube").clicked() {
+            let correlation_id = level_object_correlations.next_correlation_id();
+            level_object_requests
+                .spawn_requests
+                .push(SpawnLevelObjectRequest {
+                    correlation_id,
+                    body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::Cube(CubeDesc {
+                        position: Vec2::new(5.0, 5.0),
+                        size: 0.4,
+                    })),
+                });
         }
     });
 }

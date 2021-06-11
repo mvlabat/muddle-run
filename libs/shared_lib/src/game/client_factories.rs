@@ -1,4 +1,4 @@
-use crate::game::level_objects::PlaneDesc;
+use crate::game::level_objects::*;
 #[cfg(feature = "client")]
 use crate::{
     game::components::{PlayerFrameSimulated, PredictedPosition},
@@ -38,9 +38,9 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
         (position, is_player_frame_simulated): &Self::Input,
     ) {
         commands.insert_bundle(PbrBundle {
-            mesh: deps
-                .meshes
-                .add(Mesh::from(shape::Cube { size: PLAYER_SIZE })),
+            mesh: deps.meshes.add(Mesh::from(shape::Cube {
+                size: PLAYER_SIZE * 2.0,
+            })),
             material: deps.materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
             ..Default::default()
         });
@@ -60,24 +60,55 @@ pub struct PlaneClientFactory;
 
 impl<'a> ClientFactory<'a> for PlaneClientFactory {
     type Dependencies = PbrClientParams<'a>;
-    type Input = (PlaneDesc, bool);
+    type Input = PlaneDesc;
 
     #[cfg(feature = "client")]
     fn insert_components(
         commands: &mut EntityCommands,
         deps: &mut Self::Dependencies,
-        (plane_desc, is_player_frame_simulated): &Self::Input,
+        plane_desc: &Self::Input,
     ) {
         commands.insert_bundle(PbrBundle {
             mesh: deps.meshes.add(Mesh::from(shape::Plane {
-                size: plane_desc.size,
+                size: plane_desc.size * 2.0,
             })),
             material: deps.materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
             ..Default::default()
         });
-        if *is_player_frame_simulated {
-            commands.insert(PlayerFrameSimulated);
-        }
+        commands.insert(PlayerFrameSimulated);
+    }
+
+    #[cfg(feature = "client")]
+    fn remove_components(commands: &mut EntityCommands) {
+        commands.remove::<PbrBundle>();
+    }
+}
+
+pub struct CubeClientFactory;
+
+impl<'a> ClientFactory<'a> for CubeClientFactory {
+    type Dependencies = PbrClientParams<'a>;
+    type Input = CubeDesc;
+
+    #[cfg(feature = "client")]
+    fn insert_components(
+        commands: &mut EntityCommands,
+        deps: &mut Self::Dependencies,
+        cube_desc: &Self::Input,
+    ) {
+        commands.insert_bundle(PbrBundle {
+            mesh: deps.meshes.add(Mesh::from(shape::Cube {
+                size: cube_desc.size * 2.0,
+            })),
+            material: deps.materials.add(Color::rgb(0.4, 0.4, 0.4).into()),
+            ..Default::default()
+        });
+        commands.insert(PlayerFrameSimulated);
+    }
+
+    #[cfg(feature = "client")]
+    fn remove_components(commands: &mut EntityCommands) {
+        commands.remove::<PbrBundle>();
     }
 }
 

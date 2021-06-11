@@ -95,7 +95,10 @@ pub fn init_level(
         frame_number: FrameNumber::new(0),
         object: LevelObject {
             net_id: entity_net_id_counter.increment(),
-            desc: LevelObjectDesc::Plane(PlaneDesc { size: PLANE_SIZE }),
+            desc: LevelObjectDesc::Plane(PlaneDesc {
+                position: Vec2::ZERO,
+                size: PLANE_SIZE,
+            }),
         },
     });
 }

@@ -11,6 +11,8 @@ pub struct PlayerTag;
 
 pub struct LevelObjectTag;
 
+pub struct LevelObjectLabel(pub String);
+
 /// Represents Player's input (not an actual direction of entity's movement).
 pub struct PlayerDirection {
     /// `None` indicates a missing network input.
@@ -43,7 +45,8 @@ impl Position {
 }
 
 /// Is used only by the client, to lerp the position if an authoritative update arrives from the
-/// server.
+/// server. Using this component only makes sense if it's movement is not deterministic (i.e. it
+/// can be affected by collisions with other entities or is controlled by a player, etc).
 pub struct PredictedPosition {
     pub value: Vec2,
 }

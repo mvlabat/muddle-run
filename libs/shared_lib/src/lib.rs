@@ -78,7 +78,7 @@ pub mod stage {
     pub const POST_PHYSICS: &str = "mr_shared_post_physics";
     pub const POST_GAME: &str = "mr_shared_post_game";
 }
-pub const PLAYER_SIZE: f32 = 1.0;
+pub const PLAYER_SIZE: f32 = 0.5;
 pub const PLANE_SIZE: f32 = 20.0;
 pub const SIMULATIONS_PER_SECOND: u16 = 120;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
@@ -324,6 +324,11 @@ impl SimulationTime {
         let frames_ahead = self.player_frame - self.server_frame;
         self.server_frame = std::cmp::min(self.server_frame, frame_number);
         self.player_frame = self.server_frame + frames_ahead;
+    }
+
+    pub fn player_frames_ahead(&self) -> u16 {
+        assert!(self.player_frame >= self.server_frame);
+        (self.player_frame - self.server_frame).value()
     }
 }
 

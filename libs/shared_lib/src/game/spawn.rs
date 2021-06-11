@@ -1,12 +1,15 @@
 use crate::{
     game::{
         client_factories::{
-            ClientFactory, PbrClientParams, PlaneClientFactory, PlayerClientFactory,
+            ClientFactory, CubeClientFactory, PbrClientParams, PlaneClientFactory,
+            PlayerClientFactory,
         },
         commands::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, UpdateLevelObject,
         },
-        components::{LevelObjectTag, PlayerDirection, PlayerTag, Position, Spawned},
+        components::{
+            LevelObjectLabel, LevelObjectTag, PlayerDirection, PlayerTag, Position, Spawned,
+        },
         level::{LevelObjectDesc, LevelState},
     },
     messages::{EntityNetId, PlayerNetId},
@@ -67,13 +70,13 @@ pub fn spawn_players(
             .insert(PlayerTag)
             .insert(
                 RigidBodyBuilder::new_dynamic()
-                    .translation(0.0, PLAYER_SIZE / 2.0, 0.0)
+                    .translation(0.0, PLAYER_SIZE, 0.0)
                     .lock_rotations(),
             )
             .insert(ColliderBuilder::cuboid(
-                PLAYER_SIZE / 2.0,
-                PLAYER_SIZE / 2.0,
-                PLAYER_SIZE / 2.0,
+                PLAYER_SIZE,
+                PLAYER_SIZE,
+                PLAYER_SIZE,
             ))
             .insert(Position::new(
                 command.start_position,
@@ -142,6 +145,7 @@ pub fn despawn_players(
 
 pub fn update_level_objects(
     mut commands: Commands,
+    time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
     mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
@@ -169,15 +173,33 @@ pub fn update_level_objects(
             .objects
             .insert(command.object.net_id, command.object.clone());
         let mut entity_commands = commands.spawn();
-        match command.object.desc {
+        match &command.object.desc {
             LevelObjectDesc::Plane(plane) => PlaneClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,
-                &(plane, cfg!(feature = "client")),
+                plane,
+            ),
+            LevelObjectDesc::Cube(cube) => CubeClientFactory::insert_components(
+                &mut entity_commands,
+                &mut pbr_client_params,
+                cube,
             ),
         };
+        let (rigid_body, collider) = command.object.desc.physics_body();
         entity_commands
             .insert(LevelObjectTag)
+            .insert(LevelObjectLabel(format!(
+                "{} {}",
+                command.object.desc.label(),
+                command.object.net_id.0
+            )))
+            .insert(rigid_body)
+            .insert(collider)
+            .insert(Position::new(
+                command.object.desc.position(),
+                time.server_frame,
+                time.player_frames_ahead() + 1,
+            ))
             .insert(spawned_component);
         object_entities.register(command.object.net_id, entity_commands.id());
     }
@@ -231,6 +253,9 @@ pub fn despawn_level_objects(
         {
             LevelObjectDesc::Plane(_) => {
                 PlaneClientFactory::remove_components(&mut commands.entity(entity))
+            }
+            LevelObjectDesc::Cube(_) => {
+                CubeClientFactory::remove_components(&mut commands.entity(entity))
             }
         }
         spawned.set_despawned_at(command.frame_number);

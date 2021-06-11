@@ -18,7 +18,7 @@ use bevy_rapier3d::{
 };
 use mr_shared_lib::{
     framebuffer::FrameNumber,
-    game::components::{PlayerDirection, Position},
+    game::components::{LevelObjectLabel, PlayerDirection, Position},
     messages::PlayerNetId,
     net::ConnectionState,
     player::Player,
@@ -173,8 +173,9 @@ pub struct InspectObjectQueries<'a> {
     players: Res<'a, HashMap<PlayerNetId, Player>>,
     player_registry: Res<'a, EntityRegistry<PlayerNetId>>,
     colliders: Query<'a, (Entity, &'static ColliderHandleComponent)>,
-    positions: Query<'a, (Entity, &'static Position)>,
-    player_directions: Query<'a, (Entity, &'static PlayerDirection)>,
+    positions: Query<'a, &'static Position>,
+    player_directions: Query<'a, &'static PlayerDirection>,
+    level_object_labels: Query<'a, &'static LevelObjectLabel>,
 }
 
 pub fn inspect_object(
@@ -221,10 +222,13 @@ pub fn inspect_object(
             {
                 ui.label(format!("Player name: {}", player_name));
             }
-            if let Ok((_, position)) = queries.positions.get(entity) {
+            if let Ok(level_object_label) = queries.level_object_labels.get(entity) {
+                ui.label(&level_object_label.0);
+            }
+            if let Ok(position) = queries.positions.get(entity) {
                 position.inspect(ui);
             }
-            if let Ok((_, player_direction)) = queries.player_directions.get(entity) {
+            if let Ok(player_direction) = queries.player_directions.get(entity) {
                 player_direction.inspect(ui);
             }
         });
