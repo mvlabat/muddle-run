@@ -13,7 +13,10 @@ use crate::{
         level::LevelState,
         movement::{player_movement, read_movement_updates, sync_position},
         remove_disconnected_players, restart_game,
-        spawn::{despawn_players, process_spawned_entities, spawn_players, update_level_objects},
+        spawn::{
+            despawn_level_objects, despawn_players, process_spawned_entities, spawn_players,
+            update_level_objects,
+        },
         switch_player_role,
     },
     messages::{DeferredMessagesQueue, SwitchRole},
@@ -147,7 +150,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                             .after("player_role"),
                     )
                     .with_system(spawn_players.system().after("despawn"))
-                    .with_system(update_level_objects.system()),
+                    .with_system(update_level_objects.system())
+                    .with_system(despawn_level_objects.system()),
             )
             .with_stage(
                 stage::PRE_GAME,

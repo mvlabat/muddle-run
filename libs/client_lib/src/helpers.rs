@@ -1,8 +1,72 @@
+use crate::input::MouseRay;
 use bevy::{
+    ecs::{
+        entity::Entity,
+        system::{Local, Query, Res, SystemParam},
+    },
+    input::{mouse::MouseButton, Input},
+    log,
     math::{Mat4, Vec2, Vec4},
     window::Window,
 };
-use bevy_rapier3d::rapier::{geometry::Ray, na};
+use bevy_rapier3d::{
+    physics::ColliderHandleComponent,
+    rapier::{
+        geometry::{ColliderSet, InteractionGroups, Ray},
+        na,
+        pipeline::QueryPipeline,
+    },
+};
+
+#[derive(SystemParam)]
+pub struct MouseEntityPicker<'a> {
+    picked_entity: Local<'a, Option<Entity>>,
+    colliders: Query<'a, (Entity, &'static ColliderHandleComponent)>,
+    mouse_input: Res<'a, Input<MouseButton>>,
+    mouse_ray: Res<'a, MouseRay>,
+    query_pipeline: Res<'a, QueryPipeline>,
+    collider_set: Res<'a, ColliderSet>,
+}
+
+impl<'a> MouseEntityPicker<'a> {
+    pub fn hovered_entity(&self) -> Option<Entity> {
+        if let Some((collider, _)) = self.query_pipeline.cast_ray(
+            &self.collider_set,
+            &self.mouse_ray.0,
+            f32::MAX,
+            true,
+            InteractionGroups::all(),
+            None,
+        ) {
+            if let Some((entity, _)) = self
+                .colliders
+                .iter()
+                .find(|(_, collider_component)| collider_component.handle() == collider)
+            {
+                return Some(entity);
+            } else {
+                // TODO: this does happen. We need to investigate.
+                //  (Might appear in some weird edge-cases when restarting a client or a server.)
+                log::error!("No entity with collider {:?} was found", collider);
+            }
+        }
+        None
+    }
+
+    pub fn pick_entity(&mut self) {
+        if self.mouse_input.just_pressed(MouseButton::Left) {
+            *self.picked_entity = self.hovered_entity();
+        }
+    }
+
+    pub fn picked_entity(&self) -> Option<Entity> {
+        *self.picked_entity
+    }
+
+    pub fn take_picked_entity(&mut self) -> Option<Entity> {
+        self.picked_entity.take()
+    }
+}
 
 // Heavily inspired by https://github.com/bevyengine/bevy/pull/432/.
 pub fn cursor_pos_to_ray(

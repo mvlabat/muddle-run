@@ -37,6 +37,13 @@ impl LevelObjectDesc {
         }
     }
 
+    pub fn position_mut(&mut self) -> &mut Vec2 {
+        match self {
+            Self::Plane(plane) => &mut plane.position,
+            Self::Cube(cube) => &mut cube.position,
+        }
+    }
+
     pub fn physics_body(&self) -> (RigidBodyBuilder, ColliderBuilder) {
         match self {
             Self::Plane(plane) => (

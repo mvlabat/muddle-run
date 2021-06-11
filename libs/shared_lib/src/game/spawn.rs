@@ -152,10 +152,18 @@ pub fn update_level_objects(
     mut level_state: ResMut<LevelState>,
     mut level_objects: Query<(Entity, &mut Spawned, &LevelObjectTag)>,
 ) {
-    for command in update_level_object_commands.drain() {
+    // There may be several updates of the same entity per frame. We need to dedup them,
+    // otherwise we crash when trying to clone from the entities that haven't been created yet
+    // (because of not yet flushed command buffer).
+    let mut update_level_object_commands = update_level_object_commands.drain();
+    dedup_by_key_unsorted(&mut update_level_object_commands, |command| {
+        command.object.net_id
+    });
+
+    for command in update_level_object_commands {
         let mut spawned_component = Spawned::new(command.frame_number);
         if let Some(existing_entity) = object_entities.get_entity(command.object.net_id) {
-            log::trace!(
+            log::debug!(
                 "Replacing an object ({}): {:?}",
                 command.object.net_id.0,
                 command.object

@@ -1,21 +1,13 @@
 use crate::{
-    input::MouseRay, ui::MuddleInspectable, AdjustedSpeedReason, EstimatedServerTime,
+    helpers::MouseEntityPicker, ui::MuddleInspectable, AdjustedSpeedReason, EstimatedServerTime,
     GameTicksPerSecond, PlayerDelay, TargetFramesAhead,
 };
 use bevy::{
     diagnostic::{DiagnosticMeasurement, Diagnostics, FrameTimeDiagnosticsPlugin},
     ecs::system::SystemParam,
-    log,
     prelude::*,
 };
 use bevy_egui::{egui, EguiContext, EguiSettings};
-use bevy_rapier3d::{
-    physics::ColliderHandleComponent,
-    rapier::{
-        geometry::{ColliderSet, InteractionGroups},
-        pipeline::QueryPipeline,
-    },
-};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::components::{LevelObjectLabel, PlayerDirection, Position},
@@ -158,21 +150,10 @@ pub fn debug_ui(
     }
 }
 
-pub struct InspectableObject {
-    entity: Option<Entity>,
-}
-
-impl Default for InspectableObject {
-    fn default() -> Self {
-        Self { entity: None }
-    }
-}
-
 #[derive(SystemParam)]
 pub struct InspectObjectQueries<'a> {
     players: Res<'a, HashMap<PlayerNetId, Player>>,
     player_registry: Res<'a, EntityRegistry<PlayerNetId>>,
-    colliders: Query<'a, (Entity, &'static ColliderHandleComponent)>,
     positions: Query<'a, &'static Position>,
     player_directions: Query<'a, &'static PlayerDirection>,
     level_object_labels: Query<'a, &'static LevelObjectLabel>,
@@ -180,39 +161,21 @@ pub struct InspectObjectQueries<'a> {
 
 pub fn inspect_object(
     // ResMut is intentional, to avoid fighting over the Mutex from different systems.
+    debug_ui_state: Res<DebugUiState>,
     egui_context: ResMut<EguiContext>,
-    mut inspectable_object: Local<InspectableObject>,
-    mouse_input: Res<Input<MouseButton>>,
-    mouse_ray: Res<MouseRay>,
-    query_pipeline: Res<QueryPipeline>,
-    collider_set: Res<ColliderSet>,
+    mut mouse_entity_picker: MouseEntityPicker,
     queries: InspectObjectQueries,
 ) {
-    let ctx = egui_context.ctx();
-    if mouse_input.just_pressed(MouseButton::Left) && !ctx.is_pointer_over_area() {
-        if let Some((collider, _)) = query_pipeline.cast_ray(
-            &collider_set,
-            &mouse_ray.0,
-            f32::MAX,
-            true,
-            InteractionGroups::all(),
-            None,
-        ) {
-            if let Some((entity, _)) = queries
-                .colliders
-                .iter()
-                .find(|(_, collider_component)| collider_component.handle() == collider)
-            {
-                inspectable_object.entity = Some(entity);
-            } else {
-                log::error!("No entity with collider {:?} was found", collider);
-            }
-        } else {
-            inspectable_object.entity = None;
-        }
+    if !debug_ui_state.show {
+        return;
     }
 
-    if let Some(entity) = inspectable_object.entity {
+    let ctx = egui_context.ctx();
+    if !ctx.is_pointer_over_area() {
+        mouse_entity_picker.pick_entity();
+    }
+
+    if let Some(entity) = mouse_entity_picker.picked_entity() {
         egui::Window::new("Inspect").show(ctx, |ui| {
             if let Some(player_name) = queries
                 .player_registry
