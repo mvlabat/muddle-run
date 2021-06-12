@@ -258,11 +258,11 @@ fn basic_scene(mut commands: Commands) {
     // Add entities to the scene.
     commands.spawn_bundle(LightBundle {
         light: Light {
-            range: 200.0,
-            intensity: 400.0,
+            range: 16000.0,
+            intensity: 64000.0,
             ..Default::default()
         },
-        transform: Transform::from_translation(Vec3::new(4.0, 10.0, -14.0)),
+        transform: Transform::from_translation(Vec3::new(-64.0, -92.0, 144.0)),
         ..Default::default()
     });
     // Camera.
