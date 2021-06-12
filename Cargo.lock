@@ -375,6 +375,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d5f2f58f0aec3c50a20799792c3705e80dd7df327e79791cacec197e84e5e61"
 
 [[package]]
+name = "bevy-inspector-egui"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5bc705295fc79159a6d96888ed20de42ed143da50a31b72b3060b2c5099fb024"
+dependencies = [
+ "bevy",
+ "bevy-inspector-egui-derive",
+ "bevy_egui",
+ "emath",
+ "image",
+ "pretty-type-name",
+]
+
+[[package]]
+name = "bevy-inspector-egui-derive"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d10a625d3c87e6662404eb21b5de6356c63a338c933436b177adbacd0edea606"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "bevy_app"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -521,9 +546,9 @@ dependencies = [
 
 [[package]]
 name = "bevy_egui"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06ce726b841968c0b885a8ccd9c64deaedc9a6d51cfc38ae5eba6b051738f0cb"
+checksum = "f3de8da8d35ee092c04816725eb9ab9f4dc809f0c1ad2cda4de74042fa8a3454"
 dependencies = [
  "bevy",
  "clipboard",
@@ -2956,6 +2981,7 @@ name = "mr_client_lib"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy-inspector-egui",
  "bevy_egui",
  "bevy_networking_turbulence",
  "bevy_rapier3d",
@@ -3717,6 +3743,12 @@ name = "ppv-lite86"
 version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
+
+[[package]]
+name = "pretty-type-name"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8815d101cfb4cb491154896bdab292a395a7ac9ab185a9941a2f5be0135900d"
 
 [[package]]
 name = "proc-macro-crate"

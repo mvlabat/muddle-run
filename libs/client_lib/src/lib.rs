@@ -24,6 +24,7 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_egui::EguiPlugin;
+use bevy_inspector_egui::{WorldInspectorParams, WorldInspectorPlugin};
 use chrono::{DateTime, Utc};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
@@ -63,6 +64,7 @@ impl Plugin for MuddleClientPlugin {
         builder
             .add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(EguiPlugin)
+            .add_plugin(WorldInspectorPlugin::new())
             .init_resource::<WindowInnerSize>()
             .init_resource::<input::MousePosition>()
             // Startup systems.
@@ -84,6 +86,10 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::builder_ui::builder_ui.system());
 
         let world = builder.world_mut();
+        world
+            .get_resource_mut::<WorldInspectorParams>()
+            .unwrap()
+            .enabled = false;
         world.get_resource_or_insert_with(InitialRtt::default);
         world.get_resource_or_insert_with(EstimatedServerTime::default);
         world.get_resource_or_insert_with(GameTicksPerSecond::default);

@@ -6,6 +6,7 @@ use bevy::{
     prelude::*,
     render::camera::CameraProjection,
 };
+use bevy_inspector_egui::WorldInspectorParams;
 use bevy_rapier3d::{na, rapier::geometry::Ray};
 use chrono::{DateTime, Utc};
 use mr_shared_lib::{
@@ -66,6 +67,7 @@ pub fn track_input_events(
     mut input_events: InputEvents,
     time: Res<GameTime>,
     mut debug_ui_state: ResMut<DebugUiState>,
+    mut world_inspector_params: ResMut<WorldInspectorParams>,
     mut player_updates_params: PlayerUpdatesParams,
     mut mouse_position: ResMut<MousePosition>,
     keyboard_input: Res<Input<KeyCode>>,
@@ -73,6 +75,7 @@ pub fn track_input_events(
     process_hotkeys(
         &keyboard_input,
         &mut debug_ui_state,
+        &mut world_inspector_params,
         &mut player_updates_params,
     );
 
@@ -154,10 +157,12 @@ pub fn cast_mouse_ray(
 fn process_hotkeys(
     keyboard_input: &Input<KeyCode>,
     debug_ui_state: &mut DebugUiState,
+    world_inspector_params: &mut WorldInspectorParams,
     player_updates_params: &mut PlayerUpdatesParams,
 ) {
     if keyboard_input.just_pressed(KeyCode::Period) {
         debug_ui_state.show = !debug_ui_state.show;
+        world_inspector_params.enabled = debug_ui_state.show;
     }
 
     let net_id = player_updates_params.current_player_net_id.0;
