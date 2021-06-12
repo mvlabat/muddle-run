@@ -268,8 +268,8 @@ fn basic_scene(mut commands: Commands) {
     // Camera.
     let main_camera_entity = commands
         .spawn_bundle(PerspectiveCameraBundle {
-            transform: Transform::from_translation(Vec3::new(5.0, 10.0, -14.0))
-                .looking_at(Vec3::default(), Vec3::Y),
+            transform: Transform::from_translation(Vec3::new(-3.0, -14.0, 14.0))
+                .looking_at(Vec3::default(), Vec3::Z),
             ..Default::default()
         })
         .id();

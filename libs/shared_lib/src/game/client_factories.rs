@@ -1,6 +1,7 @@
 use crate::game::level_objects::*;
 #[cfg(feature = "client")]
 use crate::{
+    client::XyPlane,
     game::components::{PlayerFrameSimulated, PredictedPosition},
     PLAYER_SIZE,
 };
@@ -69,7 +70,7 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
         plane_desc: &Self::Input,
     ) {
         commands.insert_bundle(PbrBundle {
-            mesh: deps.meshes.add(Mesh::from(shape::Plane {
+            mesh: deps.meshes.add(Mesh::from(XyPlane {
                 size: plane_desc.size * 2.0,
             })),
             material: deps.materials.add(Color::rgb(0.3, 0.5, 0.3).into()),

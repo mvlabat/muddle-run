@@ -70,7 +70,7 @@ pub fn spawn_players(
             .insert(PlayerTag)
             .insert(
                 RigidBodyBuilder::new_dynamic()
-                    .translation(0.0, PLAYER_SIZE, 0.0)
+                    .translation(0.0, 0.0, PLAYER_SIZE)
                     .lock_rotations(),
             )
             .insert(ColliderBuilder::cuboid(

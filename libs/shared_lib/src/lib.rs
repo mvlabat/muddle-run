@@ -53,6 +53,8 @@ use bevy_rapier3d::{
 use messages::{EntityNetId, PlayerNetId};
 use std::{borrow::Cow, collections::HashMap, sync::Mutex};
 
+#[cfg(feature = "client")]
+pub mod client;
 pub mod framebuffer;
 pub mod game;
 pub mod messages;

@@ -88,10 +88,10 @@ pub fn track_input_events(
         );
         let mut direction = Vec2::ZERO;
         if keyboard_input.pressed(KeyCode::A) || keyboard_input.pressed(KeyCode::Left) {
-            direction.x += 1.0;
+            direction.x -= 1.0;
         }
         if keyboard_input.pressed(KeyCode::D) || keyboard_input.pressed(KeyCode::Right) {
-            direction.x -= 1.0;
+            direction.x += 1.0;
         }
 
         if keyboard_input.pressed(KeyCode::W) || keyboard_input.pressed(KeyCode::Up) {

@@ -49,16 +49,16 @@ impl LevelObjectDesc {
             Self::Plane(plane) => (
                 RigidBodyBuilder::new_kinematic().translation(
                     self.position().x,
-                    0.0,
                     self.position().y,
+                    0.0,
                 ),
-                ColliderBuilder::cuboid(plane.size, 0.01, plane.size).sensor(true),
+                ColliderBuilder::cuboid(plane.size, plane.size, 0.01).sensor(true),
             ),
             Self::Cube(cube) => (
                 RigidBodyBuilder::new_kinematic().translation(
                     self.position().x,
-                    cube.size,
                     self.position().y,
+                    cube.size,
                 ),
                 ColliderBuilder::cuboid(cube.size, cube.size, cube.size),
             ),

@@ -154,9 +154,9 @@ pub fn player_movement(
             );
         });
         let wake_up = (body_position.translation.x - current_position.x).abs() > f32::EPSILON
-            || (body_position.translation.z - current_position.y).abs() > f32::EPSILON;
+            || (body_position.translation.y - current_position.y).abs() > f32::EPSILON;
         body_position.translation.x = current_position.x;
-        body_position.translation.z = current_position.y;
+        body_position.translation.y = current_position.y;
         rigid_body.set_position(body_position, wake_up);
 
         let zero_vec = Vec2::new(0.0, 0.0);
@@ -182,7 +182,7 @@ pub fn player_movement(
         let current_direction_norm = current_direction.normalize_or_zero() * PLAYER_MOVEMENT_SPEED;
         let wake_up = current_direction_norm.length_squared() > 0.0;
         rigid_body.set_linvel(
-            Vector::new(current_direction_norm.x, 0.0, current_direction_norm.y),
+            Vector::new(current_direction_norm.x, current_direction_norm.y, 0.0),
             wake_up,
         );
     }
@@ -228,7 +228,7 @@ pub fn sync_position(
             .expect("expected a rigid body");
 
         let body_position = *rigid_body.position();
-        let new_position = Vec2::new(body_position.translation.x, body_position.translation.z);
+        let new_position = Vec2::new(body_position.translation.x, body_position.translation.y);
         if let Some(predicted_position) = predicted_position.as_mut() {
             let current_position = *position
                 .buffer
@@ -245,7 +245,7 @@ pub fn sync_position(
                 predicted_position.value = lerp;
                 let transform = transform.as_mut().expect("Expected a Transform component if entity has PredictedPosition (is supposed to be a client)");
                 transform.translation.x = lerp.x;
-                transform.translation.z = lerp.y;
+                transform.translation.y = lerp.y;
             }
         }
 
@@ -253,7 +253,7 @@ pub fn sync_position(
         // we save the new position in the next frame.
         position.buffer.insert(
             frame_number + FrameNumber::new(1),
-            Vec2::new(body_position.translation.x, body_position.translation.z),
+            Vec2::new(body_position.translation.x, body_position.translation.y),
         );
     }
 }
