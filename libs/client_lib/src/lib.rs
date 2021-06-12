@@ -83,6 +83,7 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::debug_ui.system())
             .add_system(ui::overlay_ui::connection_status_overlay.system())
             .add_system(ui::debug_ui::inspect_object.system())
+            .add_system(ui::help_ui::help_ui.system())
             .add_system(ui::builder_ui::builder_ui.system());
 
         let world = builder.world_mut();
