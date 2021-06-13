@@ -18,6 +18,20 @@
     <script type="module">
         import init from "./pkg/mr_web_client.js";
         init();
+
+        function callback(records) {
+            records.forEach(function (record) {
+                for (const node of record.addedNodes) {
+                    if (node.nodeName === 'CANVAS') {
+                        // Auto-focus canvas.
+                        node.focus();
+                    }
+                }
+            });
+        }
+        const observer = new MutationObserver(callback);
+        const targetNode = document.body;
+        observer.observe(targetNode, { childList: true, subtree: true });
     </script>
 </body>
 
