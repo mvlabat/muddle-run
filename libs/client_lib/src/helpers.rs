@@ -1,8 +1,62 @@
+use crate::input::MouseRay;
 use bevy::{
+    ecs::{
+        entity::Entity,
+        system::{Local, Res, SystemParam},
+    },
+    input::{mouse::MouseButton, Input},
     math::{Mat4, Vec2, Vec4},
     window::Window,
 };
-use bevy_rapier3d::rapier::{geometry::Ray, na};
+use bevy_rapier3d::{
+    physics::{
+        IntoEntity, QueryPipelineColliderComponentsQuery, QueryPipelineColliderComponentsSet,
+    },
+    rapier::{
+        geometry::{InteractionGroups, Ray},
+        na,
+        pipeline::QueryPipeline,
+    },
+};
+
+#[derive(SystemParam)]
+pub struct MouseEntityPicker<'a> {
+    picked_entity: Local<'a, Option<Entity>>,
+    colliders: QueryPipelineColliderComponentsQuery<'a, 'static>,
+    mouse_input: Res<'a, Input<MouseButton>>,
+    mouse_ray: Res<'a, MouseRay>,
+    query_pipeline: Res<'a, QueryPipeline>,
+}
+
+impl<'a> MouseEntityPicker<'a> {
+    pub fn hovered_entity(&self) -> Option<Entity> {
+        let colliders = QueryPipelineColliderComponentsSet(&self.colliders);
+        self.query_pipeline
+            .cast_ray(
+                &colliders,
+                &self.mouse_ray.0,
+                f32::MAX,
+                true,
+                InteractionGroups::all(),
+                None,
+            )
+            .map(|(collider, _)| collider.entity())
+    }
+
+    pub fn pick_entity(&mut self) {
+        if self.mouse_input.just_pressed(MouseButton::Left) {
+            *self.picked_entity = self.hovered_entity();
+        }
+    }
+
+    pub fn picked_entity(&self) -> Option<Entity> {
+        *self.picked_entity
+    }
+
+    pub fn take_picked_entity(&mut self) -> Option<Entity> {
+        self.picked_entity.take()
+    }
+}
 
 // Heavily inspired by https://github.com/bevyengine/bevy/pull/432/.
 pub fn cursor_pos_to_ray(

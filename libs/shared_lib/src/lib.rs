@@ -1,25 +1,31 @@
+#![feature(hash_drain_filter)]
 #![feature(step_trait)]
-#![feature(step_trait_ext)]
 #![feature(trait_alias)]
 
 use crate::{
     framebuffer::FrameNumber,
     game::{
         commands::{
-            DespawnLevelObject, DespawnPlayer, GameCommands, RestartGame, SpawnLevelObject,
-            SpawnPlayer,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
+            SwitchPlayerRole, UpdateLevelObject,
         },
         components::PlayerFrameSimulated,
         level::LevelState,
         movement::{player_movement, read_movement_updates, sync_position},
-        restart_game,
-        spawn::{despawn_players, process_spawned_entities, spawn_level_objects, spawn_players},
+        remove_disconnected_players, restart_game,
+        spawn::{
+            despawn_level_objects, despawn_players, process_spawned_entities, spawn_players,
+            update_level_objects,
+        },
+        switch_player_role,
     },
+    messages::{DeferredMessagesQueue, SwitchRole},
     net::network_setup,
     player::{Player, PlayerUpdates},
     registry::EntityRegistry,
 };
 use bevy::{
+    app::Events,
     ecs::{
         archetype::{Archetype, ArchetypeComponentId},
         component::ComponentId,
@@ -34,20 +40,21 @@ use bevy_networking_turbulence::{LinkConditionerConfig, NetworkingPlugin};
 use bevy_rapier3d::{
     physics,
     physics::{
-        EntityMaps, EventQueue, InteractionPairFilters, RapierConfiguration, SimulationToRenderTime,
+        JointsEntityMap, ModificationTracker, NoUserData, PhysicsHooksWithQueryObject,
+        RapierConfiguration, SimulationToRenderTime, TimestepMode,
     },
     rapier::{
-        dynamics::{CCDSolver, IntegrationParameters, JointSet, RigidBodySet},
-        geometry::{BroadPhase, ColliderSet, NarrowPhase, SolverFlags},
+        dynamics::{CCDSolver, IntegrationParameters, IslandManager, JointSet},
+        geometry::{BroadPhase, ContactEvent, IntersectionEvent, NarrowPhase},
         math::Vector,
-        pipeline::{
-            PairFilterContext, PhysicsHooks, PhysicsHooksFlags, PhysicsPipeline, QueryPipeline,
-        },
+        pipeline::{PhysicsPipeline, QueryPipeline},
     },
 };
 use messages::{EntityNetId, PlayerNetId};
 use std::{borrow::Cow, collections::HashMap, sync::Mutex};
 
+#[cfg(feature = "client")]
+pub mod client;
 pub mod framebuffer;
 pub mod game;
 pub mod messages;
@@ -71,12 +78,13 @@ pub mod stage {
     pub const SIMULATION_SCHEDULE: &str = "mr_shared_simulation_schedule";
     pub const SPAWN: &str = "mr_shared_spawn";
     pub const PRE_GAME: &str = "mr_shared_pre_game";
+    pub const FINALIZE_PHYSICS: &str = "mr_shared_finalize_physics";
     pub const GAME: &str = "mr_shared_game";
     pub const PHYSICS: &str = "mr_shared_physics";
     pub const POST_PHYSICS: &str = "mr_shared_post_physics";
     pub const POST_GAME: &str = "mr_shared_post_game";
 }
-pub const PLAYER_SIZE: f32 = 1.0;
+pub const PLAYER_SIZE: f32 = 0.5;
 pub const PLANE_SIZE: f32 = 20.0;
 pub const SIMULATIONS_PER_SECOND: u16 = 120;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
@@ -136,16 +144,28 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_run_criteria(SimulationTickRunCriteria::default())
             .with_stage(
                 stage::SPAWN,
-                SystemStage::single_threaded()
-                    .with_system(despawn_players.system())
-                    .with_system(spawn_players.system())
-                    .with_system(spawn_level_objects.system()),
+                SystemStage::parallel()
+                    .with_system(switch_player_role.system().label("player_role"))
+                    .with_system(
+                        despawn_players
+                            .system()
+                            .label("despawn")
+                            .after("player_role"),
+                    )
+                    .with_system(spawn_players.system().after("despawn"))
+                    .with_system(update_level_objects.system())
+                    .with_system(despawn_level_objects.system()),
             )
             .with_stage(
                 stage::PRE_GAME,
                 SystemStage::parallel()
-                    .with_system(physics::create_body_and_collider_system.system())
+                    .with_system(physics::attach_bodies_and_colliders_system.system())
                     .with_system(physics::create_joints_system.system()),
+            )
+            .with_stage(
+                stage::FINALIZE_PHYSICS,
+                SystemStage::parallel()
+                    .with_system(physics::finalize_collider_attach_to_bodies.system()),
             )
             .with_stage(
                 stage::GAME,
@@ -153,18 +173,14 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::PHYSICS,
-                SystemStage::parallel().with_system(physics::step_world_system.system()),
+                SystemStage::parallel()
+                    .with_system(physics::step_world_system::<NoUserData>.system()),
             )
             .with_stage(
                 stage::POST_PHYSICS,
-                SystemStage::parallel()
-                    .with_system(physics::destroy_body_and_collider_system.system())
-                    .with_system(
-                        physics::sync_transform_system
-                            .system()
-                            .label("sync_transform"),
-                    )
-                    .with_system(sync_position.system().after("sync_transform")),
+                SystemStage::single_threaded()
+                    .with_system(physics::sync_transforms.system())
+                    .with_system(sync_position.system()),
             )
             .with_stage(
                 stage::POST_GAME,
@@ -189,14 +205,15 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 stage::POST_SIMULATIONS,
                 SystemStage::single_threaded()
                     .with_system(tick_game_frame.system())
-                    .with_system(process_spawned_entities.system()),
+                    .with_system(process_spawned_entities.system())
+                    .with_system(remove_disconnected_players.system()),
             )
             .with_stage(
                 stage::POST_TICK,
                 post_tick_stage
                     .take()
                     .expect("Can't initialize the plugin more than once")
-                    .with_run_criteria(GameTickRunCriteria::new(TICKS_PER_NETWORK_BROADCAST)),
+                    .with_system(physics::collect_removals.system()),
             );
 
         builder.add_stage_before(
@@ -233,14 +250,17 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         resources.get_resource_or_insert_with(SimulationTime::default);
         resources.get_resource_or_insert_with(LevelState::default);
         resources.get_resource_or_insert_with(PlayerUpdates::default);
-        resources.get_resource_or_insert_with(GameCommands::<RestartGame>::default);
-        resources.get_resource_or_insert_with(GameCommands::<SpawnPlayer>::default);
-        resources.get_resource_or_insert_with(GameCommands::<DespawnPlayer>::default);
-        resources.get_resource_or_insert_with(GameCommands::<SpawnLevelObject>::default);
-        resources.get_resource_or_insert_with(GameCommands::<DespawnLevelObject>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<RestartGame>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<SpawnPlayer>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<DespawnPlayer>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<UpdateLevelObject>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<DespawnLevelObject>::default);
+        resources.get_resource_or_insert_with(DeferredQueue::<SwitchPlayerRole>::default);
         resources.get_resource_or_insert_with(EntityRegistry::<PlayerNetId>::default);
         resources.get_resource_or_insert_with(EntityRegistry::<EntityNetId>::default);
         resources.get_resource_or_insert_with(HashMap::<PlayerNetId, Player>::default);
+        // Is used only on the server side.
+        resources.get_resource_or_insert_with(DeferredMessagesQueue::<SwitchRole>::default);
     }
 }
 
@@ -253,21 +273,21 @@ impl Plugin for RapierResourcesPlugin {
             .insert_resource(QueryPipeline::new())
             .insert_resource(RapierConfiguration {
                 gravity: Vector::new(0.0, 0.0, 0.0),
+                timestep_mode: TimestepMode::FixedTimestep,
                 ..RapierConfiguration::default()
             })
             .insert_resource(IntegrationParameters::default())
             .insert_resource(BroadPhase::new())
             .insert_resource(NarrowPhase::new())
-            .insert_resource(RigidBodySet::new())
-            .insert_resource(ColliderSet::new())
+            .insert_resource(IslandManager::new())
             .insert_resource(JointSet::new())
             .insert_resource(CCDSolver::new())
-            .insert_resource(InteractionPairFilters {
-                hook: Some(Box::new(PairFilter)),
-            })
-            .insert_resource(EventQueue::new(true))
+            .insert_resource(PhysicsHooksWithQueryObject::<NoUserData>(Box::new(())))
+            .insert_resource(Events::<IntersectionEvent>::default())
+            .insert_resource(Events::<ContactEvent>::default())
             .insert_resource(SimulationToRenderTime::default())
-            .insert_resource(EntityMaps::default());
+            .insert_resource(JointsEntityMap::default())
+            .insert_resource(ModificationTracker::default());
     }
 }
 
@@ -312,6 +332,11 @@ impl SimulationTime {
         let frames_ahead = self.player_frame - self.server_frame;
         self.server_frame = std::cmp::min(self.server_frame, frame_number);
         self.player_frame = self.server_frame + frames_ahead;
+    }
+
+    pub fn player_frames_ahead(&self) -> u16 {
+        assert!(self.player_frame >= self.server_frame);
+        (self.player_frame - self.server_frame).value()
     }
 }
 
@@ -543,20 +568,4 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
 pub fn tick_game_frame(mut time: ResMut<GameTime>) {
     log::trace!("Concluding game frame tick: {}", time.frame_number.value());
     time.frame_number += FrameNumber::new(1);
-}
-
-struct PairFilter;
-
-impl PhysicsHooks for PairFilter {
-    fn active_hooks(&self) -> PhysicsHooksFlags {
-        PhysicsHooksFlags::FILTER_CONTACT_PAIR | PhysicsHooksFlags::FILTER_INTERSECTION_PAIR
-    }
-
-    fn filter_contact_pair(&self, _context: &PairFilterContext) -> Option<SolverFlags> {
-        Some(SolverFlags::COMPUTE_IMPULSES)
-    }
-
-    fn filter_intersection_pair(&self, _context: &PairFilterContext) -> bool {
-        true
-    }
 }

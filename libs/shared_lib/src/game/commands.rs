@@ -2,15 +2,17 @@ use crate::{
     framebuffer::FrameNumber,
     game::level::LevelObject,
     messages::{EntityNetId, PlayerNetId},
+    player::PlayerRole,
 };
 use bevy::math::Vec2;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-pub struct GameCommands<T> {
+pub struct DeferredQueue<T> {
     commands: Vec<T>,
 }
 
-impl<T> Default for GameCommands<T> {
+impl<T> Default for DeferredQueue<T> {
     fn default() -> Self {
         Self {
             commands: Vec::new(),
@@ -18,7 +20,7 @@ impl<T> Default for GameCommands<T> {
     }
 }
 
-impl<T> GameCommands<T> {
+impl<T> DeferredQueue<T> {
     pub fn push(&mut self, command: T) {
         self.commands.push(command);
     }
@@ -31,6 +33,13 @@ impl<T> GameCommands<T> {
 // NOTE: after adding a new command, remember to clean them up in the `restart_game` system.
 
 pub struct RestartGame;
+
+pub struct SwitchPlayerRole {
+    pub net_id: PlayerNetId,
+    pub role: PlayerRole,
+    pub frame_number: FrameNumber,
+    pub is_player_frame_simulated: bool,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SpawnPlayer {
@@ -46,7 +55,7 @@ pub struct DespawnPlayer {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct SpawnLevelObject {
+pub struct UpdateLevelObject {
     pub object: LevelObject,
     pub frame_number: FrameNumber,
 }
@@ -55,4 +64,27 @@ pub struct SpawnLevelObject {
 pub struct DespawnLevelObject {
     pub net_id: EntityNetId,
     pub frame_number: FrameNumber,
+}
+
+pub struct DeferredPlayerQueues<T> {
+    updates: HashMap<PlayerNetId, Vec<T>>,
+}
+
+impl<T> Default for DeferredPlayerQueues<T> {
+    fn default() -> Self {
+        Self {
+            updates: HashMap::new(),
+        }
+    }
+}
+
+impl<T> DeferredPlayerQueues<T> {
+    pub fn push(&mut self, player_net_id: PlayerNetId, update: T) {
+        let player_updates = self.updates.entry(player_net_id).or_default();
+        player_updates.push(update);
+    }
+
+    pub fn drain(&mut self) -> HashMap<PlayerNetId, Vec<T>> {
+        std::mem::take(&mut self.updates)
+    }
 }

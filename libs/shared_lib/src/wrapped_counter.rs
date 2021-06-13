@@ -11,7 +11,7 @@ pub trait Integer = num::Integer
     + num::traits::ops::overflowing::OverflowingAdd
     + std::fmt::Display;
 
-#[derive(Debug, Copy, Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Default, Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct WrappedCounter<T: num::Integer + Default>(T);
 
 impl<T: Integer> WrappedCounter<T> {
@@ -97,7 +97,7 @@ where
     }
 }
 
-unsafe impl<T: 'static + Integer> std::iter::Step for WrappedCounter<T>
+impl<T: 'static + Integer> std::iter::Step for WrappedCounter<T>
 where
     u8: AsPrimitive<T>,
     usize: AsPrimitive<T>,

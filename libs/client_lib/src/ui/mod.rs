@@ -1,7 +1,9 @@
 use bevy_egui::egui::{self, Ui};
 use mr_shared_lib::game::components::{PlayerDirection, Position};
 
+pub mod builder_ui;
 pub mod debug_ui;
+pub mod help_ui;
 pub mod overlay_ui;
 
 pub trait MuddleInspectable {

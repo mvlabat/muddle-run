@@ -1,12 +1,20 @@
 use crate::{
     game::commands::{
-        DespawnLevelObject, DespawnPlayer, GameCommands, RestartGame, SpawnLevelObject, SpawnPlayer,
+        DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
+        SwitchPlayerRole, UpdateLevelObject,
     },
-    messages::{EntityNetId, PlayerNetId},
-    player::{Player, PlayerUpdates},
+    messages::{DeferredMessagesQueue, EntityNetId, PlayerNetId, SwitchRole},
+    player::{Player, PlayerRole, PlayerUpdates},
     registry::EntityRegistry,
+    util::dedup_by_key_unsorted,
 };
-use bevy::{ecs::world::World, log};
+use bevy::{
+    ecs::{
+        system::{Res, ResMut},
+        world::World,
+    },
+    log,
+};
 use std::collections::HashMap;
 
 pub mod client_factories;
@@ -20,7 +28,7 @@ pub mod spawn;
 // TODO: track https://github.com/bevyengine/rfcs/pull/16.
 pub fn restart_game(world: &mut World) {
     let mut restart_game_commands = world
-        .get_resource_mut::<GameCommands<RestartGame>>()
+        .get_resource_mut::<DeferredQueue<RestartGame>>()
         .unwrap();
     if restart_game_commands.drain().is_empty() {
         return;
@@ -66,20 +74,99 @@ pub fn restart_game(world: &mut World) {
     }
 
     world
-        .get_resource_mut::<GameCommands<SpawnPlayer>>()
+        .get_resource_mut::<DeferredQueue<SpawnPlayer>>()
         .unwrap()
         .drain();
     world
-        .get_resource_mut::<GameCommands<DespawnPlayer>>()
+        .get_resource_mut::<DeferredQueue<DespawnPlayer>>()
         .unwrap()
         .drain();
     world
-        .get_resource_mut::<GameCommands<SpawnLevelObject>>()
+        .get_resource_mut::<DeferredQueue<UpdateLevelObject>>()
         .unwrap()
         .drain();
     world
-        .get_resource_mut::<GameCommands<DespawnLevelObject>>()
+        .get_resource_mut::<DeferredQueue<DespawnLevelObject>>()
         .unwrap()
         .drain();
     *world.get_resource_mut::<PlayerUpdates>().unwrap() = PlayerUpdates::default();
+}
+
+pub fn switch_player_role(
+    mut switch_role_commands: ResMut<DeferredQueue<SwitchPlayerRole>>,
+    mut players: ResMut<HashMap<PlayerNetId, Player>>,
+    mut spawn_player_commands: ResMut<DeferredQueue<SpawnPlayer>>,
+    mut despawn_player_commands: ResMut<DeferredQueue<DespawnPlayer>>,
+    mut switch_role_messages: ResMut<DeferredMessagesQueue<SwitchRole>>,
+) {
+    let mut switch_role_commands = switch_role_commands.drain();
+    // We want to keep the last command instead of the first one.
+    switch_role_commands.reverse();
+    dedup_by_key_unsorted(&mut switch_role_commands, |command| command.net_id);
+    switch_role_commands.reverse();
+
+    for switch_role_command in switch_role_commands {
+        let player = match players.get_mut(&switch_role_command.net_id) {
+            Some(player) => player,
+            None => {
+                log::warn!(
+                    "Can't switch role for player ({}) that doesn't exist",
+                    switch_role_command.net_id.0
+                );
+                continue;
+            }
+        };
+
+        if player.role == switch_role_command.role {
+            log::warn!(
+                "Player {} already has role {:?}",
+                switch_role_command.net_id.0,
+                player.role
+            );
+            continue;
+        }
+
+        player.role = switch_role_command.role;
+        log::info!(
+            "Switching player ({}) role to {:?}",
+            switch_role_command.net_id.0,
+            player.role
+        );
+        match player.role {
+            PlayerRole::Runner => {
+                spawn_player_commands.push(SpawnPlayer {
+                    net_id: switch_role_command.net_id,
+                    start_position: Default::default(),
+                    is_player_frame_simulated: switch_role_command.is_player_frame_simulated,
+                });
+            }
+            PlayerRole::Builder => {
+                despawn_player_commands.push(DespawnPlayer {
+                    net_id: switch_role_command.net_id,
+                    frame_number: switch_role_command.frame_number,
+                });
+            }
+        }
+
+        if cfg!(not(feature = "client")) {
+            switch_role_messages.push(SwitchRole {
+                net_id: switch_role_command.net_id,
+                role: switch_role_command.role,
+                frame_number: switch_role_command.frame_number,
+            });
+        }
+    }
+}
+
+pub fn remove_disconnected_players(
+    player_entities: Res<EntityRegistry<PlayerNetId>>,
+    mut players: ResMut<HashMap<PlayerNetId, Player>>,
+) {
+    players.drain_filter(|player_net_id, player| {
+        let remove = !player.is_connected && player_entities.get_entity(*player_net_id).is_none();
+        if remove {
+            log::info!("Player {} is disconnected and removed", player_net_id.0);
+        }
+        remove
+    });
 }
