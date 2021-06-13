@@ -2,17 +2,18 @@ use crate::input::MouseRay;
 use bevy::{
     ecs::{
         entity::Entity,
-        system::{Local, Query, Res, SystemParam},
+        system::{Local, Res, SystemParam},
     },
     input::{mouse::MouseButton, Input},
-    log,
     math::{Mat4, Vec2, Vec4},
     window::Window,
 };
 use bevy_rapier3d::{
-    physics::ColliderHandleComponent,
+    physics::{
+        IntoEntity, QueryPipelineColliderComponentsQuery, QueryPipelineColliderComponentsSet,
+    },
     rapier::{
-        geometry::{ColliderSet, InteractionGroups, Ray},
+        geometry::{InteractionGroups, Ray},
         na,
         pipeline::QueryPipeline,
     },
@@ -21,36 +22,25 @@ use bevy_rapier3d::{
 #[derive(SystemParam)]
 pub struct MouseEntityPicker<'a> {
     picked_entity: Local<'a, Option<Entity>>,
-    colliders: Query<'a, (Entity, &'static ColliderHandleComponent)>,
+    colliders: QueryPipelineColliderComponentsQuery<'a, 'static>,
     mouse_input: Res<'a, Input<MouseButton>>,
     mouse_ray: Res<'a, MouseRay>,
     query_pipeline: Res<'a, QueryPipeline>,
-    collider_set: Res<'a, ColliderSet>,
 }
 
 impl<'a> MouseEntityPicker<'a> {
     pub fn hovered_entity(&self) -> Option<Entity> {
-        if let Some((collider, _)) = self.query_pipeline.cast_ray(
-            &self.collider_set,
-            &self.mouse_ray.0,
-            f32::MAX,
-            true,
-            InteractionGroups::all(),
-            None,
-        ) {
-            if let Some((entity, _)) = self
-                .colliders
-                .iter()
-                .find(|(_, collider_component)| collider_component.handle() == collider)
-            {
-                return Some(entity);
-            } else {
-                // TODO: this does happen. We need to investigate.
-                //  (Might appear in some weird edge-cases when restarting a client or a server.)
-                log::error!("No entity with collider {:?} was found", collider);
-            }
-        }
-        None
+        let colliders = QueryPipelineColliderComponentsSet(&self.colliders);
+        self.query_pipeline
+            .cast_ray(
+                &colliders,
+                &self.mouse_ray.0,
+                f32::MAX,
+                true,
+                InteractionGroups::all(),
+                None,
+            )
+            .map(|(collider, _)| collider.entity())
     }
 
     pub fn pick_entity(&mut self) {

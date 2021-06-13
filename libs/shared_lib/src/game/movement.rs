@@ -17,9 +17,9 @@ use bevy::{
     math::Vec2,
     transform::components::Transform,
 };
-use bevy_rapier3d::{
-    physics::RigidBodyHandleComponent,
-    rapier::{dynamics::RigidBodySet, math::Vector},
+use bevy_rapier3d::rapier::{
+    dynamics::{RigidBodyPosition, RigidBodyVelocity},
+    math::Vector,
 };
 
 /// Positions should align in half a second.
@@ -113,35 +113,37 @@ pub fn read_movement_updates(
 
 type PlayersQuery<'a> = (
     Entity,
-    &'a RigidBodyHandleComponent,
+    &'a mut RigidBodyPosition,
+    &'a mut RigidBodyVelocity,
     &'a PlayerDirection,
     &'a Position,
     Option<&'a PlayerFrameSimulated>,
     &'a Spawned,
 );
 
-pub fn player_movement(
-    time: Res<SimulationTime>,
-    mut rigid_body_set: ResMut<RigidBodySet>,
-    players: Query<PlayersQuery>,
-) {
+pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuery>) {
     log::trace!(
         "Moving players (frame {}, {})",
         time.server_frame,
         time.player_frame
     );
-    for (entity, rigid_body, player_direction, position, player_frame_simulated, _) in players
-        .iter()
-        .filter(|(_, _, _, _, player_frame_simulated, spawned)| {
+    for (
+        entity,
+        mut rigid_body_position,
+        mut rigid_body_velocity,
+        player_direction,
+        position,
+        player_frame_simulated,
+        _,
+    ) in players
+        .iter_mut()
+        .filter(|(_, _, _, _, _, player_frame_simulated, spawned)| {
             spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated))
         })
     {
         let frame_number = time.entity_simulation_frame(player_frame_simulated);
-        let rigid_body = rigid_body_set
-            .get_mut(rigid_body.handle())
-            .expect("expected a rigid body");
 
-        let mut body_position = *rigid_body.position();
+        let body_position = &mut rigid_body_position.position;
         let current_position = position.buffer.get(frame_number).unwrap_or_else(|| {
             // This can happen only if our `sync_position` haven't created a new position for
             // the current frame. If we are catching this, it's definitely a bug.
@@ -153,11 +155,8 @@ pub fn player_movement(
                 position.buffer.len()
             );
         });
-        let wake_up = (body_position.translation.x - current_position.x).abs() > f32::EPSILON
-            || (body_position.translation.y - current_position.y).abs() > f32::EPSILON;
         body_position.translation.x = current_position.x;
         body_position.translation.y = current_position.y;
-        rigid_body.set_position(body_position, wake_up);
 
         let zero_vec = Vec2::new(0.0, 0.0);
         let (_, current_direction) = player_direction
@@ -180,16 +179,13 @@ pub fn player_movement(
                 }
             });
         let current_direction_norm = current_direction.normalize_or_zero() * PLAYER_MOVEMENT_SPEED;
-        let wake_up = current_direction_norm.length_squared() > 0.0;
-        rigid_body.set_linvel(
-            Vector::new(current_direction_norm.x, current_direction_norm.y, 0.0),
-            wake_up,
-        );
+        rigid_body_velocity.linvel =
+            Vector::new(current_direction_norm.x, current_direction_norm.y, 0.0);
     }
 }
 
 type SimulatedEntitiesQuery<'a> = (
-    &'a RigidBodyHandleComponent,
+    &'a mut RigidBodyPosition,
     &'a mut Position,
     Option<&'a mut Transform>,
     Option<&'a mut PredictedPosition>,
@@ -200,7 +196,6 @@ type SimulatedEntitiesQuery<'a> = (
 pub fn sync_position(
     game_time: Res<GameTime>,
     time: Res<SimulationTime>,
-    mut rigid_body_set: ResMut<RigidBodySet>,
     mut simulated_entities: Query<SimulatedEntitiesQuery>,
 ) {
     log::trace!(
@@ -209,7 +204,7 @@ pub fn sync_position(
         time.player_frame
     );
     for (
-        rigid_body,
+        mut rigid_body_position,
         mut position,
         mut transform,
         mut predicted_position,
@@ -223,11 +218,7 @@ pub fn sync_position(
             })
     {
         let frame_number = time.entity_simulation_frame(player_frame_simulated);
-        let rigid_body = rigid_body_set
-            .get_mut(rigid_body.handle())
-            .expect("expected a rigid body");
-
-        let body_position = *rigid_body.position();
+        let body_position = &mut rigid_body_position.position;
         let new_position = Vec2::new(body_position.translation.x, body_position.translation.y);
         if let Some(predicted_position) = predicted_position.as_mut() {
             let current_position = *position

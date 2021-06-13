@@ -3,8 +3,8 @@ use mr_shared_lib::game::components::{PlayerDirection, Position};
 
 pub mod builder_ui;
 pub mod debug_ui;
-pub mod overlay_ui;
 pub mod help_ui;
+pub mod overlay_ui;
 
 pub trait MuddleInspectable {
     fn inspect(&self, ui: &mut Ui);

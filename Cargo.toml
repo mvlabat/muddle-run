@@ -16,6 +16,12 @@ opt-level = 3
 #bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
 #bevy_webgl2 = { path = "../bevy_webgl2" }
 #egui = { path = "../egui/egui" }
+#bevy_rapier3d = { path = "../bevy_rapier/bevy_rapier3d" }
+#bevy = { path = "../bevy" }
+# If we patch bevy, we need to patch these as well for bevy_networking_turbulence:
+#bevy_app = { path = "../bevy/crates/bevy_app" }
+#bevy_ecs = { path = "../bevy/crates/bevy_ecs" }
+#bevy_tasks = { path = "../bevy/crates/bevy_tasks" }
 
 bevy_networking_turbulence = { git = "https://github.com/mvlabat/bevy_networking_turbulence.git", branch = "muddle-run" }
 naia-client-socket = { git = "https://github.com/mvlabat/naia-socket.git", branch = "muddle-run" }

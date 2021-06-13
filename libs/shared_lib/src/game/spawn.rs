@@ -18,7 +18,13 @@ use crate::{
     GameTime, SimulationTime, PLAYER_SIZE,
 };
 use bevy::{log, prelude::*};
-use bevy_rapier3d::rapier::{dynamics::RigidBodyBuilder, geometry::ColliderBuilder};
+use bevy_rapier3d::{
+    physics::{ColliderBundle, ColliderPositionSync, RigidBodyBundle},
+    rapier::{
+        dynamics::{RigidBodyMassProps, RigidBodyMassPropsFlags},
+        geometry::ColliderShape,
+    },
+};
 
 pub fn spawn_players(
     mut commands: Commands,
@@ -68,21 +74,24 @@ pub fn spawn_players(
         );
         entity_commands
             .insert(PlayerTag)
-            .insert(
-                RigidBodyBuilder::new_dynamic()
-                    .translation(0.0, 0.0, PLAYER_SIZE)
-                    .lock_rotations(),
-            )
-            .insert(ColliderBuilder::cuboid(
-                PLAYER_SIZE,
-                PLAYER_SIZE,
-                PLAYER_SIZE,
-            ))
+            .insert_bundle(RigidBodyBundle {
+                position: [0.0, 0.0, PLAYER_SIZE].into(),
+                mass_properties: RigidBodyMassProps {
+                    flags: RigidBodyMassPropsFlags::ROTATION_LOCKED,
+                    ..RigidBodyMassProps::default()
+                },
+                ..RigidBodyBundle::default()
+            })
+            .insert_bundle(ColliderBundle {
+                shape: ColliderShape::cuboid(PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE),
+                ..ColliderBundle::default()
+            })
             .insert(Position::new(
                 command.start_position,
                 time.server_frame,
                 frames_ahead + 1,
             ))
+            .insert(ColliderPositionSync::Discrete)
             .insert(PlayerDirection::new(
                 Vec2::ZERO,
                 time.server_frame,
@@ -201,8 +210,9 @@ pub fn update_level_objects(
                 command.object.desc.label(),
                 command.object.net_id.0
             )))
-            .insert(rigid_body)
-            .insert(collider)
+            .insert_bundle(rigid_body)
+            .insert_bundle(collider)
+            .insert(ColliderPositionSync::Discrete)
             .insert(Position::new(
                 command.object.desc.position(),
                 time.server_frame,

@@ -25,6 +25,7 @@ use crate::{
     registry::EntityRegistry,
 };
 use bevy::{
+    app::Events,
     ecs::{
         archetype::{Archetype, ArchetypeComponentId},
         component::ComponentId,
@@ -39,15 +40,14 @@ use bevy_networking_turbulence::{LinkConditionerConfig, NetworkingPlugin};
 use bevy_rapier3d::{
     physics,
     physics::{
-        EntityMaps, EventQueue, InteractionPairFilters, RapierConfiguration, SimulationToRenderTime,
+        JointsEntityMap, ModificationTracker, NoUserData, PhysicsHooksWithQueryObject,
+        RapierConfiguration, SimulationToRenderTime, TimestepMode,
     },
     rapier::{
-        dynamics::{CCDSolver, IntegrationParameters, JointSet, RigidBodySet},
-        geometry::{BroadPhase, ColliderSet, NarrowPhase, SolverFlags},
+        dynamics::{CCDSolver, IntegrationParameters, IslandManager, JointSet},
+        geometry::{BroadPhase, ContactEvent, IntersectionEvent, NarrowPhase},
         math::Vector,
-        pipeline::{
-            PairFilterContext, PhysicsHooks, PhysicsHooksFlags, PhysicsPipeline, QueryPipeline,
-        },
+        pipeline::{PhysicsPipeline, QueryPipeline},
     },
 };
 use messages::{EntityNetId, PlayerNetId};
@@ -78,6 +78,7 @@ pub mod stage {
     pub const SIMULATION_SCHEDULE: &str = "mr_shared_simulation_schedule";
     pub const SPAWN: &str = "mr_shared_spawn";
     pub const PRE_GAME: &str = "mr_shared_pre_game";
+    pub const FINALIZE_PHYSICS: &str = "mr_shared_finalize_physics";
     pub const GAME: &str = "mr_shared_game";
     pub const PHYSICS: &str = "mr_shared_physics";
     pub const POST_PHYSICS: &str = "mr_shared_post_physics";
@@ -158,8 +159,13 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::PRE_GAME,
                 SystemStage::parallel()
-                    .with_system(physics::create_body_and_collider_system.system())
+                    .with_system(physics::attach_bodies_and_colliders_system.system())
                     .with_system(physics::create_joints_system.system()),
+            )
+            .with_stage(
+                stage::FINALIZE_PHYSICS,
+                SystemStage::parallel()
+                    .with_system(physics::finalize_collider_attach_to_bodies.system()),
             )
             .with_stage(
                 stage::GAME,
@@ -167,18 +173,14 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::PHYSICS,
-                SystemStage::parallel().with_system(physics::step_world_system.system()),
+                SystemStage::parallel()
+                    .with_system(physics::step_world_system::<NoUserData>.system()),
             )
             .with_stage(
                 stage::POST_PHYSICS,
-                SystemStage::parallel()
-                    .with_system(physics::destroy_body_and_collider_system.system())
-                    .with_system(
-                        physics::sync_transform_system
-                            .system()
-                            .label("sync_transform"),
-                    )
-                    .with_system(sync_position.system().after("sync_transform")),
+                SystemStage::single_threaded()
+                    .with_system(physics::sync_transforms.system())
+                    .with_system(sync_position.system()),
             )
             .with_stage(
                 stage::POST_GAME,
@@ -211,7 +213,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 post_tick_stage
                     .take()
                     .expect("Can't initialize the plugin more than once")
-                    .with_run_criteria(GameTickRunCriteria::new(TICKS_PER_NETWORK_BROADCAST)),
+                    .with_system(physics::collect_removals.system()),
             );
 
         builder.add_stage_before(
@@ -271,21 +273,21 @@ impl Plugin for RapierResourcesPlugin {
             .insert_resource(QueryPipeline::new())
             .insert_resource(RapierConfiguration {
                 gravity: Vector::new(0.0, 0.0, 0.0),
+                timestep_mode: TimestepMode::FixedTimestep,
                 ..RapierConfiguration::default()
             })
             .insert_resource(IntegrationParameters::default())
             .insert_resource(BroadPhase::new())
             .insert_resource(NarrowPhase::new())
-            .insert_resource(RigidBodySet::new())
-            .insert_resource(ColliderSet::new())
+            .insert_resource(IslandManager::new())
             .insert_resource(JointSet::new())
             .insert_resource(CCDSolver::new())
-            .insert_resource(InteractionPairFilters {
-                hook: Some(Box::new(PairFilter)),
-            })
-            .insert_resource(EventQueue::new(true))
+            .insert_resource(PhysicsHooksWithQueryObject::<NoUserData>(Box::new(())))
+            .insert_resource(Events::<IntersectionEvent>::default())
+            .insert_resource(Events::<ContactEvent>::default())
             .insert_resource(SimulationToRenderTime::default())
-            .insert_resource(EntityMaps::default());
+            .insert_resource(JointsEntityMap::default())
+            .insert_resource(ModificationTracker::default());
     }
 }
 
@@ -566,20 +568,4 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
 pub fn tick_game_frame(mut time: ResMut<GameTime>) {
     log::trace!("Concluding game frame tick: {}", time.frame_number.value());
     time.frame_number += FrameNumber::new(1);
-}
-
-struct PairFilter;
-
-impl PhysicsHooks for PairFilter {
-    fn active_hooks(&self) -> PhysicsHooksFlags {
-        PhysicsHooksFlags::FILTER_CONTACT_PAIR | PhysicsHooksFlags::FILTER_INTERSECTION_PAIR
-    }
-
-    fn filter_contact_pair(&self, _context: &PairFilterContext) -> Option<SolverFlags> {
-        Some(SolverFlags::COMPUTE_IMPULSES)
-    }
-
-    fn filter_intersection_pair(&self, _context: &PairFilterContext) -> bool {
-        true
-    }
 }

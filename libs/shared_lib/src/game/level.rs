@@ -1,6 +1,12 @@
 use crate::{game::level_objects::*, messages::EntityNetId};
 use bevy::math::Vec2;
-use bevy_rapier3d::rapier::{dynamics::RigidBodyBuilder, geometry::ColliderBuilder};
+use bevy_rapier3d::{
+    physics::{ColliderBundle, RigidBodyBundle},
+    rapier::{
+        dynamics::RigidBodyType,
+        geometry::{ColliderShape, ColliderType},
+    },
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -44,23 +50,30 @@ impl LevelObjectDesc {
         }
     }
 
-    pub fn physics_body(&self) -> (RigidBodyBuilder, ColliderBuilder) {
+    pub fn physics_body(&self) -> (RigidBodyBundle, ColliderBundle) {
         match self {
             Self::Plane(plane) => (
-                RigidBodyBuilder::new_kinematic().translation(
-                    self.position().x,
-                    self.position().y,
-                    0.0,
-                ),
-                ColliderBuilder::cuboid(plane.size, plane.size, 0.01).sensor(true),
+                RigidBodyBundle {
+                    body_type: RigidBodyType::KinematicPositionBased,
+                    position: [self.position().x, self.position().y, 0.0].into(),
+                    ..RigidBodyBundle::default()
+                },
+                ColliderBundle {
+                    collider_type: ColliderType::Sensor,
+                    shape: ColliderShape::cuboid(plane.size, plane.size, 0.01),
+                    ..ColliderBundle::default()
+                },
             ),
             Self::Cube(cube) => (
-                RigidBodyBuilder::new_kinematic().translation(
-                    self.position().x,
-                    self.position().y,
-                    cube.size,
-                ),
-                ColliderBuilder::cuboid(cube.size, cube.size, cube.size),
+                RigidBodyBundle {
+                    body_type: RigidBodyType::KinematicPositionBased,
+                    position: [self.position().x, self.position().y, cube.size].into(),
+                    ..RigidBodyBundle::default()
+                },
+                ColliderBundle {
+                    shape: ColliderShape::cuboid(cube.size, cube.size, cube.size),
+                    ..ColliderBundle::default()
+                },
             ),
         }
     }
