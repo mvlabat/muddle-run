@@ -6,7 +6,7 @@ use crate::{
     messages::PlayerNetId,
     player::PlayerUpdates,
     registry::EntityRegistry,
-    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
+    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, PLAYER_SIZE, SIMULATIONS_PER_SECOND,
 };
 use bevy::{
     ecs::{
@@ -157,6 +157,7 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
         });
         body_position.translation.x = current_position.x;
         body_position.translation.y = current_position.y;
+        body_position.translation.z = PLAYER_SIZE;
 
         let zero_vec = Vec2::new(0.0, 0.0);
         let (_, current_direction) = player_direction
@@ -185,7 +186,7 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
 }
 
 type SimulatedEntitiesQuery<'a> = (
-    &'a mut RigidBodyPosition,
+    &'a RigidBodyPosition,
     &'a mut Position,
     Option<&'a mut Transform>,
     Option<&'a mut PredictedPosition>,
@@ -204,7 +205,7 @@ pub fn sync_position(
         time.player_frame
     );
     for (
-        mut rigid_body_position,
+        rigid_body_position,
         mut position,
         mut transform,
         mut predicted_position,
@@ -218,7 +219,7 @@ pub fn sync_position(
             })
     {
         let frame_number = time.entity_simulation_frame(player_frame_simulated);
-        let body_position = &mut rigid_body_position.position;
+        let body_position = &rigid_body_position.position;
         let new_position = Vec2::new(body_position.translation.x, body_position.translation.y);
         if let Some(predicted_position) = predicted_position.as_mut() {
             let current_position = *position
