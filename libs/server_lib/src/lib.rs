@@ -62,7 +62,7 @@ impl Plugin for MuddleServerPlugin {
             FixedTimestep::steps_per_second(SIMULATIONS_PER_SECOND as f64),
             input_stage,
             broadcast_updates_stage,
-            SystemStage::single_threaded(),
+            SystemStage::parallel(),
             None,
         ));
 

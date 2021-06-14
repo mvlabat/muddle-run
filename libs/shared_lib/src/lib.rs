@@ -30,7 +30,7 @@ use bevy::{
         archetype::{Archetype, ArchetypeComponentId},
         component::ComponentId,
         query::Access,
-        schedule::ShouldRun,
+        schedule::{ParallelSystemDescriptorCoercion, ShouldRun},
         system::{IntoSystem, SystemId},
     },
     log,
@@ -149,12 +149,16 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                     .with_system(
                         despawn_players
                             .system()
-                            .label("despawn")
+                            .label("despawn_players")
                             .after("player_role"),
                     )
-                    .with_system(spawn_players.system().after("despawn"))
-                    .with_system(update_level_objects.system())
-                    .with_system(despawn_level_objects.system()),
+                    .with_system(spawn_players.system().after("despawn_players"))
+                    .with_system(despawn_level_objects.system().label("despawn_objects"))
+                    // Updating level objects might despawn entities completely if they are
+                    // updated with replacement. Running it before `despawn_level_objects` might
+                    // result into an edge-case where changes to the `Spawned` component are not
+                    // propagated.
+                    .with_system(update_level_objects.system().after("despawn_objects")),
             )
             .with_stage(
                 stage::PRE_GAME,
@@ -178,9 +182,9 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::POST_PHYSICS,
-                SystemStage::single_threaded()
-                    .with_system(physics::sync_transforms.system())
-                    .with_system(sync_position.system()),
+                SystemStage::parallel()
+                    .with_system(physics::sync_transforms.system().label("sync_transforms"))
+                    .with_system(sync_position.system().after("sync_transforms")),
             )
             .with_stage(
                 stage::POST_GAME,
@@ -203,9 +207,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::POST_SIMULATIONS,
-                SystemStage::single_threaded()
-                    .with_system(tick_game_frame.system())
-                    .with_system(process_spawned_entities.system())
+                SystemStage::parallel()
+                    .with_system(tick_game_frame.system().label("tick"))
+                    .with_system(process_spawned_entities.system().after("tick"))
+                    // Remove disconnected players doesn't depend on ticks, so it's fine.
                     .with_system(remove_disconnected_players.system()),
             )
             .with_stage(
@@ -224,10 +229,11 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         builder.add_stage_before(
             stage::MAIN_SCHEDULE,
             stage::READ_INPUT_UPDATES,
-            SystemStage::single_threaded()
-                .with_system(restart_game.exclusive_system())
+            SystemStage::parallel()
+                .with_system(restart_game.exclusive_system().label("restart_game"))
                 .with_system_set(
                     SystemSet::on_update(GameState::Playing)
+                        .after("restart_game")
                         .with_system(read_movement_updates.system()),
                 ),
         );
