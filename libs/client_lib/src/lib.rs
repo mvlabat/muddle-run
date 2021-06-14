@@ -12,7 +12,7 @@ use bevy::{
         component::ComponentId,
         entity::Entity,
         query::Access,
-        schedule::{ShouldRun, State, StateError, SystemStage},
+        schedule::{ParallelSystemDescriptorCoercion, ShouldRun, State, StateError, SystemStage},
         system::{Commands, IntoSystem, Local, Res, ResMut, System, SystemId, SystemParam},
         world::World,
     },
@@ -46,20 +46,35 @@ pub struct MuddleClientPlugin;
 
 impl Plugin for MuddleClientPlugin {
     fn build(&self, builder: &mut AppBuilder) {
-        let input_stage = SystemStage::single_threaded()
+        let input_stage = SystemStage::parallel()
             // Processing network events should happen before tracking input
             // because we reset current's player inputs on each delta update.
-            .with_system(maintain_connection.system())
-            .with_system(process_network_events.system())
-            .with_system(input::track_input_events.system())
-            .with_system(input::cast_mouse_ray.system());
+            .with_system(maintain_connection.system().label("connection"))
+            .with_system(
+                process_network_events
+                    .system()
+                    .label("network")
+                    .after("connection"),
+            )
+            .with_system(
+                input::track_input_events
+                    .system()
+                    .label("input")
+                    .after("network"),
+            )
+            .with_system(input::cast_mouse_ray.system().after("input"));
         let broadcast_updates_stage = SystemStage::parallel()
             .with_system(send_network_updates.system())
             .with_system(send_requests.system());
-        let post_tick_stage = SystemStage::single_threaded()
-            .with_system(pause_simulation.system())
-            .with_system(control_ticking_speed.system())
-            .with_system(update_debug_ui_state.system());
+        let post_tick_stage = SystemStage::parallel()
+            .with_system(pause_simulation.system().label("pause_simulation"))
+            .with_system(
+                control_ticking_speed
+                    .system()
+                    .label("control_speed")
+                    .after("pause_simulation"),
+            )
+            .with_system(update_debug_ui_state.system().after("pause_simulation"));
 
         builder
             .add_plugin(FrameTimeDiagnosticsPlugin)
