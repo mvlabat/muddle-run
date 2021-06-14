@@ -132,6 +132,8 @@ pub fn switch_player_role(
             switch_role_command.net_id.0,
             player.role
         );
+        // This will likely make a duplicate command, as we might as well spawn the player while
+        // processing delta updates, but commands get de-duped anyway.
         match player.role {
             PlayerRole::Runner => {
                 spawn_player_commands.push(SpawnPlayer {
