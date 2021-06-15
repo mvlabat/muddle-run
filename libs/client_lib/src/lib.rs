@@ -1,4 +1,6 @@
 use crate::{
+    camera::{move_free_camera_pivot, reattach_camera},
+    components::{CameraPivotDirection, CameraPivotTag},
     input::{LevelObjectRequestsQueue, MouseRay, PlayerRequestsQueue},
     net::{maintain_connection, process_network_events, send_network_updates, send_requests},
     ui::debug_ui::update_debug_ui_state,
@@ -17,10 +19,10 @@ use bevy::{
         world::World,
     },
     log,
-    math::Vec3,
+    math::{Vec2, Vec3},
     pbr::{Light, LightBundle},
     render::entity::PerspectiveCameraBundle,
-    transform::components::Transform,
+    transform::components::{GlobalTransform, Parent, Transform},
     utils::HashMap,
 };
 use bevy_egui::EguiPlugin;
@@ -35,6 +37,8 @@ use mr_shared_lib::{
 };
 use std::borrow::Cow;
 
+mod camera;
+mod components;
 mod helpers;
 mod input;
 mod net;
@@ -67,6 +71,8 @@ impl Plugin for MuddleClientPlugin {
             .with_system(send_network_updates.system())
             .with_system(send_requests.system());
         let post_tick_stage = SystemStage::parallel()
+            .with_system(reattach_camera.system().label("reattach_camera"))
+            .with_system(move_free_camera_pivot.system().after("reattach_camera"))
             .with_system(pause_simulation.system().label("pause_simulation"))
             .with_system(
                 control_ticking_speed
@@ -217,6 +223,8 @@ impl LevelObjectCorrelations {
     }
 }
 
+pub struct MainCameraPivotEntity(pub Entity);
+
 pub struct MainCameraEntity(pub Entity);
 
 fn init_state(mut game_state: ResMut<State<GameState>>) {
@@ -281,6 +289,13 @@ fn basic_scene(mut commands: Commands) {
         transform: Transform::from_translation(Vec3::new(-64.0, -92.0, 144.0)),
         ..Default::default()
     });
+    let main_camera_pivot_entity = commands
+        .spawn()
+        .insert(CameraPivotTag)
+        .insert(CameraPivotDirection(Vec2::ZERO))
+        .insert(Transform::identity())
+        .insert(GlobalTransform::identity())
+        .id();
     // Camera.
     let main_camera_entity = commands
         .spawn_bundle(PerspectiveCameraBundle {
@@ -288,7 +303,9 @@ fn basic_scene(mut commands: Commands) {
                 .looking_at(Vec3::default(), Vec3::Z),
             ..Default::default()
         })
+        .insert(Parent(main_camera_pivot_entity))
         .id();
+    commands.insert_resource(MainCameraPivotEntity(main_camera_pivot_entity));
     commands.insert_resource(MainCameraEntity(main_camera_entity));
 }
 
