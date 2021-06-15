@@ -53,7 +53,7 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands) {
-        commands.remove::<PbrBundle>();
+        commands.remove_bundle::<PbrBundle>();
     }
 }
 
@@ -81,7 +81,7 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands) {
-        commands.remove::<PbrBundle>();
+        commands.remove_bundle::<PbrBundle>();
     }
 }
 
@@ -109,7 +109,7 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands) {
-        commands.remove::<PbrBundle>();
+        commands.remove_bundle::<PbrBundle>();
     }
 }
 

@@ -235,9 +235,11 @@ pub fn sync_position(
                     new_predicted_position + (new_position - new_predicted_position) * LERP_FACTOR;
 
                 predicted_position.value = lerp;
-                let transform = transform.as_mut().expect("Expected a Transform component if entity has PredictedPosition (is supposed to be a client)");
-                transform.translation.x = lerp.x;
-                transform.translation.y = lerp.y;
+                // Might be missing if we've just despawned the entity.
+                if let Some(transform) = transform.as_mut() {
+                    transform.translation.x = lerp.x;
+                    transform.translation.y = lerp.y;
+                }
             }
         }
 

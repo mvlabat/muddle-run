@@ -10,9 +10,10 @@ use bevy_inspector_egui::WorldInspectorParams;
 use bevy_rapier3d::{na, rapier::geometry::Ray};
 use chrono::{DateTime, Utc};
 use mr_shared_lib::{
-    game::level::LevelObject,
+    game::{components::Spawned, level::LevelObject},
     messages::{EntityNetId, PlayerNetId, SpawnLevelObjectRequest},
     player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
+    registry::EntityRegistry,
     GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::collections::HashMap;
@@ -59,6 +60,8 @@ pub struct PlayerUpdatesParams<'a> {
     switched_role_at: Local<'a, Option<DateTime<Utc>>>,
     current_player_net_id: Res<'a, CurrentPlayerNetId>,
     players: Res<'a, HashMap<PlayerNetId, Player>>,
+    player_registry: Res<'a, EntityRegistry<PlayerNetId>>,
+    players_query: Query<'a, &'static Spawned>,
     player_updates: ResMut<'a, PlayerUpdates>,
     player_requests: ResMut<'a, PlayerRequestsQueue>,
 }
@@ -80,9 +83,15 @@ pub fn track_input_events(
     );
 
     // Keyboard input.
-    if let Some(player_net_id) = player_updates_params.current_player_net_id.0 {
+    let current_player_is_spawned = player_updates_params
+        .current_player_net_id
+        .0
+        .and_then(|net_id| player_updates_params.player_registry.get_entity(net_id))
+        .and_then(|player_entity| player_updates_params.players_query.get(player_entity).ok())
+        .map_or(false, |spawned| spawned.is_spawned(time.frame_number));
+    if current_player_is_spawned {
         let direction_updates = player_updates_params.player_updates.get_direction_mut(
-            player_net_id,
+            player_updates_params.current_player_net_id.0.unwrap(),
             time.frame_number,
             COMPONENT_FRAMEBUFFER_LIMIT,
         );

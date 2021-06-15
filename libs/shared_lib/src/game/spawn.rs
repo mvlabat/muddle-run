@@ -1,4 +1,5 @@
 use crate::{
+    framebuffer::FrameNumber,
     game::{
         client_factories::{
             ClientFactory, CubeClientFactory, PbrClientParams, PlaneClientFactory,
@@ -8,7 +9,8 @@ use crate::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, UpdateLevelObject,
         },
         components::{
-            LevelObjectLabel, LevelObjectTag, PlayerDirection, PlayerTag, Position, Spawned,
+            LevelObjectLabel, LevelObjectTag, PlayerDirection, PlayerTag, Position, SpawnCommand,
+            Spawned,
         },
         level::{LevelObjectDesc, LevelState},
     },
@@ -45,6 +47,7 @@ pub fn spawn_players(
         };
 
         if let Some(entity) = player_entities.get_entity(command.net_id) {
+            let mut entity_commands = commands.entity(entity);
             // TODO: double-check that we send a respawn command indeed and it's correct.
             log::info!(
                 "Respawning player ({}) entity (frame: {}): {:?}",
@@ -55,13 +58,19 @@ pub fn spawn_players(
 
             let (_, mut spawned, mut position, mut player_direction) =
                 players.get_mut(entity).unwrap();
-            position
-                .buffer
-                .insert(time.server_frame, command.start_position);
+            position.buffer.insert(
+                time.player_frame + FrameNumber::new(1),
+                command.start_position,
+            );
             player_direction
                 .buffer
-                .insert(time.server_frame, Some(Vec2::ZERO));
-            spawned.set_respawned_at(time.server_frame);
+                .insert(time.player_frame + FrameNumber::new(1), Some(Vec2::ZERO));
+            PlayerClientFactory::insert_components(
+                &mut entity_commands,
+                &mut pbr_client_params,
+                &(command.start_position, command.is_player_frame_simulated),
+            );
+            spawned.push_command(time.server_frame, SpawnCommand::Spawn);
 
             continue;
         }
@@ -148,7 +157,7 @@ pub fn despawn_players(
             command.frame_number
         );
         PlayerClientFactory::remove_components(&mut commands.entity(entity));
-        spawned.set_despawned_at(command.frame_number);
+        spawned.push_command(command.frame_number, SpawnCommand::Despawn);
     }
 }
 
@@ -276,7 +285,7 @@ pub fn despawn_level_objects(
                 CubeClientFactory::remove_components(&mut commands.entity(entity))
             }
         }
-        spawned.set_despawned_at(command.frame_number);
+        spawned.push_command(command.frame_number, SpawnCommand::Despawn);
     }
 }
 
@@ -288,7 +297,7 @@ pub fn process_spawned_entities(
     mut spawned_entities: Query<(Entity, &mut Spawned)>,
 ) {
     for (entity, mut spawned) in spawned_entities.iter_mut() {
-        spawned.mark_if_mature(game_time.frame_number);
+        spawned.pop_outdated_commands(game_time.frame_number);
         if spawned.can_be_removed(game_time.frame_number) {
             log::debug!("Despawning entity {:?}", entity);
             commands.entity(entity).despawn();

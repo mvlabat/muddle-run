@@ -3,6 +3,7 @@ use crate::{
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use bevy::math::Vec2;
+use std::collections::VecDeque;
 
 // NOTE: After adding components for new archetypes, make sure that related entities are cleaned up
 // in the `restart_game` system.
@@ -51,73 +52,75 @@ pub struct PredictedPosition {
     pub value: Vec2,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum SpawnCommand {
+    Spawn,
+    Despawn,
+}
+
 /// The purpose of this component is providing a frame number of when a component was spawned,
 /// to be able to avoid processing an entity in case rewind game state during lag compensation.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Spawned {
     /// We store an option since FrameNumber represents a wrapped counter (i.e. cycling counter).
     /// If a component gets old enough, we set the timestamp to `None`, as we become sure that
     /// we won't try to simulate an entity that wasn't spawned for a given `GameTime::sumilation_frame`.
     /// See `mark_mature_entities` system.
-    spawned_at: Option<FrameNumber>,
-    despawned_at: Option<FrameNumber>,
-    respawned_at: Option<FrameNumber>,
+    commands: VecDeque<(SpawnCommand, FrameNumber)>,
 }
 
 impl Spawned {
     pub fn new(frame_spawned: FrameNumber) -> Self {
-        Self {
-            spawned_at: Some(frame_spawned),
-            despawned_at: None,
-            respawned_at: None,
-        }
+        let mut commands = VecDeque::new();
+        commands.push_back((SpawnCommand::Spawn, frame_spawned));
+        Self { commands }
     }
 
     pub fn is_spawned(&self, frame_number: FrameNumber) -> bool {
-        let is_spawned = self
-            .spawned_at
-            .map_or(true, |spawned_at| spawned_at <= frame_number);
-        is_spawned && !self.is_despawned(frame_number)
-    }
-
-    pub fn is_despawned(&self, frame_number: FrameNumber) -> bool {
-        match (self.despawned_at, self.respawned_at) {
-            (Some(despawned_at), None) => frame_number >= despawned_at,
-            (Some(despawned_at), Some(respawned_at)) => {
-                frame_number >= despawned_at && frame_number < respawned_at
-            }
-            (None, _) => false,
-        }
-    }
-
-    pub fn mark_if_mature(&mut self, frame_number: FrameNumber) {
-        if let Some(spawned_at) = self.spawned_at {
-            if frame_number > spawned_at + FrameNumber::new(COMPONENT_FRAMEBUFFER_LIMIT) {
-                self.spawned_at = None;
+        let mut res = true;
+        for (command, _) in self
+            .commands
+            .iter()
+            .take_while(|(_, command_frame_number)| frame_number >= *command_frame_number)
+        {
+            res = match command {
+                SpawnCommand::Spawn => true,
+                SpawnCommand::Despawn => false,
             }
         }
-        let despawned_long_time_ago = self.despawned_at.map_or(false, |despawned_at| {
-            frame_number > despawned_at + FrameNumber::new(COMPONENT_FRAMEBUFFER_LIMIT)
-        });
-        if !self.can_be_removed(frame_number) && despawned_long_time_ago {
-            self.despawned_at = None;
-            self.respawned_at = None;
-        }
-    }
-
-    pub fn set_despawned_at(&mut self, frame_number: FrameNumber) {
-        self.despawned_at = Some(frame_number);
-    }
-
-    pub fn set_respawned_at(&mut self, frame_number: FrameNumber) {
-        self.respawned_at = Some(frame_number);
+        res
     }
 
     pub fn can_be_removed(&self, frame_number: FrameNumber) -> bool {
-        let can_be_despawned = self.despawned_at.map_or(false, |despawned_at| {
-            despawned_at + FrameNumber::new(COMPONENT_FRAMEBUFFER_LIMIT) >= frame_number
-        });
-        can_be_despawned && self.respawned_at.is_none()
+        if let Some((SpawnCommand::Despawn, command_frame_number)) = self.commands.back() {
+            return frame_number
+                >= *command_frame_number + FrameNumber::new(COMPONENT_FRAMEBUFFER_LIMIT);
+        }
+        false
+    }
+
+    pub fn push_command(&mut self, frame_number: FrameNumber, command: SpawnCommand) {
+        let command_differs = self.commands.is_empty()
+            || self
+                .commands
+                .back()
+                .map_or(false, |(last_command, _)| *last_command != command);
+        let command_is_new = self
+            .commands
+            .back()
+            .map_or(true, |(_, last_command_frame_number)| {
+                *last_command_frame_number < frame_number
+            });
+        if command_differs && command_is_new {
+            self.commands.push_back((command, frame_number));
+        }
+    }
+
+    pub fn pop_outdated_commands(&mut self, frame_number: FrameNumber) {
+        while matches!(self.commands.front(), Some((_, command_frame_number)) if frame_number > *command_frame_number + FrameNumber::new(COMPONENT_FRAMEBUFFER_LIMIT * 2))
+        {
+            self.commands.pop_front();
+        }
     }
 }
 
