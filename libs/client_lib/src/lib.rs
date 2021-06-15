@@ -1,6 +1,6 @@
 use crate::{
-    camera::reattach_camera,
-    components::CameraPivotTag,
+    camera::{move_free_camera_pivot, reattach_camera},
+    components::{CameraPivotDirection, CameraPivotTag},
     input::{LevelObjectRequestsQueue, MouseRay, PlayerRequestsQueue},
     net::{maintain_connection, process_network_events, send_network_updates, send_requests},
     ui::debug_ui::update_debug_ui_state,
@@ -19,7 +19,7 @@ use bevy::{
         world::World,
     },
     log,
-    math::Vec3,
+    math::{Vec2, Vec3},
     pbr::{Light, LightBundle},
     render::entity::PerspectiveCameraBundle,
     transform::components::{GlobalTransform, Parent, Transform},
@@ -71,7 +71,8 @@ impl Plugin for MuddleClientPlugin {
             .with_system(send_network_updates.system())
             .with_system(send_requests.system());
         let post_tick_stage = SystemStage::parallel()
-            .with_system(reattach_camera.system())
+            .with_system(reattach_camera.system().label("reattach_camera"))
+            .with_system(move_free_camera_pivot.system().after("reattach_camera"))
             .with_system(pause_simulation.system().label("pause_simulation"))
             .with_system(
                 control_ticking_speed
@@ -291,6 +292,7 @@ fn basic_scene(mut commands: Commands) {
     let main_camera_pivot_entity = commands
         .spawn()
         .insert(CameraPivotTag)
+        .insert(CameraPivotDirection(Vec2::ZERO))
         .insert(Transform::identity())
         .insert(GlobalTransform::identity())
         .id();

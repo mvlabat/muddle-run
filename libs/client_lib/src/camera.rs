@@ -1,5 +1,9 @@
-use crate::{components::CameraPivotTag, CurrentPlayerNetId, MainCameraPivotEntity};
+use crate::{
+    components::{CameraPivotDirection, CameraPivotTag},
+    CurrentPlayerNetId, MainCameraPivotEntity,
+};
 use bevy::{
+    core::Time,
     ecs::{
         entity::Entity,
         query::{Changed, With},
@@ -14,6 +18,8 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     GameTime, PLAYER_SIZE,
 };
+
+const CAMERA_MOVEMENT_SPEED: f32 = 4.0;
 
 pub type ReattachCameraQueries<'a, 'b, 'c> = QuerySet<(
     Query<'a, Option<&'b Parent>, With<CameraPivotTag>>,
@@ -32,7 +38,7 @@ pub fn reattach_camera(
     let camera_parent = queries
         .q0()
         .get(main_camera_pivot.0)
-        .expect("Expected created camera in `init_state`");
+        .expect("Expected the camera to initialize in `basic_scene`");
 
     let mut main_camera_pivot_commands = commands.entity(main_camera_pivot.0);
     // TODO: track the following (to avoid iterating each frame):
@@ -49,13 +55,13 @@ pub fn reattach_camera(
                 camera_parent.is_some(),
             ) {
                 (true, false) => {
-                    log::debug!("Attaching camera pivot to a player");
+                    log::trace!("Attaching camera pivot to a player");
                     main_camera_pivot_commands
                         .insert(Parent(player_entity))
                         .insert(Transform::from_xyz(0.0, 0.0, -PLAYER_SIZE));
                 }
                 (false, true) => {
-                    log::debug!("Freeing camera pivot");
+                    log::trace!("Freeing camera pivot");
                     main_camera_pivot_commands
                         .remove::<Parent>()
                         .insert(Transform::from_xyz(position.x, position.y, 0.0));
@@ -80,4 +86,17 @@ pub fn reattach_camera(
             }
         }
     }
+}
+
+pub fn move_free_camera_pivot(
+    time: Res<Time>,
+    main_camera_pivot: Res<MainCameraPivotEntity>,
+    mut camera_pivot_query: Query<(&CameraPivotDirection, &mut Transform)>,
+) {
+    let (direction, mut transform) = camera_pivot_query
+        .get_mut(main_camera_pivot.0)
+        .expect("Expected the camera to initialize in `basic_scene`");
+    let d = direction.0.normalize_or_zero() * CAMERA_MOVEMENT_SPEED * time.delta_seconds();
+    transform.translation.x += d.x;
+    transform.translation.y += d.y;
 }

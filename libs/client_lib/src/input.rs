@@ -1,4 +1,7 @@
-use crate::{helpers, ui::debug_ui::DebugUiState, CurrentPlayerNetId, MainCameraEntity};
+use crate::{
+    components::CameraPivotDirection, helpers, ui::debug_ui::DebugUiState, CurrentPlayerNetId,
+    MainCameraEntity, MainCameraPivotEntity,
+};
 use bevy::{
     ecs::system::SystemParam,
     input::{keyboard::KeyboardInput, mouse::MouseButtonInput},
@@ -62,6 +65,8 @@ pub struct PlayerUpdatesParams<'a> {
     players: Res<'a, HashMap<PlayerNetId, Player>>,
     player_registry: Res<'a, EntityRegistry<PlayerNetId>>,
     players_query: Query<'a, &'static Spawned>,
+    main_camera_pivot_entity: Res<'a, MainCameraPivotEntity>,
+    camera_query: Query<'a, &'static mut CameraPivotDirection>,
     player_updates: ResMut<'a, PlayerUpdates>,
     player_requests: ResMut<'a, PlayerRequestsQueue>,
 }
@@ -83,32 +88,38 @@ pub fn track_input_events(
     );
 
     // Keyboard input.
+    let mut direction = Vec2::ZERO;
+    if keyboard_input.pressed(KeyCode::A) || keyboard_input.pressed(KeyCode::Left) {
+        direction.x -= 1.0;
+    }
+    if keyboard_input.pressed(KeyCode::D) || keyboard_input.pressed(KeyCode::Right) {
+        direction.x += 1.0;
+    }
+
+    if keyboard_input.pressed(KeyCode::W) || keyboard_input.pressed(KeyCode::Up) {
+        direction.y += 1.0;
+    }
+    if keyboard_input.pressed(KeyCode::S) || keyboard_input.pressed(KeyCode::Down) {
+        direction.y -= 1.0;
+    }
+
     let current_player_is_spawned = player_updates_params
         .current_player_net_id
         .0
         .and_then(|net_id| player_updates_params.player_registry.get_entity(net_id))
         .and_then(|player_entity| player_updates_params.players_query.get(player_entity).ok())
         .map_or(false, |spawned| spawned.is_spawned(time.frame_number));
+    let mut camera_pivot_direction = player_updates_params
+        .camera_query
+        .get_mut(player_updates_params.main_camera_pivot_entity.0)
+        .expect("Expected the camera to initialize in `basic_scene`");
+    // If a player is spawned, set its direction. Otherwise, update the free camera pivot.
     if current_player_is_spawned {
         let direction_updates = player_updates_params.player_updates.get_direction_mut(
             player_updates_params.current_player_net_id.0.unwrap(),
             time.frame_number,
             COMPONENT_FRAMEBUFFER_LIMIT,
         );
-        let mut direction = Vec2::ZERO;
-        if keyboard_input.pressed(KeyCode::A) || keyboard_input.pressed(KeyCode::Left) {
-            direction.x -= 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::D) || keyboard_input.pressed(KeyCode::Right) {
-            direction.x += 1.0;
-        }
-
-        if keyboard_input.pressed(KeyCode::W) || keyboard_input.pressed(KeyCode::Up) {
-            direction.y += 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::S) || keyboard_input.pressed(KeyCode::Down) {
-            direction.y -= 1.0;
-        }
         direction_updates.insert(
             time.frame_number,
             Some(PlayerDirectionUpdate {
@@ -116,7 +127,11 @@ pub fn track_input_events(
                 is_processed_client_input: Some(false),
             }),
         );
+        camera_pivot_direction.0 = Vec2::ZERO;
+    } else {
+        camera_pivot_direction.0 = direction;
     }
+
     for ev in input_events.keys.iter() {
         if ev.state.is_pressed() {
             log::trace!("Just pressed key: {:?}", ev.key_code);
