@@ -145,7 +145,7 @@ pub fn cast_mouse_ray(
     mouse_position: Res<MousePosition>,
     main_camera_entity: Res<MainCameraEntity>,
     cameras: Query<(
-        &Transform,
+        &GlobalTransform,
         &bevy::render::camera::Camera,
         &bevy::render::camera::PerspectiveProjection,
     )>,
