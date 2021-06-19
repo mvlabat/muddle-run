@@ -4,6 +4,7 @@ use crate::{
     input::{LevelObjectRequestsQueue, MouseRay, PlayerRequestsQueue},
     net::{maintain_connection, process_network_events, send_network_updates, send_requests},
     ui::debug_ui::update_debug_ui_state,
+    visuals::control_builder_visibility,
 };
 use bevy::{
     app::{AppBuilder, Plugin},
@@ -30,6 +31,7 @@ use bevy_inspector_egui::{WorldInspectorParams, WorldInspectorPlugin};
 use chrono::{DateTime, Utc};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
+    game::client_factories::VisibilitySettings,
     messages::{EntityNetId, PlayerNetId},
     net::{ConnectionState, ConnectionStatus, MessageId},
     GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
@@ -43,6 +45,7 @@ mod helpers;
 mod input;
 mod net;
 mod ui;
+mod visuals;
 
 const TICKING_SPEED_FACTOR: u16 = 10;
 
@@ -71,6 +74,7 @@ impl Plugin for MuddleClientPlugin {
             .with_system(send_network_updates.system())
             .with_system(send_requests.system());
         let post_tick_stage = SystemStage::parallel()
+            .with_system(control_builder_visibility.system())
             .with_system(reattach_camera.system().label("reattach_camera"))
             .with_system(move_free_camera_pivot.system().after("reattach_camera"))
             .with_system(pause_simulation.system().label("pause_simulation"))
@@ -125,6 +129,7 @@ impl Plugin for MuddleClientPlugin {
         world.get_resource_or_insert_with(LevelObjectRequestsQueue::default);
         world.get_resource_or_insert_with(LevelObjectCorrelations::default);
         world.get_resource_or_insert_with(MouseRay::default);
+        world.get_resource_or_insert_with(VisibilitySettings::default);
     }
 }
 

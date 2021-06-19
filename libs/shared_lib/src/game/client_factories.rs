@@ -132,6 +132,10 @@ impl<'a> ClientFactory<'a> for PivotPointClientFactory {
         material.reflectance = 0.0;
         material.metallic = 0.0;
         commands.insert_bundle(PbrBundle {
+            visible: Visible {
+                is_visible: deps.visibility_settings.pivot_points,
+                is_transparent: false,
+            },
             mesh: deps.meshes.add(Mesh::from(Pyramid {
                 height: PIVOT_POINT_HEIGHT,
                 base_edge_half_len: PIVOT_POINT_BASE_EDGE_HALF_LEN,
@@ -149,10 +153,17 @@ impl<'a> ClientFactory<'a> for PivotPointClientFactory {
 }
 
 #[cfg(feature = "client")]
+#[derive(Default)]
+pub struct VisibilitySettings {
+    pub pivot_points: bool,
+}
+
+#[cfg(feature = "client")]
 #[derive(SystemParam)]
 pub struct PbrClientParams<'a> {
     meshes: ResMut<'a, Assets<Mesh>>,
     materials: ResMut<'a, Assets<StandardMaterial>>,
+    visibility_settings: Res<'a, VisibilitySettings>,
 }
 
 #[cfg(not(feature = "client"))]

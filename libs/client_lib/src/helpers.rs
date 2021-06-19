@@ -1,4 +1,4 @@
-use crate::input::MouseRay;
+use crate::{input::MouseRay, CurrentPlayerNetId};
 use bevy::{
     ecs::{
         entity::Entity,
@@ -18,6 +18,22 @@ use bevy_rapier3d::{
         pipeline::QueryPipeline,
     },
 };
+use mr_shared_lib::{messages::PlayerNetId, player::Player};
+use std::collections::HashMap;
+
+#[derive(SystemParam)]
+pub struct PlayerParams<'a> {
+    pub players: Res<'a, HashMap<PlayerNetId, Player>>,
+    pub current_player_net_id: Res<'a, CurrentPlayerNetId>,
+}
+
+impl<'a> PlayerParams<'a> {
+    pub fn current_player(&self) -> Option<&Player> {
+        self.current_player_net_id
+            .0
+            .and_then(|net_id| self.players.get(&net_id))
+    }
+}
 
 #[derive(SystemParam)]
 pub struct MouseEntityPicker<'a> {

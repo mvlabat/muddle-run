@@ -4,8 +4,15 @@ use crate::{
         level_objects::*,
     },
     messages::EntityNetId,
+    registry::EntityRegistry,
 };
-use bevy::math::Vec2;
+use bevy::{
+    ecs::{
+        entity::Entity,
+        system::{Res, SystemParam},
+    },
+    math::Vec2,
+};
 use bevy_rapier3d::{
     physics::{ColliderBundle, RigidBodyBundle},
     rapier::{
@@ -16,6 +23,24 @@ use bevy_rapier3d::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+#[derive(SystemParam)]
+pub struct LevelParams<'a> {
+    pub level_state: Res<'a, LevelState>,
+    pub entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
+}
+
+impl<'a> LevelParams<'a> {
+    pub fn level_object_by_entity(&self, entity: Entity) -> Option<&LevelObject> {
+        self.entity_registry
+            .get_id(entity)
+            .and_then(|net_id| self.level_object_by_net_id(net_id))
+    }
+
+    pub fn level_object_by_net_id(&self, entity_net_id: EntityNetId) -> Option<&LevelObject> {
+        self.level_state.objects.get(&entity_net_id)
+    }
+}
 
 #[derive(Default)]
 pub struct LevelState {
