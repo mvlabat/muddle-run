@@ -8,10 +8,7 @@ use crate::{
         commands::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, UpdateLevelObject,
         },
-        components::{
-            LevelObjectLabel, LevelObjectTag, PlayerDirection, PlayerTag, Position, SpawnCommand,
-            Spawned,
-        },
+        components::{LevelObjectTag, PlayerDirection, PlayerTag, Position, SpawnCommand, Spawned},
         level::{LevelObjectDesc, LevelState},
     },
     messages::{EntityNetId, PlayerNetId},
@@ -214,11 +211,6 @@ pub fn update_level_objects(
         let (rigid_body, collider) = command.object.desc.physics_body();
         entity_commands
             .insert(LevelObjectTag)
-            .insert(LevelObjectLabel(format!(
-                "{} {}",
-                command.object.desc.label(),
-                command.object.net_id.0
-            )))
             .insert_bundle(rigid_body)
             .insert_bundle(collider)
             .insert(ColliderPositionSync::Discrete)

@@ -5,7 +5,7 @@ use crate::{
 use bevy::{
     ecs::{
         entity::Entity,
-        system::{Local, Query, Res, ResMut, SystemParam},
+        system::{Local, Res, ResMut, SystemParam},
     },
     log,
     math::Vec2,
@@ -13,7 +13,6 @@ use bevy::{
 use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::{
     game::{
-        components::LevelObjectLabel,
         level::{LevelObject, LevelObjectDesc, LevelState},
         level_objects::{CubeDesc, PlaneDesc},
     },
@@ -26,9 +25,8 @@ use std::collections::HashMap;
 
 pub struct PickedLevelObject {
     entity: Entity,
-    entity_net_id: EntityNetId,
-    desc: LevelObjectDesc,
-    dirty_desc: LevelObjectDesc,
+    level_object: LevelObject,
+    dirty_level_object: LevelObject,
 }
 
 #[derive(SystemParam)]
@@ -37,7 +35,6 @@ pub struct LevelObjects<'a> {
     picked_level_object: Local<'a, Option<PickedLevelObject>>,
     level_state: Res<'a, LevelState>,
     entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
-    level_object_query: Query<'a, &'static LevelObjectLabel>,
 }
 
 pub fn builder_ui(
@@ -80,9 +77,8 @@ pub fn builder_ui(
                 )
                 .map(|(entity, level_object)| PickedLevelObject {
                     entity,
-                    entity_net_id,
-                    desc: level_object.desc.clone(),
-                    dirty_desc: level_object.desc,
+                    dirty_level_object: level_object.clone(),
+                    level_object,
                 });
             if level_objects.picked_level_object.is_none() {
                 log::error!("Level object {} isn't registered", entity_net_id.0);
@@ -95,7 +91,7 @@ pub fn builder_ui(
     if !egui_context.ctx().is_pointer_over_area() {
         mouse_entity_picker.pick_entity();
     }
-    if let Some((entity, entity_net_id, picked_level_object)) = mouse_entity_picker
+    if let Some((entity, _, picked_level_object)) = mouse_entity_picker
         .take_picked_entity()
         .and_then(|entity| {
             level_objects
@@ -116,9 +112,8 @@ pub fn builder_ui(
         {
             *level_objects.picked_level_object = Some(PickedLevelObject {
                 entity,
-                entity_net_id,
-                desc: picked_level_object.desc.clone(),
-                dirty_desc: picked_level_object.desc,
+                level_object: picked_level_object.clone(),
+                dirty_level_object: picked_level_object,
             });
             *level_objects.pending_correlation = None;
         }
@@ -132,7 +127,8 @@ pub fn builder_ui(
                 .picked_level_object
                 .as_ref()
                 .unwrap()
-                .entity_net_id,
+                .level_object
+                .net_id,
         ) {
             level_objects.picked_level_object.as_mut().unwrap().entity = level_object_entity;
         } else {
@@ -143,38 +139,27 @@ pub fn builder_ui(
     let ctx = egui_context.ctx();
     egui::Window::new("Builder menu").show(ctx, |ui| {
         if let Some(PickedLevelObject {
-            entity,
-            entity_net_id,
-            dirty_desc,
-            desc,
+            entity: _,
+            level_object,
+            dirty_level_object,
         }) = &mut *level_objects.picked_level_object
         {
-            let level_object_label = level_objects
-                .level_object_query
-                .get(*entity)
-                .expect("Expected a label for a created level object");
-
             egui::Grid::new("editing_picked_level_object")
                 .striped(true)
                 .show(ui, |ui| {
-                    ui.label("Editing");
-                    ui.label(&level_object_label.0);
+                    ui.label("Object label");
+                    ui.text_edit_singleline(&mut dirty_level_object.label);
                     ui.end_row();
 
                     ui.label("Position");
                     ui.horizontal(|ui| {
-                        ui.add(
-                            egui::widgets::DragValue::new(&mut dirty_desc.position_mut().x)
-                                .speed(0.1),
-                        );
-                        ui.add(
-                            egui::widgets::DragValue::new(&mut dirty_desc.position_mut().y)
-                                .speed(0.1),
-                        );
+                        let pos = dirty_level_object.desc.position_mut();
+                        ui.add(egui::widgets::DragValue::new(&mut pos.x).speed(0.1));
+                        ui.add(egui::widgets::DragValue::new(&mut pos.y).speed(0.1));
                     });
                     ui.end_row();
 
-                    match dirty_desc {
+                    match &mut dirty_level_object.desc {
                         LevelObjectDesc::Cube(CubeDesc { size, .. })
                         | LevelObjectDesc::Plane(PlaneDesc { size, .. }) => {
                             ui.label("Size");
@@ -186,18 +171,22 @@ pub fn builder_ui(
                     ui.label("Actions");
                     ui.horizontal(|ui| {
                         if ui.button("Despawn").clicked() {
-                            level_object_requests.despawn_requests.push(*entity_net_id);
+                            level_object_requests
+                                .despawn_requests
+                                .push(level_object.net_id);
                         }
                     });
                     ui.end_row();
                 });
 
-            if dirty_desc != desc {
+            if level_object != dirty_level_object {
+                assert_eq!(level_object.net_id, dirty_level_object.net_id);
                 level_object_requests.update_requests.push(LevelObject {
-                    net_id: *entity_net_id,
-                    desc: dirty_desc.clone(),
+                    net_id: level_object.net_id,
+                    label: dirty_level_object.label.clone(),
+                    desc: dirty_level_object.desc.clone(),
                 });
-                *desc = dirty_desc.clone();
+                *level_object = dirty_level_object.clone();
             }
             ui.separator();
         }

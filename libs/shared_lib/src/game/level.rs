@@ -18,6 +18,7 @@ pub struct LevelState {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct LevelObject {
     pub net_id: EntityNetId,
+    pub label: String,
     pub desc: LevelObjectDesc,
 }
 

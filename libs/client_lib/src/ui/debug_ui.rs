@@ -10,8 +10,11 @@ use bevy::{
 use bevy_egui::{egui, EguiContext, EguiSettings};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
-    game::components::{LevelObjectLabel, PlayerDirection, Position},
-    messages::PlayerNetId,
+    game::{
+        components::{PlayerDirection, Position},
+        level::LevelState,
+    },
+    messages::{EntityNetId, PlayerNetId},
     net::ConnectionState,
     player::Player,
     registry::EntityRegistry,
@@ -154,9 +157,10 @@ pub fn debug_ui(
 pub struct InspectObjectQueries<'a> {
     players: Res<'a, HashMap<PlayerNetId, Player>>,
     player_registry: Res<'a, EntityRegistry<PlayerNetId>>,
+    objects_registry: Res<'a, EntityRegistry<EntityNetId>>,
+    level_state: Res<'a, LevelState>,
     positions: Query<'a, &'static Position>,
     player_directions: Query<'a, &'static PlayerDirection>,
-    level_object_labels: Query<'a, &'static LevelObjectLabel>,
 }
 
 pub fn inspect_object(
@@ -185,8 +189,13 @@ pub fn inspect_object(
             {
                 ui.label(format!("Player name: {}", player_name));
             }
-            if let Ok(level_object_label) = queries.level_object_labels.get(entity) {
-                ui.label(&level_object_label.0);
+            if let Some(level_object_label) = queries
+                .objects_registry
+                .get_id(entity)
+                .and_then(|object_net_id| queries.level_state.objects.get(&object_net_id))
+                .map(|level_object| level_object.label.clone())
+            {
+                ui.label(&level_object_label);
             }
             if let Ok(position) = queries.positions.get(entity) {
                 position.inspect(ui);
