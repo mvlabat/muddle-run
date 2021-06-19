@@ -9,6 +9,7 @@ use bevy::{
     prelude::*,
     render::camera::CameraProjection,
 };
+use bevy_egui::EguiContext;
 use bevy_inspector_egui::WorldInspectorParams;
 use bevy_rapier3d::{na, rapier::geometry::Ray};
 use chrono::{DateTime, Utc};
@@ -71,18 +72,28 @@ pub struct PlayerUpdatesParams<'a> {
     player_requests: ResMut<'a, PlayerRequestsQueue>,
 }
 
+#[derive(SystemParam)]
+pub struct UiParams<'a> {
+    egui_context: Res<'a, EguiContext>,
+    debug_ui_state: ResMut<'a, DebugUiState>,
+}
+
 pub fn track_input_events(
     mut input_events: InputEvents,
     time: Res<GameTime>,
-    mut debug_ui_state: ResMut<DebugUiState>,
+    mut ui_params: UiParams,
     mut world_inspector_params: ResMut<WorldInspectorParams>,
     mut player_updates_params: PlayerUpdatesParams,
     mut mouse_position: ResMut<MousePosition>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
+    if ui_params.egui_context.ctx().wants_keyboard_input() {
+        return;
+    }
+
     process_hotkeys(
         &keyboard_input,
-        &mut debug_ui_state,
+        &mut ui_params.debug_ui_state,
         &mut world_inspector_params,
         &mut player_updates_params,
     );
