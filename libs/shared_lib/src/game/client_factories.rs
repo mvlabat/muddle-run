@@ -1,7 +1,7 @@
 use crate::game::level_objects::*;
 #[cfg(feature = "client")]
 use crate::{
-    client::XyPlane,
+    client::*,
     game::components::{PlayerFrameSimulated, PredictedPosition},
     PLAYER_SIZE,
 };
@@ -102,6 +102,41 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
                 size: cube_desc.size * 2.0,
             })),
             material: deps.materials.add(Color::rgb(0.4, 0.4, 0.4).into()),
+            ..Default::default()
+        });
+        commands.insert(PlayerFrameSimulated);
+    }
+
+    #[cfg(feature = "client")]
+    fn remove_components(commands: &mut EntityCommands) {
+        commands.remove_bundle::<PbrBundle>();
+    }
+}
+
+pub const PIVOT_POINT_HEIGHT: f32 = 0.8;
+pub const PIVOT_POINT_BASE_EDGE_HALF_LEN: f32 = 0.25;
+
+pub struct PivotPointClientFactory;
+
+impl<'a> ClientFactory<'a> for PivotPointClientFactory {
+    type Dependencies = PbrClientParams<'a>;
+    type Input = PivotPointDesc;
+
+    #[cfg(feature = "client")]
+    fn insert_components(
+        commands: &mut EntityCommands,
+        deps: &mut Self::Dependencies,
+        _: &Self::Input,
+    ) {
+        let mut material: StandardMaterial = Color::rgb(0.4, 0.4, 0.7).into();
+        material.reflectance = 0.0;
+        material.metallic = 0.0;
+        commands.insert_bundle(PbrBundle {
+            mesh: deps.meshes.add(Mesh::from(Pyramid {
+                height: PIVOT_POINT_HEIGHT,
+                base_edge_half_len: PIVOT_POINT_BASE_EDGE_HALF_LEN,
+            })),
+            material: deps.materials.add(material),
             ..Default::default()
         });
         commands.insert(PlayerFrameSimulated);

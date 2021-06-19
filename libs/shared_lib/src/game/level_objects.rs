@@ -12,3 +12,8 @@ pub struct CubeDesc {
     pub size: f32,
     pub position: Vec2,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PivotPointDesc {
+    pub position: Vec2,
+}

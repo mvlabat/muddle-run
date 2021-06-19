@@ -2,8 +2,8 @@ use crate::{
     framebuffer::FrameNumber,
     game::{
         client_factories::{
-            ClientFactory, CubeClientFactory, PbrClientParams, PlaneClientFactory,
-            PlayerClientFactory,
+            ClientFactory, CubeClientFactory, PbrClientParams, PivotPointClientFactory,
+            PlaneClientFactory, PlayerClientFactory,
         },
         commands::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, UpdateLevelObject,
@@ -207,18 +207,27 @@ pub fn update_level_objects(
                 &mut pbr_client_params,
                 cube,
             ),
+            LevelObjectDesc::PivotPoint(pivot_point) => PivotPointClientFactory::insert_components(
+                &mut entity_commands,
+                &mut pbr_client_params,
+                pivot_point,
+            ),
         };
+        if let Some(position) = command.object.desc.position() {
+            entity_commands.insert(Position::new(
+                position,
+                time.server_frame,
+                time.player_frames_ahead() + 1,
+            ));
+        }
         let (rigid_body, collider) = command.object.desc.physics_body();
         entity_commands
             .insert(LevelObjectTag)
             .insert_bundle(rigid_body)
             .insert_bundle(collider)
-            .insert(ColliderPositionSync::Discrete)
-            .insert(Position::new(
-                command.object.desc.position(),
-                time.server_frame,
-                time.player_frames_ahead() + 1,
-            ))
+            .insert(ColliderPositionSync::Discrete);
+        entity_commands
+            .insert(LevelObjectTag)
             .insert(spawned_component);
         object_entities.register(command.object.net_id, entity_commands.id());
     }
@@ -275,6 +284,9 @@ pub fn despawn_level_objects(
             }
             LevelObjectDesc::Cube(_) => {
                 CubeClientFactory::remove_components(&mut commands.entity(entity))
+            }
+            LevelObjectDesc::PivotPoint(_) => {
+                PivotPointClientFactory::remove_components(&mut commands.entity(entity))
             }
         }
         spawned.push_command(command.frame_number, SpawnCommand::Despawn);

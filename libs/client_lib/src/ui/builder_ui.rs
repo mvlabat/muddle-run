@@ -14,7 +14,7 @@ use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::{
     game::{
         level::{LevelObject, LevelObjectDesc, LevelState},
-        level_objects::{CubeDesc, PlaneDesc},
+        level_objects::{CubeDesc, PivotPointDesc, PlaneDesc},
     },
     messages::{EntityNetId, PlayerNetId, SpawnLevelObjectRequest, SpawnLevelObjectRequestBody},
     net::MessageId,
@@ -151,13 +151,14 @@ pub fn builder_ui(
                     ui.text_edit_singleline(&mut dirty_level_object.label);
                     ui.end_row();
 
-                    ui.label("Position");
-                    ui.horizontal(|ui| {
-                        let pos = dirty_level_object.desc.position_mut();
-                        ui.add(egui::widgets::DragValue::new(&mut pos.x).speed(0.1));
-                        ui.add(egui::widgets::DragValue::new(&mut pos.y).speed(0.1));
-                    });
-                    ui.end_row();
+                    if let Some(pos) = dirty_level_object.desc.position_mut() {
+                        ui.label("Position");
+                        ui.horizontal(|ui| {
+                            ui.add(egui::widgets::DragValue::new(&mut pos.x).speed(0.1));
+                            ui.add(egui::widgets::DragValue::new(&mut pos.y).speed(0.1));
+                        });
+                        ui.end_row();
+                    }
 
                     match &mut dirty_level_object.desc {
                         LevelObjectDesc::Cube(CubeDesc { size, .. })
@@ -166,6 +167,7 @@ pub fn builder_ui(
                             ui.add(egui::widgets::DragValue::new(size).speed(0.01));
                             ui.end_row();
                         }
+                        LevelObjectDesc::PivotPoint(_) => {}
                     }
 
                     ui.label("Actions");
@@ -217,6 +219,20 @@ pub fn builder_ui(
                             position: Vec2::new(5.0, 5.0),
                             size: 0.4,
                         })),
+                    });
+            }
+            if ui.button("Pivot Point").clicked() {
+                let correlation_id = level_object_correlations.next_correlation_id();
+                *level_objects.pending_correlation = Some(correlation_id);
+                level_object_requests
+                    .spawn_requests
+                    .push(SpawnLevelObjectRequest {
+                        correlation_id,
+                        body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::PivotPoint(
+                            PivotPointDesc {
+                                position: Vec2::new(-5.0, 5.0),
+                            },
+                        )),
                     });
             }
         });
