@@ -16,7 +16,7 @@ use mr_shared_lib::{
     net::{ConnectionState, ConnectionStatus, SessionId, CONNECTION_TIMEOUT_MILLIS},
     player::{random_name, Player, PlayerRole},
     registry::{EntityRegistry, Registry},
-    GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
+    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -563,14 +563,14 @@ pub struct DeferredMessageQueues<'a> {
 
 pub fn send_network_updates(
     mut network_params: NetworkParams,
-    time: Res<GameTime>,
+    time: Res<SimulationTime>,
     level_state: Res<LevelState>,
     players: Res<HashMap<PlayerNetId, Player>>,
     player_entities: Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
     players_registry: Res<EntityRegistry<PlayerNetId>>,
     mut deferred_message_queues: DeferredMessageQueues,
 ) {
-    log::trace!("Sending network updates (frame: {})", time.frame_number);
+    log::trace!("Sending network updates (frame: {})", time.server_frame);
 
     broadcast_start_game_messages(
         &mut network_params,
@@ -713,7 +713,7 @@ fn broadcast_disconnected_players(network_params: &mut NetworkParams) {
 
 fn broadcast_delta_update_messages(
     net: &mut NetworkResource,
-    time: &GameTime,
+    time: &SimulationTime,
     players: &HashMap<PlayerNetId, Player>,
     player_entities: &Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
     players_registry: &EntityRegistry<PlayerNetId>,
@@ -726,7 +726,7 @@ fn broadcast_delta_update_messages(
     }
 
     let message = UnreliableServerMessage::DeltaUpdate(DeltaUpdate {
-        frame_number: time.frame_number,
+        frame_number: time.server_frame,
         acknowledgments: connection_state.incoming_acknowledgments(),
         players: players
             .iter()
@@ -756,7 +756,7 @@ fn broadcast_delta_update_messages(
         log::error!("Failed to send a message: {:?}", err);
     }
 
-    connection_state.add_outgoing_packet(time.frame_number, Utc::now());
+    connection_state.add_outgoing_packet(time.server_frame, Utc::now());
 }
 
 fn send_new_player_messages(
@@ -781,7 +781,7 @@ fn send_new_player_messages(
 
 fn broadcast_start_game_messages(
     network_params: &mut NetworkParams,
-    time: &GameTime,
+    time: &SimulationTime,
     level_state: &LevelState,
     players: &HashMap<PlayerNetId, Player>,
     player_entities: &Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
@@ -844,7 +844,7 @@ fn broadcast_start_game_messages(
                 .iter()
                 .map(|(_, level_object)| commands::UpdateLevelObject {
                     object: level_object.clone(),
-                    frame_number: time.frame_number,
+                    frame_number: time.server_frame,
                 })
                 .collect(),
             players: players
@@ -854,8 +854,9 @@ fn broadcast_start_game_messages(
                     nickname: player.nickname.clone(),
                 })
                 .collect(),
+            generation: time.generation,
             game_state: DeltaUpdate {
-                frame_number: time.frame_number,
+                frame_number: time.server_frame,
                 acknowledgments: connection_state.incoming_acknowledgments(),
                 players: players_state,
             },
@@ -879,13 +880,13 @@ fn broadcast_start_game_messages(
 /// Returns `None` if the entity is not spawned for the current frame.
 fn create_player_state(
     net_id: PlayerNetId,
-    time: &GameTime,
+    time: &SimulationTime,
     connection_state: &ConnectionState,
     entity: Entity,
     player_entities: &Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
 ) -> Option<PlayerState> {
     let (_, position, player_direction, spawned) = player_entities.get(entity).unwrap();
-    if !spawned.is_spawned(time.frame_number) {
+    if !spawned.is_spawned(time.server_frame) {
         return None;
     }
 
@@ -893,9 +894,9 @@ fn create_player_state(
         // TODO: avoid doing the same searches when gathering updates for every player?
         connection_state
             .first_unacknowledged_outgoing_packet()
-            .unwrap_or(time.frame_number)
+            .unwrap_or(time.server_frame)
     } else {
-        time.frame_number
+        time.server_frame
     };
 
     // TODO: deduplicate updates (the same code is written for client).
@@ -929,7 +930,7 @@ fn create_player_state(
                     "Player ({}) position for frame {} doesn't exist (current frame: {})",
                     net_id.0,
                     start_position_frame.value(),
-                    time.frame_number.value()
+                    time.server_frame.value()
                 )
             }),
         inputs,

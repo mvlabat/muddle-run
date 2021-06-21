@@ -183,6 +183,7 @@ pub fn process_spawn_level_object_requests(
                     net_id,
                     label: format!("{} {}", desc.label(), net_id.0),
                     desc,
+                    route: None,
                 },
                 frame_number: time.frame_number,
             };

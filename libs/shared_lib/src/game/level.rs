@@ -1,4 +1,5 @@
 use crate::{
+    framebuffer::FrameNumber,
     game::{
         client_factories::{PIVOT_POINT_BASE_EDGE_HALF_LEN, PIVOT_POINT_HEIGHT},
         level_objects::*,
@@ -52,6 +53,23 @@ pub struct LevelObject {
     pub net_id: EntityNetId,
     pub label: String,
     pub desc: LevelObjectDesc,
+    /// Absence of this field means that an object is stationary.
+    pub route: Option<ObjectRoute>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ObjectRoute {
+    pub period: FrameNumber,
+    pub start_frame_offset: FrameNumber,
+    pub desc: ObjectRouteDesc,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum ObjectRouteDesc {
+    Attached(Option<EntityNetId>),
+    Radial(Option<EntityNetId>),
+    ForwardCycle(Vec<EntityNetId>),
+    ForwardBackwardsCycle(Vec<EntityNetId>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

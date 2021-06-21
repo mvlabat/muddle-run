@@ -100,6 +100,7 @@ pub fn init_level(
                 position: Vec2::ZERO,
                 size: PLANE_SIZE,
             }),
+            route: None,
         },
     });
 }

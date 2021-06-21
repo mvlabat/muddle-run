@@ -305,12 +305,14 @@ pub enum GameState {
 
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct GameTime {
-    pub generation: usize,
+    pub session: usize,
     pub frame_number: FrameNumber,
 }
 
 #[derive(Default, Debug)]
 pub struct SimulationTime {
+    /// Corresponds to the server frame.
+    pub generation: u64,
     /// Is expected to be ahead of `server_frame` on the client side, is equal to `server_frame`
     /// on the server side.
     pub player_frame: FrameNumber,
@@ -374,8 +376,8 @@ impl GameTickRunCriteria {
         mut state: Local<GameTickRunCriteriaState>,
         time: Res<GameTime>,
     ) -> ShouldRun {
-        if state.last_generation != Some(time.generation) {
-            state.last_generation = Some(time.generation);
+        if state.last_generation != Some(time.session) {
+            state.last_generation = Some(time.session);
             state.last_tick = time.frame_number - state.ticks_per_step;
         }
 
@@ -567,6 +569,9 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
         time.server_frame.value(),
         time.player_frame.value()
     );
+    if time.server_frame.value() == u16::MAX {
+        time.generation += 1;
+    }
     time.server_frame += FrameNumber::new(1);
     time.player_frame += FrameNumber::new(1);
 }

@@ -387,7 +387,7 @@ fn control_ticking_speed(
         };
     }
 
-    if prev_tick_rate.rate != params.tick_rate.rate || *prev_generation != params.time.generation {
+    if prev_tick_rate.rate != params.tick_rate.rate || *prev_generation != params.time.session {
         *frames_ticked = 0;
     }
 
@@ -415,7 +415,7 @@ fn control_ticking_speed(
 
     *frames_ticked += 1;
     prev_tick_rate.rate = params.tick_rate.rate;
-    *prev_generation = params.time.generation;
+    *prev_generation = params.time.session;
 }
 
 fn faster_tick_rate() -> u16 {

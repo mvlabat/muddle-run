@@ -834,7 +834,7 @@ fn process_start_game_message(
             start_game.net_id,
             Player::new_with_nickname(PlayerRole::Runner, start_game.nickname),
         );
-        update_params.game_time.generation += 1;
+        update_params.game_time.session += 1;
         let rtt_frames = FrameNumber::new(
             (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0) as u16,
         );
@@ -842,6 +842,7 @@ fn process_start_game_message(
             (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
         );
         update_params.target_frames_ahead.frames_count = rtt_frames;
+        update_params.simulation_time.generation = start_game.generation;
         update_params.simulation_time.server_frame = start_game.game_state.frame_number;
         update_params.simulation_time.player_frame =
             start_game.game_state.frame_number + rtt_frames;
