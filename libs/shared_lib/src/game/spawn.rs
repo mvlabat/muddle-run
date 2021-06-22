@@ -2,8 +2,8 @@ use crate::{
     framebuffer::FrameNumber,
     game::{
         client_factories::{
-            ClientFactory, CubeClientFactory, PbrClientParams, PivotPointClientFactory,
-            PlaneClientFactory, PlayerClientFactory,
+            ClientFactory, CubeClientFactory, PbrClientParams, PlaneClientFactory,
+            PlayerClientFactory, RoutePointClientFactory,
         },
         commands::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, UpdateLevelObject,
@@ -210,10 +210,10 @@ pub fn update_level_objects(
                 &mut pbr_client_params,
                 cube,
             ),
-            LevelObjectDesc::PivotPoint(pivot_point) => PivotPointClientFactory::insert_components(
+            LevelObjectDesc::RoutePoint(route_point) => RoutePointClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,
-                pivot_point,
+                route_point,
             ),
         };
         if let Some(position) = command.object.desc.position() {
@@ -287,8 +287,8 @@ pub fn despawn_level_objects(
             LevelObjectDesc::Cube(_) => {
                 CubeClientFactory::remove_components(&mut commands.entity(entity))
             }
-            LevelObjectDesc::PivotPoint(_) => {
-                PivotPointClientFactory::remove_components(&mut commands.entity(entity))
+            LevelObjectDesc::RoutePoint(_) => {
+                RoutePointClientFactory::remove_components(&mut commands.entity(entity))
             }
         }
         spawned.push_command(command.frame_number, SpawnCommand::Despawn);

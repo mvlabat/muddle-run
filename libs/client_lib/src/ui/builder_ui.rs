@@ -18,7 +18,7 @@ use mr_shared_lib::{
     game::{
         components::LevelObjectLabel,
         level::{LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc},
-        level_objects::{CubeDesc, PivotPointDesc, PlaneDesc},
+        level_objects::{CubeDesc, PlaneDesc, RoutePointDesc},
     },
     messages::{EntityNetId, SpawnLevelObjectRequest, SpawnLevelObjectRequestBody},
     net::MessageId,
@@ -185,15 +185,15 @@ pub fn builder_ui(
                             )),
                         });
                 }
-                if ui.button("Pivot Point").clicked() {
+                if ui.button("Route point").clicked() {
                     let correlation_id = level_object_correlations.next_correlation_id();
                     *level_objects.pending_correlation = Some(correlation_id);
                     level_object_requests
                         .spawn_requests
                         .push(SpawnLevelObjectRequest {
                             correlation_id,
-                            body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::PivotPoint(
-                                PivotPointDesc {
+                            body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::RoutePoint(
+                                RoutePointDesc {
                                     position: Vec2::new(-5.0, 5.0),
                                 },
                             )),
@@ -225,7 +225,7 @@ pub fn builder_ui(
                             ui.add(egui::widgets::DragValue::new(size).speed(0.01));
                             ui.end_row();
                         }
-                        LevelObjectDesc::PivotPoint(_) => {}
+                        LevelObjectDesc::RoutePoint(_) => {}
                     }
 
                     ui.label("Actions");
@@ -286,14 +286,14 @@ fn route_settings(
 
     let response = egui::CollapsingHeader::new("Route settings").show(ui, |ui| {
         match &mut dirty_level_object_route.desc {
-            ObjectRouteDesc::Attached(pivot_point) | ObjectRouteDesc::Radial(pivot_point) => {
-                let point_label = pivot_point
+            ObjectRouteDesc::Attached(route_point) | ObjectRouteDesc::Radial(route_point) => {
+                let point_label = route_point
                     .and_then(|point| level_objects.level_state.objects.get(&point))
                     .map_or("None".to_owned(), |level_object| level_object.label.clone());
-                ui.label(format!("Pivot point: {}", point_label));
+                ui.label(format!("Route point: {}", point_label));
             }
-            ObjectRouteDesc::ForwardCycle(pivot_points)
-            | ObjectRouteDesc::ForwardBackwardsCycle(pivot_points) => {
+            ObjectRouteDesc::ForwardCycle(route_points)
+            | ObjectRouteDesc::ForwardBackwardsCycle(route_points) => {
                 let mut list = vec![ListItem {
                     id: egui::Id::new(net_id),
                     label: label.clone(),
@@ -301,7 +301,7 @@ fn route_settings(
                     sortable: false,
                 }];
                 let mut duplicate_counts = HashMap::new();
-                for point in &*pivot_points {
+                for point in &*route_points {
                     if let Some(level_object) = level_objects.level_state.objects.get(point) {
                         let n = duplicate_counts
                             .entry(*point)
@@ -318,7 +318,7 @@ fn route_settings(
 
                 let edited = sortable_list(ui, "route settings", &mut list);
                 if edited {
-                    *pivot_points = list
+                    *route_points = list
                         .into_iter()
                         .skip(1)
                         .map(|list_item| list_item.data)
@@ -353,13 +353,13 @@ fn route_settings(
                             .get_id(entity)
                             .expect("Expected a registered level object");
                         match &mut dirty_level_object_route.desc {
-                            ObjectRouteDesc::Attached(pivot_point)
-                            | ObjectRouteDesc::Radial(pivot_point) => {
-                                *pivot_point = Some(selected_entity_net_id);
+                            ObjectRouteDesc::Attached(route_point)
+                            | ObjectRouteDesc::Radial(route_point) => {
+                                *route_point = Some(selected_entity_net_id);
                             }
-                            ObjectRouteDesc::ForwardCycle(pivot_points)
-                            | ObjectRouteDesc::ForwardBackwardsCycle(pivot_points) => {
-                                pivot_points.push(selected_entity_net_id);
+                            ObjectRouteDesc::ForwardCycle(route_points)
+                            | ObjectRouteDesc::ForwardBackwardsCycle(route_points) => {
+                                route_points.push(selected_entity_net_id);
                             }
                         }
                     }
@@ -447,24 +447,24 @@ fn route_type(ui: &mut egui::Ui, dirty_level_object: &mut LevelObject) {
         return;
     }
 
-    let current_pivot_points = match &dirty_level_object.route {
+    let current_route_points = match &dirty_level_object.route {
         None => vec![],
         Some(ObjectRoute {
-            desc: ObjectRouteDesc::Attached(pivot_point) | ObjectRouteDesc::Radial(pivot_point),
+            desc: ObjectRouteDesc::Attached(route_point) | ObjectRouteDesc::Radial(route_point),
             ..
         }) => {
             let mut points = Vec::new();
-            if let Some(pivot_point) = pivot_point {
-                points.push(*pivot_point);
+            if let Some(route_point) = route_point {
+                points.push(*route_point);
             }
             points
         }
         Some(ObjectRoute {
             desc:
-                ObjectRouteDesc::ForwardCycle(pivot_points)
-                | ObjectRouteDesc::ForwardBackwardsCycle(pivot_points),
+                ObjectRouteDesc::ForwardCycle(route_points)
+                | ObjectRouteDesc::ForwardBackwardsCycle(route_points),
             ..
-        }) => pivot_points.clone(),
+        }) => route_points.clone(),
     };
 
     match dirty_route_type {
@@ -474,25 +474,25 @@ fn route_type(ui: &mut egui::Ui, dirty_level_object: &mut LevelObject) {
         Type::Attached => {
             replace_route_desc(
                 &mut dirty_level_object.route,
-                ObjectRouteDesc::Attached(current_pivot_points.get(0).cloned()),
+                ObjectRouteDesc::Attached(current_route_points.get(0).cloned()),
             );
         }
         Type::Radial => {
             replace_route_desc(
                 &mut dirty_level_object.route,
-                ObjectRouteDesc::Radial(current_pivot_points.get(0).cloned()),
+                ObjectRouteDesc::Radial(current_route_points.get(0).cloned()),
             );
         }
         Type::ForwardCycle => {
             replace_route_desc(
                 &mut dirty_level_object.route,
-                ObjectRouteDesc::ForwardCycle(current_pivot_points),
+                ObjectRouteDesc::ForwardCycle(current_route_points),
             );
         }
         Type::ForwardBackwardsCycle => {
             replace_route_desc(
                 &mut dirty_level_object.route,
-                ObjectRouteDesc::ForwardBackwardsCycle(current_pivot_points),
+                ObjectRouteDesc::ForwardBackwardsCycle(current_route_points),
             );
         }
     }

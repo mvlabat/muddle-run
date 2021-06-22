@@ -29,16 +29,16 @@ pub fn control_builder_visibility(
         }
         *prev_role = Some(player.role);
 
-        let pivots_should_be_visible = match player.role {
+        let points_should_be_visible = match player.role {
             PlayerRole::Runner => false,
             PlayerRole::Builder => true,
         };
-        visibility_settings.pivot_points = pivots_should_be_visible;
+        visibility_settings.route_points = points_should_be_visible;
         for (entity, mut visible) in level_objects_query.iter_mut() {
             if let Some(level_object) = level_params.level_object_by_entity(entity) {
                 match level_object.desc {
-                    LevelObjectDesc::PivotPoint(_) => {
-                        visible.is_visible = pivots_should_be_visible;
+                    LevelObjectDesc::RoutePoint(_) => {
+                        visible.is_visible = points_should_be_visible;
                     }
                     LevelObjectDesc::Plane(_) | LevelObjectDesc::Cube(_) => {}
                 }

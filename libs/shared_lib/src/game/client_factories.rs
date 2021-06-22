@@ -113,14 +113,14 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
     }
 }
 
-pub const PIVOT_POINT_HEIGHT: f32 = 0.8;
-pub const PIVOT_POINT_BASE_EDGE_HALF_LEN: f32 = 0.25;
+pub const ROUTE_POINT_HEIGHT: f32 = 0.8;
+pub const ROUTE_POINT_BASE_EDGE_HALF_LEN: f32 = 0.25;
 
-pub struct PivotPointClientFactory;
+pub struct RoutePointClientFactory;
 
-impl<'a> ClientFactory<'a> for PivotPointClientFactory {
+impl<'a> ClientFactory<'a> for RoutePointClientFactory {
     type Dependencies = PbrClientParams<'a>;
-    type Input = PivotPointDesc;
+    type Input = RoutePointDesc;
 
     #[cfg(feature = "client")]
     fn insert_components(
@@ -133,12 +133,12 @@ impl<'a> ClientFactory<'a> for PivotPointClientFactory {
         material.metallic = 0.0;
         commands.insert_bundle(PbrBundle {
             visible: Visible {
-                is_visible: deps.visibility_settings.pivot_points,
+                is_visible: deps.visibility_settings.route_points,
                 is_transparent: false,
             },
             mesh: deps.meshes.add(Mesh::from(Pyramid {
-                height: PIVOT_POINT_HEIGHT,
-                base_edge_half_len: PIVOT_POINT_BASE_EDGE_HALF_LEN,
+                height: ROUTE_POINT_HEIGHT,
+                base_edge_half_len: ROUTE_POINT_BASE_EDGE_HALF_LEN,
             })),
             material: deps.materials.add(material),
             ..Default::default()
@@ -155,7 +155,7 @@ impl<'a> ClientFactory<'a> for PivotPointClientFactory {
 #[cfg(feature = "client")]
 #[derive(Default)]
 pub struct VisibilitySettings {
-    pub pivot_points: bool,
+    pub route_points: bool,
 }
 
 #[cfg(feature = "client")]

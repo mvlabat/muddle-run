@@ -1,7 +1,7 @@
 use crate::{
     framebuffer::FrameNumber,
     game::{
-        client_factories::{PIVOT_POINT_BASE_EDGE_HALF_LEN, PIVOT_POINT_HEIGHT},
+        client_factories::{ROUTE_POINT_BASE_EDGE_HALF_LEN, ROUTE_POINT_HEIGHT},
         level_objects::*,
     },
     messages::EntityNetId,
@@ -76,7 +76,7 @@ pub enum ObjectRouteDesc {
 pub enum LevelObjectDesc {
     Plane(PlaneDesc),
     Cube(CubeDesc),
-    PivotPoint(PivotPointDesc),
+    RoutePoint(RoutePointDesc),
 }
 
 impl LevelObjectDesc {
@@ -84,7 +84,7 @@ impl LevelObjectDesc {
         match self {
             Self::Plane(_) => "Plane",
             Self::Cube(_) => "Cube",
-            Self::PivotPoint(_) => "Pivot Point",
+            Self::RoutePoint(_) => "Route Point",
         }
         .to_owned()
     }
@@ -93,7 +93,7 @@ impl LevelObjectDesc {
         match self {
             Self::Plane(plane) => Some(plane.position),
             Self::Cube(cube) => Some(cube.position),
-            Self::PivotPoint(pivot_point) => Some(pivot_point.position),
+            Self::RoutePoint(route_point) => Some(route_point.position),
         }
     }
 
@@ -101,7 +101,7 @@ impl LevelObjectDesc {
         match self {
             Self::Plane(plane) => Some(&mut plane.position),
             Self::Cube(cube) => Some(&mut cube.position),
-            Self::PivotPoint(pivot_point) => Some(&mut pivot_point.position),
+            Self::RoutePoint(route_point) => Some(&mut route_point.position),
         }
     }
 
@@ -135,7 +135,7 @@ impl LevelObjectDesc {
                     ..ColliderBundle::default()
                 },
             ),
-            Self::PivotPoint(_) => (
+            Self::RoutePoint(_) => (
                 RigidBodyBundle {
                     body_type: RigidBodyType::KinematicPositionBased,
                     position: [self.position().unwrap().x, self.position().unwrap().y, 0.0].into(),
@@ -145,26 +145,26 @@ impl LevelObjectDesc {
                     collider_type: ColliderType::Sensor,
                     shape: ColliderShape::convex_hull(&[
                         Point::new(
-                            -PIVOT_POINT_BASE_EDGE_HALF_LEN,
-                            -PIVOT_POINT_BASE_EDGE_HALF_LEN,
+                            -ROUTE_POINT_BASE_EDGE_HALF_LEN,
+                            -ROUTE_POINT_BASE_EDGE_HALF_LEN,
                             0.0,
                         ),
                         Point::new(
-                            -PIVOT_POINT_BASE_EDGE_HALF_LEN,
-                            PIVOT_POINT_BASE_EDGE_HALF_LEN,
+                            -ROUTE_POINT_BASE_EDGE_HALF_LEN,
+                            ROUTE_POINT_BASE_EDGE_HALF_LEN,
                             0.0,
                         ),
                         Point::new(
-                            PIVOT_POINT_BASE_EDGE_HALF_LEN,
-                            PIVOT_POINT_BASE_EDGE_HALF_LEN,
+                            ROUTE_POINT_BASE_EDGE_HALF_LEN,
+                            ROUTE_POINT_BASE_EDGE_HALF_LEN,
                             0.0,
                         ),
                         Point::new(
-                            PIVOT_POINT_BASE_EDGE_HALF_LEN,
-                            -PIVOT_POINT_BASE_EDGE_HALF_LEN,
+                            ROUTE_POINT_BASE_EDGE_HALF_LEN,
+                            -ROUTE_POINT_BASE_EDGE_HALF_LEN,
                             0.0,
                         ),
-                        Point::new(0.0, 0.0, PIVOT_POINT_HEIGHT),
+                        Point::new(0.0, 0.0, ROUTE_POINT_HEIGHT),
                     ])
                     .unwrap(),
                     ..ColliderBundle::default()
