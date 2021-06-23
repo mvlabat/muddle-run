@@ -25,8 +25,8 @@ use bevy_rapier3d::rapier::{
 /// Positions should align in half a second.
 const LERP_FACTOR: f32 = 1.0 / SIMULATIONS_PER_SECOND as f32 * 2.0;
 
-// The scaling factor for the player's linear velocity
-const PLAYER_MOVEMENT_SPEED: f32 = 2.0;
+/// The scaling factor for the player's linear velocity.
+const PLAYER_MOVEMENT_SPEED: f32 = 240.0 / SIMULATIONS_PER_SECOND as f32;
 
 pub fn read_movement_updates(
     time: Res<GameTime>,
