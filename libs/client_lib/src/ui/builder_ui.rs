@@ -242,6 +242,32 @@ pub fn builder_ui(
                         ui.label("Route type");
                         route_type(ui, &mut dirty_level_object);
                         ui.end_row();
+
+                        if let Some(route) = &mut dirty_level_object.route {
+                            ui.label("Period (frames)");
+                            ui.add(
+                                egui::widgets::DragValue::new(&mut route.period)
+                                    .speed(0.1)
+                                    .clamp_range(
+                                        SIMULATIONS_PER_SECOND..=SIMULATIONS_PER_SECOND * 60,
+                                    ),
+                            );
+                            ui.end_row();
+
+                            ui.label("Period (second)");
+                            ui.label(format!(
+                                "{:.2}",
+                                route.period.value() as f32 / SIMULATIONS_PER_SECOND as f32
+                            ));
+                            ui.end_row();
+
+                            ui.label("Start offset (frames)");
+                            ui.add(
+                                egui::widgets::DragValue::new(&mut route.start_frame_offset)
+                                    .speed(0.1)
+                                    .clamp_range(FrameNumber::new(0)..=route.period),
+                            );
+                        }
                     }
                 });
 

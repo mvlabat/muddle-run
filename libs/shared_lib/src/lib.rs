@@ -1,3 +1,4 @@
+#![feature(const_fn_trait_bound)]
 #![feature(hash_drain_filter)]
 #![feature(step_trait)]
 #![feature(trait_alias)]
