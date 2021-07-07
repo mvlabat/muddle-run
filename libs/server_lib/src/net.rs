@@ -854,7 +854,7 @@ fn broadcast_start_game_messages(
                     nickname: player.nickname.clone(),
                 })
                 .collect(),
-            generation: time.generation,
+            generation: time.server_generation,
             game_state: DeltaUpdate {
                 frame_number: time.server_frame,
                 acknowledgments: connection_state.incoming_acknowledgments(),

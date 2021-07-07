@@ -3022,6 +3022,7 @@ name = "mr_shared_lib"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_egui",
  "bevy_networking_turbulence",
  "bevy_rapier3d",
  "bincode",

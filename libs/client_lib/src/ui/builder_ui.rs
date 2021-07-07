@@ -303,8 +303,6 @@ fn route_settings(
     level_objects: &mut LevelObjects,
     dirty_level_object: &mut LevelObject,
 ) {
-    let net_id = dirty_level_object.net_id;
-    let label = dirty_level_object.label.clone();
     let dirty_level_object_route = match &mut dirty_level_object.route {
         Some(route) => route,
         None => return,
@@ -320,23 +318,29 @@ fn route_settings(
             }
             ObjectRouteDesc::ForwardCycle(route_points)
             | ObjectRouteDesc::ForwardBackwardsCycle(route_points) => {
-                let mut list = vec![ListItem {
-                    id: egui::Id::new(net_id),
-                    label: label.clone(),
-                    data: net_id,
-                    sortable: false,
-                }];
+                let mut list = Vec::new();
                 let mut duplicate_counts = HashMap::new();
                 for point in &*route_points {
                     if let Some(level_object) = level_objects.level_state.objects.get(point) {
                         let n = duplicate_counts
-                            .entry(*point)
+                            .entry(Some(*point))
                             .and_modify(|count| *count += 1)
                             .or_insert(0);
                         list.push(ListItem {
                             id: egui::Id::new(level_object.net_id).with(n),
                             label: level_object.label.clone(),
-                            data: level_object.net_id,
+                            data: *point,
+                            sortable: true,
+                        });
+                    } else {
+                        let n = duplicate_counts
+                            .entry(None)
+                            .and_modify(|count| *count += 1)
+                            .or_insert(0);
+                        list.push(ListItem {
+                            id: egui::Id::new("invalid").with(n),
+                            label: "<Invalid>".to_owned(),
+                            data: *point,
                             sortable: true,
                         });
                     }
@@ -344,11 +348,7 @@ fn route_settings(
 
                 let edited = sortable_list(ui, "route settings", &mut list);
                 if edited {
-                    *route_points = list
-                        .into_iter()
-                        .skip(1)
-                        .map(|list_item| list_item.data)
-                        .collect();
+                    *route_points = list.into_iter().map(|list_item| list_item.data).collect();
                 }
             }
         }

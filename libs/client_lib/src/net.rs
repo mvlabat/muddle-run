@@ -842,10 +842,15 @@ fn process_start_game_message(
             (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
         );
         update_params.target_frames_ahead.frames_count = rtt_frames;
-        update_params.simulation_time.generation = start_game.generation;
+        update_params.simulation_time.server_generation = start_game.generation;
+        update_params.simulation_time.player_generation = start_game.generation;
         update_params.simulation_time.server_frame = start_game.game_state.frame_number;
-        update_params.simulation_time.player_frame =
-            start_game.game_state.frame_number + rtt_frames;
+        let (player_frame, overflown) = start_game.game_state.frame_number.add(rtt_frames);
+        update_params.simulation_time.player_frame = player_frame;
+        if overflown {
+            update_params.simulation_time.player_generation += 1;
+        }
+
         update_params.game_time.frame_number = update_params.simulation_time.player_frame;
 
         update_params.estimated_server_time.frame_number =

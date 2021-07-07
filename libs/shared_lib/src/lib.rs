@@ -12,7 +12,8 @@ use crate::{
         },
         components::PlayerFrameSimulated,
         level::LevelState,
-        movement::{player_movement, read_movement_updates, sync_position},
+        level_objects::{process_objects_route_graph, update_level_object_movement_route_settings},
+        movement::{load_object_positions, player_movement, read_movement_updates, sync_position},
         remove_disconnected_players, restart_game,
         spawn::{
             despawn_level_objects, despawn_players, process_spawned_entities, spawn_players,
@@ -164,6 +165,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::PRE_GAME,
                 SystemStage::parallel()
+                    .with_system(update_level_object_movement_route_settings.system())
                     .with_system(physics::attach_bodies_and_colliders_system.system())
                     .with_system(physics::create_joints_system.system()),
             )
@@ -174,7 +176,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::GAME,
-                SystemStage::parallel().with_system(player_movement.system()),
+                SystemStage::parallel()
+                    .with_system(player_movement.system())
+                    .with_system(process_objects_route_graph.system().label("route_graph"))
+                    .with_system(load_object_positions.system().after("route_graph")),
             )
             .with_stage(
                 stage::PHYSICS,
@@ -312,12 +317,12 @@ pub struct GameTime {
 
 #[derive(Default, Debug)]
 pub struct SimulationTime {
-    /// Corresponds to the server frame.
-    pub generation: u64,
     /// Is expected to be ahead of `server_frame` on the client side, is equal to `server_frame`
     /// on the server side.
     pub player_frame: FrameNumber,
+    pub player_generation: u64,
     pub server_frame: FrameNumber,
+    pub server_generation: u64,
 }
 
 impl SimulationTime {
@@ -571,9 +576,12 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
         time.player_frame.value()
     );
     if time.server_frame.value() == u16::MAX {
-        time.generation += 1;
+        time.server_generation += 1;
     }
     time.server_frame += FrameNumber::new(1);
+    if time.player_frame.value() == u16::MAX {
+        time.player_generation += 1;
+    }
     time.player_frame += FrameNumber::new(1);
 }
 

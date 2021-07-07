@@ -189,6 +189,7 @@ pub fn inspect_object(
             {
                 ui.label(format!("Player name: {}", player_name));
             }
+            ui.label(format!("{:?}", entity));
             if let Some(level_object_label) = queries
                 .objects_registry
                 .get_id(entity)

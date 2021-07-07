@@ -22,6 +22,11 @@ impl<T: Integer> WrappedCounter<T> {
     pub fn value(&self) -> T {
         self.0
     }
+
+    pub fn add(&self, rhs: Self) -> (Self, bool) {
+        let (value, overflown) = self.0.overflowing_add(&rhs.0);
+        (Self::new(value), overflown)
+    }
 }
 
 impl<T: Integer> WrappedCounter<T>
