@@ -88,7 +88,7 @@ pub mod stage {
 }
 pub const PLAYER_SIZE: f32 = 0.5;
 pub const PLANE_SIZE: f32 = 20.0;
-pub const SIMULATIONS_PER_SECOND: u16 = 30;
+pub const SIMULATIONS_PER_SECOND: u16 = 120;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
 pub const TICKS_PER_NETWORK_BROADCAST: u16 = 2;
 
