@@ -368,6 +368,10 @@ fn closest_start_frame_to_time(
     start_frame_offset: FrameNumber,
     period: FrameNumber,
 ) -> FrameNumber {
+    if period == FrameNumber::new(0) {
+        return frame_number;
+    }
+
     assert!(start_frame_offset.value() < period.value()); // TODO! make sure we don't allow that in the UI.
     if generation == 0 && frame_number.value() < start_frame_offset.value() {
         return start_frame_offset;
