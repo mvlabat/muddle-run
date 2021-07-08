@@ -43,6 +43,12 @@ impl Position {
         }
         Self { buffer }
     }
+
+    pub fn take(&mut self) -> Self {
+        Position {
+            buffer: self.buffer.take(),
+        }
+    }
 }
 
 /// Is used only by the client, to lerp the position if an authoritative update arrives from the

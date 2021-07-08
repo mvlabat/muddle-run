@@ -570,6 +570,9 @@ pub fn send_network_updates(
     players_registry: Res<EntityRegistry<PlayerNetId>>,
     mut deferred_message_queues: DeferredMessageQueues,
 ) {
+    // We run this system after we've concluded the simulation. As we don't have updates for the
+    // next frame yet, we decrement the frame number.
+    let time = time.prev_frame();
     log::trace!("Sending network updates (frame: {})", time.server_frame);
 
     broadcast_start_game_messages(
@@ -913,6 +916,9 @@ fn create_player_state(
                 direction,
             });
         }
+    }
+    if inputs.is_empty() && player_direction.buffer.len() > 1 {
+        log::error!("Missing updates for Player {} (updates start frame: {}, last player direction frame: {:?})", net_id.0, updates_start_frame, player_direction.buffer.end_frame());
     }
 
     let start_position_frame = inputs.first().map_or_else(

@@ -352,6 +352,29 @@ impl SimulationTime {
         assert!(self.player_frame >= self.server_frame);
         (self.player_frame - self.server_frame).value()
     }
+
+    pub fn prev_frame(&self) -> SimulationTime {
+        assert!(
+            (self.player_frame.value() > 0 || self.player_generation > 0)
+                && (self.server_frame.value() > 0 || self.server_generation > 0)
+        );
+        let player_generation = if self.player_frame == FrameNumber::new(0) {
+            self.player_generation - 1
+        } else {
+            self.player_generation
+        };
+        let server_generation = if self.server_frame == FrameNumber::new(0) {
+            self.server_generation - 1
+        } else {
+            self.server_generation
+        };
+        Self {
+            player_frame: self.player_frame - FrameNumber::new(1),
+            player_generation,
+            server_frame: self.server_frame - FrameNumber::new(1),
+            server_generation,
+        }
+    }
 }
 
 #[derive(Default, Clone)]

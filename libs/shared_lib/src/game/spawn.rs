@@ -168,7 +168,7 @@ pub fn update_level_objects(
     mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
     mut level_state: ResMut<LevelState>,
-    mut level_objects: Query<(Entity, &mut Spawned, &LevelObjectTag)>,
+    mut level_objects: Query<(Entity, Option<&mut Position>, &mut Spawned, &LevelObjectTag)>,
 ) {
     // There may be several updates of the same entity per frame. We need to dedup them,
     // otherwise we crash when trying to clone from the entities that haven't been created yet
@@ -180,6 +180,7 @@ pub fn update_level_objects(
 
     for command in update_level_object_commands {
         let mut spawned_component = Spawned::new(command.frame_number);
+        let mut position_component: Option<Position> = None;
         if let Some(existing_entity) = object_entities.get_entity(command.object.net_id) {
             log::debug!(
                 "Replacing an object ({}): {:?}",
@@ -188,9 +189,12 @@ pub fn update_level_objects(
             );
             object_entities.remove_by_id(command.object.net_id);
             commands.entity(existing_entity).despawn();
-            let (_, spawned, _) = level_objects
+            let (_, position, spawned, _) = level_objects
                 .get_mut(existing_entity)
                 .expect("Expected a registered level object entity to exist");
+            if let Some(mut position) = position {
+                position_component = Some(position.take());
+            }
             spawned_component = spawned.clone();
         }
 
@@ -217,11 +221,17 @@ pub fn update_level_objects(
             ),
         };
         if let Some(position) = command.object.desc.position() {
-            entity_commands.insert(Position::new(
-                position,
-                time.server_frame,
-                time.player_frames_ahead() + 1,
-            ));
+            let position_component = if let Some(mut position_component) = position_component {
+                for frame_number in
+                    time.server_frame..=position_component.buffer.end_frame().max(time.server_frame)
+                {
+                    position_component.buffer.insert(frame_number, position);
+                }
+                position_component
+            } else {
+                Position::new(position, time.server_frame, time.player_frames_ahead() + 1)
+            };
+            entity_commands.insert(position_component);
         }
         let (rigid_body, collider) = command.object.desc.physics_body();
         entity_commands

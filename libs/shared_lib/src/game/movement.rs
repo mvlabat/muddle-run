@@ -94,20 +94,25 @@ pub fn read_movement_updates(
                 .buffer
                 .get(frame_number)
                 .and_then(|update| *update);
-            player_direction.buffer.insert(
+            log::trace!(
+                "Inserting player direction update for frame {} (current frame: {}): {:?} (current: {:?})",
                 frame_number,
-                direction_update
-                    .and_then(|direction_update| {
-                        direction_update.as_mut().map(|direction_update| {
-                            if cfg!(feature = "client") {
-                                direction_update.is_processed_client_input = Some(true);
-                            }
-                            direction_update.direction
-                        })
-                    })
-                    // Avoid replacing initial updates with None.
-                    .or(current_direction),
+                time.frame_number,
+                direction_update,
+                current_direction,
             );
+            let update = direction_update
+                .and_then(|direction_update| {
+                    direction_update.as_mut().map(|direction_update| {
+                        if cfg!(feature = "client") {
+                            direction_update.is_processed_client_input = Some(true);
+                        }
+                        direction_update.direction
+                    })
+                })
+                // Avoid replacing initial updates with None.
+                .or(current_direction);
+            player_direction.buffer.insert(frame_number, update);
         }
     }
 }

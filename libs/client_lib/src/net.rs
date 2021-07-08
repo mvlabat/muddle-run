@@ -649,6 +649,7 @@ fn process_delta_update_message(
     players: &mut HashMap<PlayerNetId, Player>,
     update_params: &mut UpdateParams,
 ) {
+    log::trace!("Processing DeltaUpdate message: {:?}", delta_update);
     let mut rewind_to_simulation_frame = delta_update.frame_number;
 
     // Calculating how many frames ahead of the server we want to be (implies resizing input buffer for the server).

@@ -97,6 +97,16 @@ impl<T> Framebuffer<T> {
         let frame_len = FrameNumber::new(self.buffer.len() as u16);
         frame_number + self.limit >= self.start_frame + frame_len
     }
+
+    pub fn take(&mut self) -> Self {
+        let buf = Framebuffer {
+            start_frame: self.start_frame,
+            buffer: std::mem::take(&mut self.buffer),
+            limit: self.limit,
+        };
+        self.start_frame = self.end_frame();
+        buf
+    }
 }
 
 impl<T: Default + std::fmt::Debug> Framebuffer<T> {
