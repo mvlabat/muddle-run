@@ -76,12 +76,10 @@ pub fn update_level_object_movement_route_settings(
                 ObjectRouteDesc::Attached(Some(point)) | ObjectRouteDesc::Radial(Some(point)) => {
                     (LevelObjectMovementType::Radial, vec![point])
                 }
-                ObjectRouteDesc::ForwardCycle(mut points) => {
+                ObjectRouteDesc::ForwardCycle(points) => {
                     if points.is_empty() {
                         return None;
                     }
-                    let first_point = points.first().cloned().unwrap();
-                    points.push(first_point);
                     (LevelObjectMovementType::Linear, points)
                 }
                 ObjectRouteDesc::ForwardBackwardsCycle(mut points) => {
