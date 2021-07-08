@@ -344,8 +344,20 @@ impl SimulationTime {
             assert!(self.player_frame >= self.server_frame);
         }
         let frames_ahead = self.player_frame - self.server_frame;
-        self.server_frame = std::cmp::min(self.server_frame, frame_number);
-        self.player_frame = self.server_frame + frames_ahead;
+        if (self.server_frame.value() as i32 - frame_number.value() as i32).abs() as u16
+            > u16::MAX / 2
+            && self.server_frame > frame_number
+        {
+            self.server_generation -= 1;
+        }
+        self.server_frame = self.server_frame.min(frame_number);
+        let (player_frame, overflown) = self.server_frame.add(frames_ahead);
+        self.player_frame = player_frame;
+        if overflown {
+            self.player_generation = self.server_generation + 1;
+        } else {
+            self.player_generation = self.server_generation;
+        }
     }
 
     pub fn player_frames_ahead(&self) -> u16 {
