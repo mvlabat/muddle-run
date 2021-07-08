@@ -28,6 +28,8 @@ use mr_shared_lib::{
 };
 use std::collections::HashMap;
 
+pub const DEFAULT_PERIOD: FrameNumber = FrameNumber::new(SIMULATIONS_PER_SECOND * 10);
+
 #[derive(Clone)]
 pub struct PickedLevelObject {
     entity: Entity,
@@ -244,29 +246,52 @@ pub fn builder_ui(
                         ui.end_row();
 
                         if let Some(route) = &mut dirty_level_object.route {
-                            ui.label("Period (frames)");
-                            ui.add(
-                                egui::widgets::DragValue::new(&mut route.period)
-                                    .speed(0.1)
-                                    .clamp_range(
-                                        SIMULATIONS_PER_SECOND..=SIMULATIONS_PER_SECOND * 60,
-                                    ),
-                            );
-                            ui.end_row();
+                            // We want to hide period and start offset settings for the Attached
+                            // route type.
+                            if !matches!(route.desc, ObjectRouteDesc::Attached(_)) {
+                                // Period may be equal 0 if we are switching from the Attached route
+                                // type to another one.
+                                if route.period == FrameNumber::new(0) {
+                                    route.period = DEFAULT_PERIOD
+                                        .min(route.start_frame_offset + FrameNumber::new(1));
+                                }
 
-                            ui.label("Period (second)");
-                            ui.label(format!(
-                                "{:.2}",
-                                route.period.value() as f32 / SIMULATIONS_PER_SECOND as f32
-                            ));
-                            ui.end_row();
+                                ui.label("Period (frames)");
+                                ui.add(
+                                    egui::widgets::DragValue::new(&mut route.period)
+                                        .speed(0.1)
+                                        .clamp_range(
+                                            SIMULATIONS_PER_SECOND
+                                                .max(route.start_frame_offset.value() + 1)
+                                                ..=SIMULATIONS_PER_SECOND * 60,
+                                        ),
+                                );
+                                ui.end_row();
 
-                            ui.label("Start offset (frames)");
-                            ui.add(
-                                egui::widgets::DragValue::new(&mut route.start_frame_offset)
-                                    .speed(0.1)
-                                    .clamp_range(FrameNumber::new(0)..=route.period),
-                            );
+                                ui.label("Period (second)");
+                                ui.label(format!(
+                                    "{:.2}",
+                                    route.period.value() as f32 / SIMULATIONS_PER_SECOND as f32
+                                ));
+                                ui.end_row();
+
+                                ui.label("Start offset (frames)");
+                                ui.add(
+                                    egui::widgets::DragValue::new(&mut route.start_frame_offset)
+                                        .speed(0.1)
+                                        .clamp_range(
+                                            FrameNumber::new(0)
+                                                ..=route.period - FrameNumber::new(1),
+                                        ),
+                                );
+                            } else {
+                                // Attached and Radial route types actually behave the same, we
+                                // just display this difference in the UI and set these values
+                                // to 0 for the Attached type under the hood to prevent objects
+                                // from making circles.
+                                route.period = FrameNumber::new(0);
+                                route.start_frame_offset = FrameNumber::new(0);
+                            }
                         }
                     }
                 });
@@ -529,7 +554,7 @@ fn replace_route_desc(route: &mut Option<ObjectRoute>, desc: ObjectRouteDesc) {
         route.desc = desc;
     } else {
         *route = Some(ObjectRoute {
-            period: FrameNumber::new(SIMULATIONS_PER_SECOND * 10),
+            period: DEFAULT_PERIOD,
             start_frame_offset: FrameNumber::new(0),
             desc,
         });

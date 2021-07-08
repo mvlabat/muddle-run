@@ -6,7 +6,6 @@ pub struct ListItem<T> {
     pub id: Id,
     pub label: String,
     pub data: T,
-    // Only first N and last N can be sortable.
     pub sortable: bool,
 }
 
