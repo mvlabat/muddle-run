@@ -12,7 +12,7 @@ use bevy::{
     log,
     math::Vec2,
 };
-use bevy_egui::{egui, EguiContext};
+use bevy_egui::{egui, egui::Ui, EguiContext};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -142,7 +142,16 @@ pub fn builder_ui(
                 .level_object
                 .net_id,
         ) {
-            level_objects.picked_level_object.as_mut().unwrap().entity = level_object_entity;
+            if level_objects
+                .query
+                .get_component::<Spawned>(level_object_entity)
+                .unwrap()
+                .is_spawned(level_objects.time.frame_number)
+            {
+                level_objects.picked_level_object.as_mut().unwrap().entity = level_object_entity;
+            } else {
+                *level_objects.picked_level_object = None;
+            }
         } else {
             *level_objects.picked_level_object = None;
         }
@@ -193,7 +202,6 @@ pub fn builder_ui(
                     });
             }
         });
-        ui.separator();
 
         if let Some(PickedLevelObject {
             entity: _,
@@ -201,97 +209,12 @@ pub fn builder_ui(
             mut dirty_level_object,
         }) = level_objects.picked_level_object.clone()
         {
-            egui::Grid::new("editing_picked_level_object")
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.label("Object label");
-                    ui.text_edit_singleline(&mut dirty_level_object.label);
-                    ui.end_row();
-
-                    if let Some(pos) = dirty_level_object.desc.position_mut() {
-                        ui.label("Position");
-                        ui.horizontal(|ui| {
-                            ui.add(egui::widgets::DragValue::new(&mut pos.x).speed(0.1));
-                            ui.add(egui::widgets::DragValue::new(&mut pos.y).speed(0.1));
-                        });
-                        ui.end_row();
-                    }
-
-                    match &mut dirty_level_object.desc {
-                        LevelObjectDesc::Cube(CubeDesc { size, .. })
-                        | LevelObjectDesc::Plane(PlaneDesc { size, .. }) => {
-                            ui.label("Size");
-                            ui.add(egui::widgets::DragValue::new(size).speed(0.01));
-                            ui.end_row();
-                        }
-                        LevelObjectDesc::RoutePoint(_) => {}
-                    }
-
-                    ui.label("Actions");
-                    ui.horizontal(|ui| {
-                        if ui.button("Despawn").clicked() {
-                            level_object_requests
-                                .despawn_requests
-                                .push(level_object.net_id);
-                        }
-                    });
-                    ui.end_row();
-
-                    if dirty_level_object.desc.position().is_some() {
-                        ui.label("Route type");
-                        route_type(ui, &mut dirty_level_object);
-                        ui.end_row();
-
-                        if let Some(route) = &mut dirty_level_object.route {
-                            // We want to hide period and start offset settings for the Attached
-                            // route type.
-                            if !matches!(route.desc, ObjectRouteDesc::Attached(_)) {
-                                // Period may be equal 0 if we are switching from the Attached route
-                                // type to another one.
-                                if route.period == FrameNumber::new(0) {
-                                    route.period = DEFAULT_PERIOD
-                                        .min(route.start_frame_offset + FrameNumber::new(1));
-                                }
-
-                                ui.label("Period (frames)");
-                                ui.add(
-                                    egui::widgets::DragValue::new(&mut route.period)
-                                        .speed(0.1)
-                                        .clamp_range(
-                                            SIMULATIONS_PER_SECOND
-                                                .max(route.start_frame_offset.value() + 1)
-                                                ..=SIMULATIONS_PER_SECOND * 60,
-                                        ),
-                                );
-                                ui.end_row();
-
-                                ui.label("Period (second)");
-                                ui.label(format!(
-                                    "{:.2}",
-                                    route.period.value() as f32 / SIMULATIONS_PER_SECOND as f32
-                                ));
-                                ui.end_row();
-
-                                ui.label("Start offset (frames)");
-                                ui.add(
-                                    egui::widgets::DragValue::new(&mut route.start_frame_offset)
-                                        .speed(0.1)
-                                        .clamp_range(
-                                            FrameNumber::new(0)
-                                                ..=route.period - FrameNumber::new(1),
-                                        ),
-                                );
-                            } else {
-                                // Attached and Radial route types actually behave the same, we
-                                // just display this difference in the UI and set these values
-                                // to 0 for the Attached type under the hood to prevent objects
-                                // from making circles.
-                                route.period = FrameNumber::new(0);
-                                route.start_frame_offset = FrameNumber::new(0);
-                            }
-                        }
-                    }
-                });
+            level_object_ui(
+                &mut level_object_requests,
+                ui,
+                &level_object,
+                &mut dirty_level_object,
+            );
 
             if dirty_level_object.desc.position().is_some() {
                 route_settings(
@@ -317,6 +240,104 @@ pub fn builder_ui(
             }
         }
     });
+}
+
+fn level_object_ui(
+    level_object_requests: &mut LevelObjectRequestsQueue,
+    ui: &mut Ui,
+    level_object: &LevelObject,
+    mut dirty_level_object: &mut LevelObject,
+) {
+    ui.separator();
+    egui::Grid::new("editing_picked_level_object")
+        .striped(true)
+        .show(ui, |ui| {
+            ui.label("Object label");
+            ui.text_edit_singleline(&mut dirty_level_object.label);
+            ui.end_row();
+
+            if let Some(pos) = dirty_level_object.desc.position_mut() {
+                ui.label("Position");
+                ui.horizontal(|ui| {
+                    ui.add(egui::widgets::DragValue::new(&mut pos.x).speed(0.1));
+                    ui.add(egui::widgets::DragValue::new(&mut pos.y).speed(0.1));
+                });
+                ui.end_row();
+            }
+
+            match &mut dirty_level_object.desc {
+                LevelObjectDesc::Cube(CubeDesc { size, .. })
+                | LevelObjectDesc::Plane(PlaneDesc { size, .. }) => {
+                    ui.label("Size");
+                    ui.add(egui::widgets::DragValue::new(size).speed(0.01));
+                    ui.end_row();
+                }
+                LevelObjectDesc::RoutePoint(_) => {}
+            }
+
+            ui.label("Actions");
+            ui.horizontal(|ui| {
+                if ui.button("Despawn").clicked() {
+                    level_object_requests
+                        .despawn_requests
+                        .push(level_object.net_id);
+                }
+            });
+            ui.end_row();
+
+            if dirty_level_object.desc.position().is_some() {
+                ui.label("Route type");
+                route_type(ui, &mut dirty_level_object);
+                ui.end_row();
+
+                if let Some(route) = &mut dirty_level_object.route {
+                    // We want to hide period and start offset settings for the Attached
+                    // route type.
+                    if !matches!(route.desc, ObjectRouteDesc::Attached(_)) {
+                        // Period may be equal 0 if we are switching from the Attached route
+                        // type to another one.
+                        if route.period == FrameNumber::new(0) {
+                            route.period =
+                                DEFAULT_PERIOD.min(route.start_frame_offset + FrameNumber::new(1));
+                        }
+
+                        ui.label("Period (frames)");
+                        ui.add(
+                            egui::widgets::DragValue::new(&mut route.period)
+                                .speed(0.1)
+                                .clamp_range(
+                                    SIMULATIONS_PER_SECOND.max(route.start_frame_offset.value() + 1)
+                                        ..=SIMULATIONS_PER_SECOND * 60,
+                                ),
+                        );
+                        ui.end_row();
+
+                        ui.label("Period (second)");
+                        ui.label(format!(
+                            "{:.2}",
+                            route.period.value() as f32 / SIMULATIONS_PER_SECOND as f32
+                        ));
+                        ui.end_row();
+
+                        ui.label("Start offset (frames)");
+                        ui.add(
+                            egui::widgets::DragValue::new(&mut route.start_frame_offset)
+                                .speed(0.1)
+                                .clamp_range(
+                                    FrameNumber::new(0)..=route.period - FrameNumber::new(1),
+                                ),
+                        );
+                    } else {
+                        // Attached and Radial route types actually behave the same, we
+                        // just display this difference in the UI and set these values
+                        // to 0 for the Attached type under the hood to prevent objects
+                        // from making circles.
+                        route.period = FrameNumber::new(0);
+                        route.start_frame_offset = FrameNumber::new(0);
+                    }
+                }
+            }
+        });
 }
 
 fn route_settings(
