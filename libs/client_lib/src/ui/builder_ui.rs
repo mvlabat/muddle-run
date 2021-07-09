@@ -16,7 +16,7 @@ use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
-        components::LevelObjectLabel,
+        components::{LevelObjectLabel, Spawned},
         level::{LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc},
         level_objects::{CubeDesc, PlaneDesc, RoutePointDesc},
     },
@@ -24,7 +24,7 @@ use mr_shared_lib::{
     net::MessageId,
     player::PlayerRole,
     registry::EntityRegistry,
-    SIMULATIONS_PER_SECOND,
+    GameTime, SIMULATIONS_PER_SECOND,
 };
 use std::collections::HashMap;
 
@@ -39,11 +39,12 @@ pub struct PickedLevelObject {
 
 #[derive(SystemParam)]
 pub struct LevelObjects<'a> {
+    time: Res<'a, GameTime>,
     pending_correlation: Local<'a, Option<MessageId>>,
     picked_level_object: Local<'a, Option<PickedLevelObject>>,
     level_state: Res<'a, LevelState>,
     entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
-    query: Query<'a, (Entity, &'static LevelObjectLabel)>,
+    query: Query<'a, (Entity, &'static LevelObjectLabel, &'static Spawned)>,
 }
 
 #[derive(Default)]
@@ -149,61 +150,57 @@ pub fn builder_ui(
 
     let ctx = egui_context.ctx();
     egui::Window::new("Builder menu").show(ctx, |ui| {
+        ui.label("Create new object:");
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("Plane").clicked() {
+                let correlation_id = level_object_correlations.next_correlation_id();
+                *level_objects.pending_correlation = Some(correlation_id);
+                level_object_requests
+                    .spawn_requests
+                    .push(SpawnLevelObjectRequest {
+                        correlation_id,
+                        body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::Plane(PlaneDesc {
+                            position: Vec2::new(0.0, 0.0),
+                            size: 50.0,
+                        })),
+                    });
+            }
+            if ui.button("Cube").clicked() {
+                let correlation_id = level_object_correlations.next_correlation_id();
+                *level_objects.pending_correlation = Some(correlation_id);
+                level_object_requests
+                    .spawn_requests
+                    .push(SpawnLevelObjectRequest {
+                        correlation_id,
+                        body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::Cube(CubeDesc {
+                            position: Vec2::new(5.0, 5.0),
+                            size: 0.4,
+                        })),
+                    });
+            }
+            if ui.button("Route point").clicked() {
+                let correlation_id = level_object_correlations.next_correlation_id();
+                *level_objects.pending_correlation = Some(correlation_id);
+                level_object_requests
+                    .spawn_requests
+                    .push(SpawnLevelObjectRequest {
+                        correlation_id,
+                        body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::RoutePoint(
+                            RoutePointDesc {
+                                position: Vec2::new(-5.0, 5.0),
+                            },
+                        )),
+                    });
+            }
+        });
+        ui.separator();
+
         if let Some(PickedLevelObject {
             entity: _,
             level_object,
             mut dirty_level_object,
         }) = level_objects.picked_level_object.clone()
         {
-            ui.label("Create new object:");
-            ui.horizontal_wrapped(|ui| {
-                if ui.button("Plane").clicked() {
-                    let correlation_id = level_object_correlations.next_correlation_id();
-                    *level_objects.pending_correlation = Some(correlation_id);
-                    level_object_requests
-                        .spawn_requests
-                        .push(SpawnLevelObjectRequest {
-                            correlation_id,
-                            body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::Plane(
-                                PlaneDesc {
-                                    position: Vec2::new(0.0, 0.0),
-                                    size: 50.0,
-                                },
-                            )),
-                        });
-                }
-                if ui.button("Cube").clicked() {
-                    let correlation_id = level_object_correlations.next_correlation_id();
-                    *level_objects.pending_correlation = Some(correlation_id);
-                    level_object_requests
-                        .spawn_requests
-                        .push(SpawnLevelObjectRequest {
-                            correlation_id,
-                            body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::Cube(
-                                CubeDesc {
-                                    position: Vec2::new(5.0, 5.0),
-                                    size: 0.4,
-                                },
-                            )),
-                        });
-                }
-                if ui.button("Route point").clicked() {
-                    let correlation_id = level_object_correlations.next_correlation_id();
-                    *level_objects.pending_correlation = Some(correlation_id);
-                    level_object_requests
-                        .spawn_requests
-                        .push(SpawnLevelObjectRequest {
-                            correlation_id,
-                            body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::RoutePoint(
-                                RoutePointDesc {
-                                    position: Vec2::new(-5.0, 5.0),
-                                },
-                            )),
-                        });
-                }
-            });
-            ui.separator();
-
             egui::Grid::new("editing_picked_level_object")
                 .striped(true)
                 .show(ui, |ui| {
@@ -389,7 +386,11 @@ fn route_settings(
         });
         egui::ScrollArea::auto_sized().show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                for (entity, label) in level_objects.query.iter() {
+                for (entity, label, spawned) in level_objects.query.iter() {
+                    if !spawned.is_spawned(level_objects.time.frame_number) {
+                        continue;
+                    }
+
                     if !label
                         .0
                         .to_lowercase()
