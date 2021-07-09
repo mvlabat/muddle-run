@@ -6,6 +6,7 @@ use crate::{
     },
     messages::EntityNetId,
     registry::EntityRegistry,
+    GHOST_SIZE_MULTIPLIER,
 };
 use bevy::{
     ecs::{
@@ -105,7 +106,8 @@ impl LevelObjectDesc {
         }
     }
 
-    pub fn physics_body(&self) -> (RigidBodyBundle, ColliderBundle) {
+    pub fn physics_body(&self, is_ghost: bool) -> (RigidBodyBundle, ColliderBundle) {
+        let ghost_multiplier = if is_ghost { GHOST_SIZE_MULTIPLIER } else { 1.0 };
         match self {
             Self::Plane(plane) => (
                 RigidBodyBundle {
@@ -115,7 +117,11 @@ impl LevelObjectDesc {
                 },
                 ColliderBundle {
                     collider_type: ColliderType::Sensor,
-                    shape: ColliderShape::cuboid(plane.size, plane.size, 0.01),
+                    shape: ColliderShape::cuboid(
+                        plane.size * ghost_multiplier,
+                        plane.size * ghost_multiplier,
+                        0.01 * ghost_multiplier,
+                    ),
                     ..ColliderBundle::default()
                 },
             ),
@@ -131,7 +137,16 @@ impl LevelObjectDesc {
                     ..RigidBodyBundle::default()
                 },
                 ColliderBundle {
-                    shape: ColliderShape::cuboid(cube.size, cube.size, cube.size),
+                    collider_type: if is_ghost {
+                        ColliderType::Sensor
+                    } else {
+                        ColliderType::Solid
+                    },
+                    shape: ColliderShape::cuboid(
+                        cube.size * ghost_multiplier,
+                        cube.size * ghost_multiplier,
+                        cube.size * ghost_multiplier,
+                    ),
                     ..ColliderBundle::default()
                 },
             ),
@@ -145,26 +160,26 @@ impl LevelObjectDesc {
                     collider_type: ColliderType::Sensor,
                     shape: ColliderShape::convex_hull(&[
                         Point::new(
-                            -ROUTE_POINT_BASE_EDGE_HALF_LEN,
-                            -ROUTE_POINT_BASE_EDGE_HALF_LEN,
+                            -ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
+                            -ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
                             0.0,
                         ),
                         Point::new(
-                            -ROUTE_POINT_BASE_EDGE_HALF_LEN,
-                            ROUTE_POINT_BASE_EDGE_HALF_LEN,
+                            -ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
+                            ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
                             0.0,
                         ),
                         Point::new(
-                            ROUTE_POINT_BASE_EDGE_HALF_LEN,
-                            ROUTE_POINT_BASE_EDGE_HALF_LEN,
+                            ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
+                            ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
                             0.0,
                         ),
                         Point::new(
-                            ROUTE_POINT_BASE_EDGE_HALF_LEN,
-                            -ROUTE_POINT_BASE_EDGE_HALF_LEN,
+                            ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
+                            -ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
                             0.0,
                         ),
-                        Point::new(0.0, 0.0, ROUTE_POINT_HEIGHT),
+                        Point::new(0.0, 0.0, ROUTE_POINT_HEIGHT * ghost_multiplier),
                     ])
                     .unwrap(),
                     ..ColliderBundle::default()

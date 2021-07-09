@@ -86,6 +86,7 @@ pub mod stage {
     pub const POST_PHYSICS: &str = "mr_shared_post_physics";
     pub const POST_GAME: &str = "mr_shared_post_game";
 }
+pub const GHOST_SIZE_MULTIPLIER: f32 = 1.001;
 pub const PLAYER_SIZE: f32 = 0.5;
 pub const PLANE_SIZE: f32 = 20.0;
 pub const SIMULATIONS_PER_SECOND: u16 = 120;

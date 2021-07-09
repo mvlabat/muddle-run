@@ -16,7 +16,7 @@ use bevy_egui::{egui, egui::Ui, EguiContext};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
-        components::{LevelObjectLabel, Spawned},
+        components::{LevelObjectLabel, LevelObjectStaticGhost, Spawned},
         level::{LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc},
         level_objects::{CubeDesc, PlaneDesc, RoutePointDesc},
     },
@@ -45,6 +45,7 @@ pub struct LevelObjects<'a> {
     level_state: Res<'a, LevelState>,
     entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
     query: Query<'a, (Entity, &'static LevelObjectLabel, &'static Spawned)>,
+    ghosts_query: Query<'a, &'static LevelObjectStaticGhost>,
 }
 
 #[derive(Default)]
@@ -106,6 +107,15 @@ pub fn builder_ui(
     if let Some((entity, _, picked_level_object)) = mouse_entity_picker
         .take_picked_entity()
         .and_then(|entity| {
+            // Checking whether we've clicked a ghost.
+            if let Ok(LevelObjectStaticGhost(ghost_parent)) = level_objects.ghosts_query.get(entity)
+            {
+                return Some((
+                    *ghost_parent,
+                    level_objects.entity_registry.get_id(*ghost_parent).unwrap(),
+                ));
+            }
+            // Checking normal objects.
             level_objects
                 .entity_registry
                 .get_id(entity)

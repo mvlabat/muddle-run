@@ -14,6 +14,11 @@ pub struct LevelObjectTag;
 
 pub struct LevelObjectLabel(pub String);
 
+/// Represents a level object at its initial position.
+pub struct LevelObjectStaticGhost(pub Entity);
+
+pub struct LevelObjectStaticGhostParent(pub Entity);
+
 /// Represents Player's input (not an actual direction of entity's movement).
 pub struct PlayerDirection {
     /// `None` indicates a missing network input.

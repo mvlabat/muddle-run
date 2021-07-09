@@ -1,7 +1,10 @@
 use crate::{
-    game::commands::{
-        DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
-        SwitchPlayerRole, UpdateLevelObject,
+    game::{
+        commands::{
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
+            SwitchPlayerRole, UpdateLevelObject,
+        },
+        components::LevelObjectStaticGhost,
     },
     messages::{DeferredMessagesQueue, EntityNetId, PlayerNetId, SwitchRole},
     player::{Player, PlayerRole, PlayerUpdates},
@@ -10,6 +13,8 @@ use crate::{
 };
 use bevy::{
     ecs::{
+        entity::Entity,
+        query::With,
         system::{Res, ResMut},
         world::World,
     },
@@ -68,6 +73,13 @@ pub fn restart_game(world: &mut World) {
         entities_to_despawn.push(*object_entity);
     }
     objects_registry.clear();
+
+    for ghost_entity in world
+        .query_filtered::<Entity, With<LevelObjectStaticGhost>>()
+        .iter(world)
+    {
+        entities_to_despawn.push(ghost_entity);
+    }
 
     for entity in entities_to_despawn {
         world.despawn(entity);

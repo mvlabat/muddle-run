@@ -2,15 +2,15 @@ use crate::{
     framebuffer::FrameNumber,
     game::{
         client_factories::{
-            ClientFactory, CubeClientFactory, PbrClientParams, PlaneClientFactory,
-            PlayerClientFactory, RoutePointClientFactory,
+            ClientFactory, CubeClientFactory, LevelObjectInput, PbrClientParams,
+            PlaneClientFactory, PlayerClientFactory, RoutePointClientFactory,
         },
         commands::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, UpdateLevelObject,
         },
         components::{
-            LevelObjectLabel, LevelObjectTag, PlayerDirection, PlayerTag, Position, SpawnCommand,
-            Spawned,
+            LevelObjectLabel, LevelObjectStaticGhost, LevelObjectStaticGhostParent, LevelObjectTag,
+            PlayerDirection, PlayerTag, Position, SpawnCommand, Spawned,
         },
         level::{LevelObjectDesc, LevelState},
     },
@@ -167,7 +167,15 @@ pub fn update_level_objects(
     mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
     mut level_state: ResMut<LevelState>,
-    mut level_objects: Query<(Entity, Option<&mut Position>, &mut Spawned, &LevelObjectTag)>,
+    mut level_objects: Query<
+        (
+            Entity,
+            Option<&mut Position>,
+            &mut Spawned,
+            &LevelObjectStaticGhostParent,
+        ),
+        With<LevelObjectTag>,
+    >,
 ) {
     // There may be several updates of the same entity per frame. We need to dedup them,
     // otherwise we crash when trying to clone from the entities that haven't been created yet
@@ -188,9 +196,10 @@ pub fn update_level_objects(
             );
             object_entities.remove_by_id(command.object.net_id);
             commands.entity(existing_entity).despawn();
-            let (_, position, spawned, _) = level_objects
+            let (_, position, spawned, LevelObjectStaticGhostParent(ghost_entity)) = level_objects
                 .get_mut(existing_entity)
                 .expect("Expected a registered level object entity to exist");
+            commands.entity(*ghost_entity).despawn();
             if let Some(mut position) = position {
                 position_component = Some(position.take());
             }
@@ -198,6 +207,9 @@ pub fn update_level_objects(
         }
 
         log::info!("Spawning an object: {:?}", command);
+        let ghost = commands.spawn();
+        let ghost_entity = ghost.id();
+
         level_state
             .objects
             .insert(command.object.net_id, command.object.clone());
@@ -206,17 +218,26 @@ pub fn update_level_objects(
             LevelObjectDesc::Plane(plane) => PlaneClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,
-                plane,
+                &LevelObjectInput {
+                    desc: plane.clone(),
+                    is_ghost: false,
+                },
             ),
             LevelObjectDesc::Cube(cube) => CubeClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,
-                cube,
+                &LevelObjectInput {
+                    desc: cube.clone(),
+                    is_ghost: false,
+                },
             ),
             LevelObjectDesc::RoutePoint(route_point) => RoutePointClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,
-                route_point,
+                &LevelObjectInput {
+                    desc: route_point.clone(),
+                    is_ghost: false,
+                },
             ),
         };
         if let Some(position) = command.object.desc.position() {
@@ -239,15 +260,57 @@ pub fn update_level_objects(
             };
             entity_commands.insert(position_component);
         }
-        let (rigid_body, collider) = command.object.desc.physics_body();
+        let (rigid_body, collider) = command.object.desc.physics_body(false);
         entity_commands
+            .insert(command.object.net_id)
             .insert(LevelObjectTag)
             .insert(LevelObjectLabel(command.object.label))
+            .insert(LevelObjectStaticGhostParent(ghost_entity))
             .insert_bundle(rigid_body)
             .insert_bundle(collider)
             .insert(ColliderPositionSync::Discrete)
             .insert(spawned_component);
-        object_entities.register(command.object.net_id, entity_commands.id());
+        let level_object_entity = entity_commands.id();
+        object_entities.register(command.object.net_id, level_object_entity);
+
+        if cfg!(feature = "client") {
+            // Spawning the ghost object.
+            let mut ghost_commands = commands.entity(ghost_entity);
+            let (rigid_body, collider) = command.object.desc.physics_body(true);
+            ghost_commands
+                .insert(LevelObjectStaticGhost(level_object_entity))
+                .insert_bundle(rigid_body)
+                .insert_bundle(collider)
+                .insert(ColliderPositionSync::Discrete);
+            match &command.object.desc {
+                LevelObjectDesc::Plane(plane) => PlaneClientFactory::insert_components(
+                    &mut ghost_commands,
+                    &mut pbr_client_params,
+                    &LevelObjectInput {
+                        desc: plane.clone(),
+                        is_ghost: true,
+                    },
+                ),
+                LevelObjectDesc::Cube(cube) => CubeClientFactory::insert_components(
+                    &mut ghost_commands,
+                    &mut pbr_client_params,
+                    &LevelObjectInput {
+                        desc: cube.clone(),
+                        is_ghost: true,
+                    },
+                ),
+                LevelObjectDesc::RoutePoint(route_point) => {
+                    RoutePointClientFactory::insert_components(
+                        &mut ghost_commands,
+                        &mut pbr_client_params,
+                        &LevelObjectInput {
+                            desc: route_point.clone(),
+                            is_ghost: true,
+                        },
+                    )
+                }
+            };
+        }
     }
 }
 
@@ -256,7 +319,7 @@ pub fn despawn_level_objects(
     mut despawn_level_object_commands: ResMut<DeferredQueue<DespawnLevelObject>>,
     object_entities: Res<EntityRegistry<EntityNetId>>,
     mut level_state: ResMut<LevelState>,
-    mut level_objects: Query<(Entity, &mut Spawned, &LevelObjectTag)>,
+    mut level_objects: Query<(&mut Spawned, &LevelObjectStaticGhostParent), With<LevelObjectTag>>,
 ) {
     for command in despawn_level_object_commands.drain() {
         let entity = match object_entities.get_entity(command.net_id) {
@@ -270,8 +333,8 @@ pub fn despawn_level_objects(
                 continue;
             }
         };
-        let mut spawned = match level_objects.get_mut(entity) {
-            Ok((_, spawned, _)) => spawned,
+        let (mut spawned, ghost_entity) = match level_objects.get_mut(entity) {
+            Ok((spawned, LevelObjectStaticGhostParent(ghost_entity))) => (spawned, ghost_entity),
             Err(err) => {
                 log::error!("A despawned level object entity doesn't exist: {:?}", err);
                 continue;
@@ -298,13 +361,16 @@ pub fn despawn_level_objects(
             .desc
         {
             LevelObjectDesc::Plane(_) => {
-                PlaneClientFactory::remove_components(&mut commands.entity(entity))
+                PlaneClientFactory::remove_components(&mut commands.entity(entity));
+                PlaneClientFactory::remove_components(&mut commands.entity(*ghost_entity));
             }
             LevelObjectDesc::Cube(_) => {
-                CubeClientFactory::remove_components(&mut commands.entity(entity))
+                CubeClientFactory::remove_components(&mut commands.entity(entity));
+                CubeClientFactory::remove_components(&mut commands.entity(*ghost_entity));
             }
             LevelObjectDesc::RoutePoint(_) => {
-                RoutePointClientFactory::remove_components(&mut commands.entity(entity))
+                RoutePointClientFactory::remove_components(&mut commands.entity(entity));
+                RoutePointClientFactory::remove_components(&mut commands.entity(*ghost_entity));
             }
         }
         spawned.push_command(command.frame_number, SpawnCommand::Despawn);
@@ -316,13 +382,16 @@ pub fn process_spawned_entities(
     game_time: Res<GameTime>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
-    mut spawned_entities: Query<(Entity, &mut Spawned)>,
+    mut spawned_entities: Query<(Entity, &mut Spawned, Option<&LevelObjectStaticGhostParent>)>,
 ) {
-    for (entity, mut spawned) in spawned_entities.iter_mut() {
+    for (entity, mut spawned, ghost) in spawned_entities.iter_mut() {
         spawned.pop_outdated_commands(game_time.frame_number);
         if spawned.can_be_removed(game_time.frame_number) {
             log::debug!("Despawning entity {:?}", entity);
             commands.entity(entity).despawn();
+            if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost {
+                commands.entity(*ghost_entity).despawn();
+            }
             player_entities.remove_by_entity(entity);
             object_entities.remove_by_entity(entity);
         }
