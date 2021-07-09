@@ -13,7 +13,7 @@ use mr_shared_lib::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
             SwitchPlayerRole, UpdateLevelObject,
         },
-        components::PlayerDirection,
+        components::{PlayerDirection, Spawned},
     },
     messages::{
         ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId,
@@ -53,6 +53,7 @@ pub struct UpdateParams<'a> {
     spawn_player_commands: ResMut<'a, DeferredQueue<SpawnPlayer>>,
     despawn_player_commands: ResMut<'a, DeferredQueue<DespawnPlayer>>,
     switch_role_commands: ResMut<'a, DeferredQueue<SwitchPlayerRole>>,
+    spawned_query: Query<'a, &'static Spawned>,
 }
 
 #[derive(SystemParam)]
@@ -720,16 +721,25 @@ fn process_delta_update_message(
         .collect();
 
     for player_net_id in players_to_remove {
-        log::debug!(
-            "Player ({}) is not mentioned in the delta update (update frame: {}, current frame: {})",
-            player_net_id.0,
-            delta_update.frame_number,
-            update_params.game_time.frame_number
-        );
-        update_params.despawn_player_commands.push(DespawnPlayer {
-            net_id: player_net_id,
-            frame_number: delta_update.frame_number,
-        });
+        let is_spawned = update_params
+            .player_entities
+            .get_entity(player_net_id)
+            .and_then(|player_entity| update_params.spawned_query.get(player_entity).ok())
+            .map_or(false, |spawned| {
+                spawned.is_spawned(delta_update.frame_number)
+            });
+        if is_spawned {
+            log::debug!(
+                "Player ({}) is not mentioned in the delta update (update frame: {}, current frame: {})",
+                player_net_id.0,
+                delta_update.frame_number,
+                update_params.game_time.frame_number
+            );
+            update_params.despawn_player_commands.push(DespawnPlayer {
+                net_id: player_net_id,
+                frame_number: delta_update.frame_number,
+            });
+        }
     }
 
     for player_state in delta_update.players {

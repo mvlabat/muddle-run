@@ -58,9 +58,7 @@ pub fn spawn_players(
             let (_, mut spawned, mut position, mut player_direction) =
                 players.get_mut(entity).unwrap();
             for frame_number in time.server_frame..=time.player_frame {
-                position
-                    .buffer
-                    .insert(frame_number, command.start_position);
+                position.buffer.insert(frame_number, command.start_position);
                 player_direction
                     .buffer
                     .insert(frame_number, Some(Vec2::ZERO));
