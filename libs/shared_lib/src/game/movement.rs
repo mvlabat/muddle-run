@@ -222,7 +222,7 @@ pub fn load_object_positions(
             // This can happen only if our `sync_position` haven't created a new position for
             // the current frame. If we are catching this, it's definitely a bug.
             panic!(
-                "Expected player (entity: {:?}) position for frame {} (start frame: {}, len: {})",
+                "Expected object (entity: {:?}) position for frame {} (start frame: {}, len: {})",
                 entity,
                 time.entity_simulation_frame(player_frame_simulated),
                 position.buffer.start_frame(),

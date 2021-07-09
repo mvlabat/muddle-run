@@ -1,4 +1,5 @@
 use crate::{
+    framebuffer::FrameNumber,
     game::{
         client_factories::{
             ClientFactory, CubeClientFactory, PbrClientParams, PlaneClientFactory,
@@ -220,14 +221,21 @@ pub fn update_level_objects(
         };
         if let Some(position) = command.object.desc.position() {
             let position_component = if let Some(mut position_component) = position_component {
-                for frame_number in
-                    time.server_frame..=position_component.buffer.end_frame().max(time.server_frame)
+                for frame_number in command.frame_number
+                    ..=position_component
+                        .buffer
+                        .end_frame()
+                        .max(command.frame_number + FrameNumber::new(time.player_frames_ahead()))
                 {
                     position_component.buffer.insert(frame_number, position);
                 }
                 position_component
             } else {
-                Position::new(position, time.server_frame, time.player_frames_ahead() + 1)
+                Position::new(
+                    position,
+                    command.frame_number,
+                    time.player_frames_ahead() + 1,
+                )
             };
             entity_commands.insert(position_component);
         }
