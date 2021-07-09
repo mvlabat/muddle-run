@@ -156,7 +156,7 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
             panic!(
                 "Expected player (entity: {:?}) position for frame {} (start frame: {}, len: {})",
                 entity,
-                time.entity_simulation_frame(player_frame_simulated),
+                frame_number,
                 position.buffer.start_frame(),
                 position.buffer.len()
             );

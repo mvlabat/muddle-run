@@ -1,5 +1,4 @@
 use crate::{
-    framebuffer::FrameNumber,
     game::{
         client_factories::{
             ClientFactory, CubeClientFactory, PbrClientParams, PlaneClientFactory,
@@ -58,13 +57,14 @@ pub fn spawn_players(
 
             let (_, mut spawned, mut position, mut player_direction) =
                 players.get_mut(entity).unwrap();
-            position.buffer.insert(
-                time.player_frame + FrameNumber::new(1),
-                command.start_position,
-            );
-            player_direction
-                .buffer
-                .insert(time.player_frame + FrameNumber::new(1), Some(Vec2::ZERO));
+            for frame_number in time.server_frame..=time.player_frame {
+                position
+                    .buffer
+                    .insert(frame_number, command.start_position);
+                player_direction
+                    .buffer
+                    .insert(frame_number, Some(Vec2::ZERO));
+            }
             PlayerClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,

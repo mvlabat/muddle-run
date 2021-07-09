@@ -84,15 +84,24 @@ impl Spawned {
 
     pub fn is_spawned(&self, frame_number: FrameNumber) -> bool {
         let mut res = true;
-        for (command, _) in self
+        let mut command_index: Option<usize> = None;
+        for (i, (command, _)) in self
             .commands
             .iter()
-            .take_while(|(_, command_frame_number)| frame_number >= *command_frame_number)
+            .enumerate()
+            .take_while(|(_, (_, command_frame_number))| frame_number >= *command_frame_number)
         {
+            command_index = Some(i);
             res = match command {
                 SpawnCommand::Spawn => true,
                 SpawnCommand::Despawn => false,
             }
+        }
+        // If there is the next command, and it's a Spawn command, the entity isn't spawned yet.
+        if let Some((SpawnCommand::Spawn, _)) =
+            self.commands.get(command_index.map_or(0, |i| i + 1))
+        {
+            return false;
         }
         res
     }

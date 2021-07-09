@@ -720,6 +720,12 @@ fn process_delta_update_message(
         .collect();
 
     for player_net_id in players_to_remove {
+        log::debug!(
+            "Player ({}) is not mentioned in the delta update (update frame: {}, current frame: {})",
+            player_net_id.0,
+            delta_update.frame_number,
+            update_params.game_time.frame_number
+        );
         update_params.despawn_player_commands.push(DespawnPlayer {
             net_id: player_net_id,
             frame_number: delta_update.frame_number,
