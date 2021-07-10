@@ -6,7 +6,7 @@
 
 A home for experiments for [muddle.run](http://muddle.run).
 
-![Muddle Run gif](https://cdn.kapwing.com/final_608ffa8045da5d00711266af_565566.gif)
+https://user-images.githubusercontent.com/2943388/125175723-9391f800-e1d6-11eb-8d42-8dd8e3b4b8ed.mp4
 
 ## Project state
 
@@ -21,6 +21,7 @@ to test levels while they are being designed.
   - Interpolation
   - Rewinding game state
   - Real-time adjustment of client simulation speed
+- Initial version of Builder mode (collaborative level editor)
 
 ### Roadmap
 - [Builder mode](https://github.com/mvlabat/muddle-run/projects/2)
