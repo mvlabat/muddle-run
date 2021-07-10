@@ -258,6 +258,9 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
 
         builder.add_startup_system(network_setup.system());
 
+        #[cfg(feature = "client")]
+        builder.add_startup_system(crate::client::materials::init_object_materials.system());
+
         let resources = builder.world_mut();
         resources.get_resource_or_insert_with(GameTime::default);
         resources.get_resource_or_insert_with(SimulationTime::default);

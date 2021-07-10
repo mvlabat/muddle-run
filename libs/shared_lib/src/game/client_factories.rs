@@ -1,7 +1,7 @@
 use crate::game::level_objects::*;
 #[cfg(feature = "client")]
 use crate::{
-    client::*,
+    client::{materials::MuddleMaterials, *},
     game::components::{PlayerFrameSimulated, PredictedPosition},
     GHOST_SIZE_MULTIPLIER, PLAYER_SIZE,
 };
@@ -42,7 +42,7 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
             mesh: deps.meshes.add(Mesh::from(shape::Cube {
                 size: PLAYER_SIZE * 2.0,
             })),
-            material: deps.materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
+            material: deps.materials.player.clone(),
             ..Default::default()
         });
         commands.insert(PredictedPosition { value: *position });
@@ -74,7 +74,6 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
         deps: &mut Self::Dependencies,
         input: &Self::Input,
     ) {
-        let a = if input.is_ghost { 0.5 } else { 1.0 };
         let ghost_size_multiplier = if input.is_ghost {
             GHOST_SIZE_MULTIPLIER
         } else {
@@ -92,7 +91,11 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
             mesh: deps.meshes.add(Mesh::from(XyPlane {
                 size: input.desc.size * 2.0 * ghost_size_multiplier,
             })),
-            material: deps.materials.add(Color::rgba(0.3, 0.5, 0.3, a).into()),
+            material: if input.is_ghost {
+                deps.materials.ghost.plane.clone()
+            } else {
+                deps.materials.normal.plane.clone()
+            },
             ..Default::default()
         });
         commands.insert(PlayerFrameSimulated);
@@ -116,7 +119,6 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
         deps: &mut Self::Dependencies,
         input: &Self::Input,
     ) {
-        let a = if input.is_ghost { 0.5 } else { 1.0 };
         let ghost_size_multiplier = if input.is_ghost {
             GHOST_SIZE_MULTIPLIER
         } else {
@@ -134,7 +136,11 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
             mesh: deps.meshes.add(Mesh::from(shape::Cube {
                 size: input.desc.size * 2.0 * ghost_size_multiplier,
             })),
-            material: deps.materials.add(Color::rgba(0.4, 0.4, 0.4, a).into()),
+            material: if input.is_ghost {
+                deps.materials.ghost.cube.clone()
+            } else {
+                deps.materials.normal.cube.clone()
+            },
             ..Default::default()
         });
         commands.insert(PlayerFrameSimulated);
@@ -161,15 +167,11 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
         deps: &mut Self::Dependencies,
         input: &Self::Input,
     ) {
-        let a = if input.is_ghost { 0.5 } else { 1.0 };
         let ghost_size_multiplier = if input.is_ghost {
             GHOST_SIZE_MULTIPLIER
         } else {
             1.0
         };
-        let mut material: StandardMaterial = Color::rgba(0.4, 0.4, 0.7, a).into();
-        material.reflectance = 0.0;
-        material.metallic = 0.0;
         commands.insert_bundle(PbrBundle {
             visible: Visible {
                 is_visible: if input.is_ghost {
@@ -183,7 +185,11 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
                 height: ROUTE_POINT_HEIGHT * ghost_size_multiplier,
                 base_edge_half_len: ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_size_multiplier,
             })),
-            material: deps.materials.add(material),
+            material: if input.is_ghost {
+                deps.materials.ghost.route_point.clone()
+            } else {
+                deps.materials.normal.route_point.clone()
+            },
             ..Default::default()
         });
         commands.insert(PlayerFrameSimulated);
@@ -206,7 +212,7 @@ pub struct VisibilitySettings {
 #[derive(SystemParam)]
 pub struct PbrClientParams<'a> {
     meshes: ResMut<'a, Assets<Mesh>>,
-    materials: ResMut<'a, Assets<StandardMaterial>>,
+    materials: Res<'a, MuddleMaterials>,
     visibility_settings: Res<'a, VisibilitySettings>,
 }
 

@@ -377,14 +377,25 @@ pub fn despawn_level_objects(
     }
 }
 
+#[cfg(feature = "client")]
+pub type OptionalAsset = bevy::asset::Handle<bevy::render::mesh::Mesh>;
+#[cfg(not(feature = "client"))]
+pub type OptionalAsset = Option<()>;
+
 pub fn process_spawned_entities(
     mut commands: Commands,
     game_time: Res<GameTime>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
-    mut spawned_entities: Query<(Entity, &mut Spawned, Option<&LevelObjectStaticGhostParent>)>,
+    #[cfg(feature = "client")] mut assets: ResMut<bevy::asset::Assets<bevy::render::mesh::Mesh>>,
+    mut spawned_entities: Query<(
+        Entity,
+        &mut Spawned,
+        Option<&LevelObjectStaticGhostParent>,
+        &OptionalAsset,
+    )>,
 ) {
-    for (entity, mut spawned, ghost) in spawned_entities.iter_mut() {
+    for (entity, mut spawned, ghost, _handle) in spawned_entities.iter_mut() {
         spawned.pop_outdated_commands(game_time.frame_number);
         if spawned.can_be_removed(game_time.frame_number) {
             log::debug!("Despawning entity {:?}", entity);
@@ -394,6 +405,9 @@ pub fn process_spawned_entities(
             }
             player_entities.remove_by_entity(entity);
             object_entities.remove_by_entity(entity);
+
+            #[cfg(feature = "client")]
+            assets.remove(_handle);
         }
     }
 }

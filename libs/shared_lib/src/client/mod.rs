@@ -1,3 +1,5 @@
+pub mod materials;
+
 use bevy::{
     math::Vec3,
     render::{
