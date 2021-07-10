@@ -120,10 +120,12 @@ pub fn update_level_object_movement_route_settings(
                     let attached_point = level
                         .objects
                         .get(&objects_registry.get_id(points_progress[0].entity).unwrap())
-                        .unwrap()
-                        .desc
-                        .position()
-                        .expect("Object without a position can't be an attachable point");
+                        .map_or(initial_object_position, |level_object| {
+                            level_object
+                                .desc
+                                .position()
+                                .expect("Object without a position can't be an attachable point")
+                        });
                     initial_object_position - attached_point
                 }
                 LevelObjectMovementType::Linear => Vec2::ZERO,
