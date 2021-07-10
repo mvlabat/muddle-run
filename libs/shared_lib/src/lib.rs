@@ -1,3 +1,4 @@
+#![feature(const_fn_trait_bound)]
 #![feature(hash_drain_filter)]
 #![feature(step_trait)]
 #![feature(trait_alias)]
@@ -11,7 +12,8 @@ use crate::{
         },
         components::PlayerFrameSimulated,
         level::LevelState,
-        movement::{player_movement, read_movement_updates, sync_position},
+        level_objects::{process_objects_route_graph, update_level_object_movement_route_settings},
+        movement::{load_object_positions, player_movement, read_movement_updates, sync_position},
         remove_disconnected_players, restart_game,
         spawn::{
             despawn_level_objects, despawn_players, process_spawned_entities, spawn_players,
@@ -84,6 +86,7 @@ pub mod stage {
     pub const POST_PHYSICS: &str = "mr_shared_post_physics";
     pub const POST_GAME: &str = "mr_shared_post_game";
 }
+pub const GHOST_SIZE_MULTIPLIER: f32 = 1.001;
 pub const PLAYER_SIZE: f32 = 0.5;
 pub const PLANE_SIZE: f32 = 20.0;
 pub const SIMULATIONS_PER_SECOND: u16 = 120;
@@ -163,6 +166,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::PRE_GAME,
                 SystemStage::parallel()
+                    .with_system(update_level_object_movement_route_settings.system())
                     .with_system(physics::attach_bodies_and_colliders_system.system())
                     .with_system(physics::create_joints_system.system()),
             )
@@ -173,7 +177,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::GAME,
-                SystemStage::parallel().with_system(player_movement.system()),
+                SystemStage::parallel()
+                    .with_system(player_movement.system())
+                    .with_system(process_objects_route_graph.system().label("route_graph"))
+                    .with_system(load_object_positions.system().after("route_graph")),
             )
             .with_stage(
                 stage::PHYSICS,
@@ -251,6 +258,9 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
 
         builder.add_startup_system(network_setup.system());
 
+        #[cfg(feature = "client")]
+        builder.add_startup_system(crate::client::materials::init_object_materials.system());
+
         let resources = builder.world_mut();
         resources.get_resource_or_insert_with(GameTime::default);
         resources.get_resource_or_insert_with(SimulationTime::default);
@@ -305,7 +315,7 @@ pub enum GameState {
 
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct GameTime {
-    pub generation: usize,
+    pub session: usize,
     pub frame_number: FrameNumber,
 }
 
@@ -314,7 +324,9 @@ pub struct SimulationTime {
     /// Is expected to be ahead of `server_frame` on the client side, is equal to `server_frame`
     /// on the server side.
     pub player_frame: FrameNumber,
+    pub player_generation: u64,
     pub server_frame: FrameNumber,
+    pub server_generation: u64,
 }
 
 impl SimulationTime {
@@ -336,13 +348,48 @@ impl SimulationTime {
             assert!(self.player_frame >= self.server_frame);
         }
         let frames_ahead = self.player_frame - self.server_frame;
-        self.server_frame = std::cmp::min(self.server_frame, frame_number);
-        self.player_frame = self.server_frame + frames_ahead;
+        if (self.server_frame.value() as i32 - frame_number.value() as i32).abs() as u16
+            > u16::MAX / 2
+            && self.server_frame > frame_number
+        {
+            self.server_generation -= 1;
+        }
+        self.server_frame = self.server_frame.min(frame_number);
+        let (player_frame, overflown) = self.server_frame.add(frames_ahead);
+        self.player_frame = player_frame;
+        if overflown {
+            self.player_generation = self.server_generation + 1;
+        } else {
+            self.player_generation = self.server_generation;
+        }
     }
 
     pub fn player_frames_ahead(&self) -> u16 {
         assert!(self.player_frame >= self.server_frame);
         (self.player_frame - self.server_frame).value()
+    }
+
+    pub fn prev_frame(&self) -> SimulationTime {
+        assert!(
+            (self.player_frame.value() > 0 || self.player_generation > 0)
+                && (self.server_frame.value() > 0 || self.server_generation > 0)
+        );
+        let player_generation = if self.player_frame == FrameNumber::new(0) {
+            self.player_generation - 1
+        } else {
+            self.player_generation
+        };
+        let server_generation = if self.server_frame == FrameNumber::new(0) {
+            self.server_generation - 1
+        } else {
+            self.server_generation
+        };
+        Self {
+            player_frame: self.player_frame - FrameNumber::new(1),
+            player_generation,
+            server_frame: self.server_frame - FrameNumber::new(1),
+            server_generation,
+        }
     }
 }
 
@@ -374,8 +421,8 @@ impl GameTickRunCriteria {
         mut state: Local<GameTickRunCriteriaState>,
         time: Res<GameTime>,
     ) -> ShouldRun {
-        if state.last_generation != Some(time.generation) {
-            state.last_generation = Some(time.generation);
+        if state.last_generation != Some(time.session) {
+            state.last_generation = Some(time.session);
             state.last_tick = time.frame_number - state.ticks_per_step;
         }
 
@@ -567,7 +614,13 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
         time.server_frame.value(),
         time.player_frame.value()
     );
+    if time.server_frame.value() == u16::MAX {
+        time.server_generation += 1;
+    }
     time.server_frame += FrameNumber::new(1);
+    if time.player_frame.value() == u16::MAX {
+        time.player_generation += 1;
+    }
     time.player_frame += FrameNumber::new(1);
 }
 

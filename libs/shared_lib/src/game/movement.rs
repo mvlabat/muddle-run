@@ -1,7 +1,7 @@
 use crate::{
     framebuffer::FrameNumber,
     game::components::{
-        PlayerDirection, PlayerFrameSimulated, Position, PredictedPosition, Spawned,
+        LevelObjectTag, PlayerDirection, PlayerFrameSimulated, Position, PredictedPosition, Spawned,
     },
     messages::PlayerNetId,
     player::PlayerUpdates,
@@ -11,6 +11,7 @@ use crate::{
 use bevy::{
     ecs::{
         entity::Entity,
+        query::With,
         system::{Query, Res, ResMut},
     },
     log,
@@ -25,8 +26,8 @@ use bevy_rapier3d::rapier::{
 /// Positions should align in half a second.
 const LERP_FACTOR: f32 = 1.0 / SIMULATIONS_PER_SECOND as f32 * 2.0;
 
-// The scaling factor for the player's linear velocity
-const PLAYER_MOVEMENT_SPEED: f32 = 2.0;
+/// The scaling factor for the player's linear velocity.
+const PLAYER_MOVEMENT_SPEED: f32 = 240.0 / SIMULATIONS_PER_SECOND as f32;
 
 pub fn read_movement_updates(
     time: Res<GameTime>,
@@ -93,20 +94,25 @@ pub fn read_movement_updates(
                 .buffer
                 .get(frame_number)
                 .and_then(|update| *update);
-            player_direction.buffer.insert(
+            log::trace!(
+                "Inserting player direction update for frame {} (current frame: {}): {:?} (current: {:?})",
                 frame_number,
-                direction_update
-                    .and_then(|direction_update| {
-                        direction_update.as_mut().map(|direction_update| {
-                            if cfg!(feature = "client") {
-                                direction_update.is_processed_client_input = Some(true);
-                            }
-                            direction_update.direction
-                        })
-                    })
-                    // Avoid replacing initial updates with None.
-                    .or(current_direction),
+                time.frame_number,
+                direction_update,
+                current_direction,
             );
+            let update = direction_update
+                .and_then(|direction_update| {
+                    direction_update.as_mut().map(|direction_update| {
+                        if cfg!(feature = "client") {
+                            direction_update.is_processed_client_input = Some(true);
+                        }
+                        direction_update.direction
+                    })
+                })
+                // Avoid replacing initial updates with None.
+                .or(current_direction);
+            player_direction.buffer.insert(frame_number, update);
         }
     }
 }
@@ -150,7 +156,7 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
             panic!(
                 "Expected player (entity: {:?}) position for frame {} (start frame: {}, len: {})",
                 entity,
-                time.entity_simulation_frame(player_frame_simulated),
+                frame_number,
                 position.buffer.start_frame(),
                 position.buffer.len()
             );
@@ -182,6 +188,49 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
         let current_direction_norm = current_direction.normalize_or_zero() * PLAYER_MOVEMENT_SPEED;
         rigid_body_velocity.linvel =
             Vector::new(current_direction_norm.x, current_direction_norm.y, 0.0);
+    }
+}
+
+type LevelObjectsQuery<'a> = (
+    Entity,
+    &'a mut RigidBodyPosition,
+    &'a Position,
+    Option<&'a PlayerFrameSimulated>,
+    &'a Spawned,
+);
+
+pub fn load_object_positions(
+    time: Res<SimulationTime>,
+    mut level_objects: Query<LevelObjectsQuery, With<LevelObjectTag>>,
+) {
+    log::trace!(
+        "Loading object positions (frame {}, {})",
+        time.server_frame,
+        time.player_frame
+    );
+
+    for (entity, mut rigid_body_position, position, player_frame_simulated, _) in level_objects
+        .iter_mut()
+        .filter(|(_, _, _, player_frame_simulated, spawned)| {
+            spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated))
+        })
+    {
+        let frame_number = time.entity_simulation_frame(player_frame_simulated);
+
+        let body_position = &mut rigid_body_position.next_position;
+        let current_position = position.buffer.get(frame_number).unwrap_or_else(|| {
+            // This can happen only if our `sync_position` haven't created a new position for
+            // the current frame. If we are catching this, it's definitely a bug.
+            panic!(
+                "Expected object (entity: {:?}) position for frame {} (start frame: {}, len: {})",
+                entity,
+                time.entity_simulation_frame(player_frame_simulated),
+                position.buffer.start_frame(),
+                position.buffer.len()
+            );
+        });
+        body_position.translation.x = current_position.x;
+        body_position.translation.y = current_position.y;
     }
 }
 

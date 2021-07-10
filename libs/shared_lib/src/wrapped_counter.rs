@@ -15,12 +15,17 @@ pub trait Integer = num::Integer
 pub struct WrappedCounter<T: num::Integer + Default>(T);
 
 impl<T: Integer> WrappedCounter<T> {
-    pub fn new(value: T) -> Self {
+    pub const fn new(value: T) -> Self {
         Self(value)
     }
 
     pub fn value(&self) -> T {
         self.0
+    }
+
+    pub fn add(&self, rhs: Self) -> (Self, bool) {
+        let (value, overflown) = self.0.overflowing_add(&rhs.0);
+        (Self::new(value), overflown)
     }
 }
 
@@ -124,6 +129,25 @@ where
         } else {
             Some(start - WrappedCounter(count.as_()))
         }
+    }
+}
+
+#[cfg(feature = "client")]
+impl bevy_egui::egui::emath::Numeric for WrappedCounter<u16> {
+    const INTEGRAL: bool = true;
+
+    /// Smallest finite value
+    const MIN: Self = Self::new(0);
+
+    /// Largest finite value
+    const MAX: Self = Self::new(u16::MAX);
+
+    fn to_f64(self) -> f64 {
+        self.value() as f64
+    }
+
+    fn from_f64(num: f64) -> Self {
+        Self::new(num as u16)
     }
 }
 

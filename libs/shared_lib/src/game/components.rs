@@ -2,7 +2,7 @@ use crate::{
     framebuffer::{FrameNumber, Framebuffer},
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
-use bevy::math::Vec2;
+use bevy::{ecs::entity::Entity, math::Vec2, utils::HashSet};
 use std::collections::VecDeque;
 
 // NOTE: After adding components for new archetypes, make sure that related entities are cleaned up
@@ -13,6 +13,11 @@ pub struct PlayerTag;
 pub struct LevelObjectTag;
 
 pub struct LevelObjectLabel(pub String);
+
+/// Represents a level object at its initial position.
+pub struct LevelObjectStaticGhost(pub Entity);
+
+pub struct LevelObjectStaticGhostParent(pub Entity);
 
 /// Represents Player's input (not an actual direction of entity's movement).
 pub struct PlayerDirection {
@@ -42,6 +47,12 @@ impl Position {
             buffer.push(initial_value);
         }
         Self { buffer }
+    }
+
+    pub fn take(&mut self) -> Self {
+        Position {
+            buffer: self.buffer.take(),
+        }
     }
 }
 
@@ -78,15 +89,24 @@ impl Spawned {
 
     pub fn is_spawned(&self, frame_number: FrameNumber) -> bool {
         let mut res = true;
-        for (command, _) in self
+        let mut command_index: Option<usize> = None;
+        for (i, (command, _)) in self
             .commands
             .iter()
-            .take_while(|(_, command_frame_number)| frame_number >= *command_frame_number)
+            .enumerate()
+            .take_while(|(_, (_, command_frame_number))| frame_number >= *command_frame_number)
         {
+            command_index = Some(i);
             res = match command {
                 SpawnCommand::Spawn => true,
                 SpawnCommand::Despawn => false,
             }
+        }
+        // If there is the next command, and it's a Spawn command, the entity isn't spawned yet.
+        if let Some((SpawnCommand::Spawn, _)) =
+            self.commands.get(command_index.map_or(0, |i| i + 1))
+        {
+            return false;
         }
         res
     }
@@ -126,3 +146,173 @@ impl Spawned {
 
 /// Marks an entity to be simulated with using `SimulationTime::player_frame`.
 pub struct PlayerFrameSimulated;
+
+#[derive(Clone)]
+pub struct LevelObjectMovement {
+    /// May point to the future if it's the start of the game and we have non-zero start offset.
+    pub frame_started: FrameNumber,
+    /// Represents a vector from the attached route point to the initial object position.
+    /// Matters only for radial movement.
+    pub init_vec: Vec2,
+    /// Zero period means the object is always staying at the initial position or doesn't rotate.
+    pub period: FrameNumber,
+    /// How much route progress each point corresponds to. The final one must always equal `1.0`.
+    /// For the radial movement type it contains only 1 element: the attached object (the center).
+    pub points_progress: Vec<LevelObjectMovementPoint>,
+    pub movement_type: LevelObjectMovementType,
+}
+
+#[derive(Clone)]
+pub struct LevelObjectMovementPoint {
+    pub progress: f32,
+    pub position: Vec2,
+    pub entity: Entity,
+}
+
+/// Maps to `ObjectRouteDesc`.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum LevelObjectMovementType {
+    /// Corresponds to either `ObjectRouteDesc::ForwardCycle` or `ObjectRouteDesc::ForwardBackwardsCycle`.
+    Linear,
+    /// If `LevelObjectMovement::period` equals 0, this corresponds to `ObjectRouteDesc::Attached`.
+    Radial,
+}
+
+impl LevelObjectMovement {
+    pub fn total_progress(&self, frame_number: FrameNumber) -> f32 {
+        if self.period == FrameNumber::new(0) {
+            return 0.0;
+        }
+
+        let frame_number = if self.frame_started > frame_number {
+            frame_number + self.period - self.frame_started
+        } else {
+            frame_number - self.frame_started
+        };
+        assert!(frame_number < self.period);
+
+        frame_number.value() as f32 / self.period.value() as f32
+    }
+
+    pub fn dependencies(&self) -> HashSet<Entity> {
+        self.points_progress
+            .iter()
+            .map(|point| point.entity)
+            .collect()
+    }
+
+    pub fn current_position(&self, frame_number: FrameNumber) -> Vec2 {
+        match self.movement_type {
+            LevelObjectMovementType::Linear => self.current_position_linear(frame_number),
+            LevelObjectMovementType::Radial => self.current_position_radial(frame_number),
+        }
+    }
+
+    fn current_position_linear(&self, frame_number: FrameNumber) -> Vec2 {
+        if self.points_progress.is_empty() {
+            return self.init_vec;
+        }
+        if self.points_progress.len() == 1 {
+            return self.points_progress[0].position;
+        }
+
+        let progress = self.total_progress(frame_number);
+        let mut current_point_progress = 0.0;
+        let mut next_point_progress = 0.0;
+        let mut next_point_index = 0usize;
+        for (i, point) in self.points_progress.iter().enumerate() {
+            if point.progress > progress {
+                next_point_index = i;
+                next_point_progress = point.progress;
+                break;
+            }
+            if point.progress - current_point_progress > f32::EPSILON {
+                current_point_progress = point.progress;
+            }
+        }
+
+        #[allow(clippy::float_cmp)]
+        if (progress - 1.0).abs() > f32::EPSILON {
+            assert_ne!(current_point_progress, next_point_progress);
+        } else {
+            return self.points_progress[next_point_index].position;
+        }
+        let progress_between_points =
+            1.0 - (next_point_progress - progress) / (next_point_progress - current_point_progress);
+
+        let current_point_position = self.points_progress[next_point_index - 1].position;
+        let next_point_position = self.points_progress[next_point_index].position;
+        current_point_position.lerp(next_point_position, progress_between_points)
+    }
+
+    fn current_position_radial(&self, frame_number: FrameNumber) -> Vec2 {
+        let center = self
+            .points_progress
+            .get(0)
+            .expect("Expected the first element of `points_progress` (the circle center) to exist")
+            .position;
+        let radius = rotate(
+            self.init_vec,
+            self.total_progress(frame_number) * std::f32::consts::PI * 2.0,
+        );
+        center + radius
+    }
+}
+
+fn rotate(v: Vec2, radians: f32) -> Vec2 {
+    Vec2::new(
+        v.x * radians.cos() - v.y * radians.sin(),
+        v.x * radians.sin() + v.y * radians.cos(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::math::Vec2;
+
+    fn assert_eq_vec(v1: Vec2, v2: Vec2) {
+        let v = (v1 - v2).abs();
+        assert!(v.x < f32::EPSILON && v.y < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_total_progress() {
+        let level_object_movement = LevelObjectMovement {
+            frame_started: FrameNumber::new(5),
+            init_vec: Vec2::ZERO,
+            period: FrameNumber::new(10),
+            points_progress: Vec::new(),
+            movement_type: LevelObjectMovementType::Linear,
+        };
+        assert!(
+            (level_object_movement.total_progress(FrameNumber::new(u16::MAX - 4)) - 0.0).abs()
+                < f32::EPSILON
+        );
+        assert!(
+            (level_object_movement.total_progress(FrameNumber::new(5)) - 0.0).abs() < f32::EPSILON
+        );
+        assert!(
+            (level_object_movement.total_progress(FrameNumber::new(0)) - 0.5).abs() < f32::EPSILON
+        );
+        assert!(
+            (level_object_movement.total_progress(FrameNumber::new(10)) - 0.5).abs() < f32::EPSILON
+        );
+    }
+
+    #[test]
+    fn test_rotate() {
+        assert_eq_vec(
+            rotate(Vec2::new(1.0, 0.0), std::f32::consts::PI / 2.0),
+            Vec2::new(0.0, 1.0),
+        );
+        assert_eq_vec(
+            rotate(Vec2::new(0.0, 1.0), std::f32::consts::PI / 2.0),
+            Vec2::new(-1.0, 0.0),
+        );
+        assert_eq_vec(
+            rotate(Vec2::new(1.0, 0.0), std::f32::consts::PI),
+            Vec2::new(-1.0, 0.0),
+        );
+    }
+}

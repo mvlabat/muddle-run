@@ -13,7 +13,7 @@ use mr_shared_lib::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
             SwitchPlayerRole, UpdateLevelObject,
         },
-        components::PlayerDirection,
+        components::{PlayerDirection, Spawned},
     },
     messages::{
         ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId,
@@ -53,6 +53,7 @@ pub struct UpdateParams<'a> {
     spawn_player_commands: ResMut<'a, DeferredQueue<SpawnPlayer>>,
     despawn_player_commands: ResMut<'a, DeferredQueue<DespawnPlayer>>,
     switch_role_commands: ResMut<'a, DeferredQueue<SwitchPlayerRole>>,
+    spawned_query: Query<'a, &'static Spawned>,
 }
 
 #[derive(SystemParam)]
@@ -649,6 +650,7 @@ fn process_delta_update_message(
     players: &mut HashMap<PlayerNetId, Player>,
     update_params: &mut UpdateParams,
 ) {
+    log::trace!("Processing DeltaUpdate message: {:?}", delta_update);
     let mut rewind_to_simulation_frame = delta_update.frame_number;
 
     // Calculating how many frames ahead of the server we want to be (implies resizing input buffer for the server).
@@ -719,10 +721,25 @@ fn process_delta_update_message(
         .collect();
 
     for player_net_id in players_to_remove {
-        update_params.despawn_player_commands.push(DespawnPlayer {
-            net_id: player_net_id,
-            frame_number: delta_update.frame_number,
-        });
+        let is_spawned = update_params
+            .player_entities
+            .get_entity(player_net_id)
+            .and_then(|player_entity| update_params.spawned_query.get(player_entity).ok())
+            .map_or(false, |spawned| {
+                spawned.is_spawned(delta_update.frame_number)
+            });
+        if is_spawned {
+            log::debug!(
+                "Player ({}) is not mentioned in the delta update (update frame: {}, current frame: {})",
+                player_net_id.0,
+                delta_update.frame_number,
+                update_params.game_time.frame_number
+            );
+            update_params.despawn_player_commands.push(DespawnPlayer {
+                net_id: player_net_id,
+                frame_number: delta_update.frame_number,
+            });
+        }
     }
 
     for player_state in delta_update.players {
@@ -834,7 +851,7 @@ fn process_start_game_message(
             start_game.net_id,
             Player::new_with_nickname(PlayerRole::Runner, start_game.nickname),
         );
-        update_params.game_time.generation += 1;
+        update_params.game_time.session += 1;
         let rtt_frames = FrameNumber::new(
             (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0) as u16,
         );
@@ -842,9 +859,15 @@ fn process_start_game_message(
             (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
         );
         update_params.target_frames_ahead.frames_count = rtt_frames;
+        update_params.simulation_time.server_generation = start_game.generation;
+        update_params.simulation_time.player_generation = start_game.generation;
         update_params.simulation_time.server_frame = start_game.game_state.frame_number;
-        update_params.simulation_time.player_frame =
-            start_game.game_state.frame_number + rtt_frames;
+        let (player_frame, overflown) = start_game.game_state.frame_number.add(rtt_frames);
+        update_params.simulation_time.player_frame = player_frame;
+        if overflown {
+            update_params.simulation_time.player_generation += 1;
+        }
+
         update_params.game_time.frame_number = update_params.simulation_time.player_frame;
 
         update_params.estimated_server_time.frame_number =

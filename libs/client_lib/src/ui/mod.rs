@@ -6,6 +6,8 @@ pub mod debug_ui;
 pub mod help_ui;
 pub mod overlay_ui;
 
+mod widgets;
+
 pub trait MuddleInspectable {
     fn inspect(&self, ui: &mut Ui);
 

@@ -1,9 +1,10 @@
 use crate::{
     camera::{move_free_camera_pivot, reattach_camera},
     components::{CameraPivotDirection, CameraPivotTag},
-    input::{LevelObjectRequestsQueue, MouseRay, PlayerRequestsQueue},
+    input::{LevelObjectRequestsQueue, MouseRay, MouseWorldPosition, PlayerRequestsQueue},
     net::{maintain_connection, process_network_events, send_network_updates, send_requests},
-    ui::debug_ui::update_debug_ui_state,
+    ui::{builder_ui::EditedLevelObject, debug_ui::update_debug_ui_state},
+    visuals::control_builder_visibility,
 };
 use bevy::{
     app::{AppBuilder, Plugin},
@@ -30,6 +31,7 @@ use bevy_inspector_egui::{WorldInspectorParams, WorldInspectorPlugin};
 use chrono::{DateTime, Utc};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
+    game::client_factories::VisibilitySettings,
     messages::{EntityNetId, PlayerNetId},
     net::{ConnectionState, ConnectionStatus, MessageId},
     GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
@@ -43,6 +45,7 @@ mod helpers;
 mod input;
 mod net;
 mod ui;
+mod visuals;
 
 const TICKING_SPEED_FACTOR: u16 = 10;
 
@@ -71,6 +74,7 @@ impl Plugin for MuddleClientPlugin {
             .with_system(send_network_updates.system())
             .with_system(send_requests.system());
         let post_tick_stage = SystemStage::parallel()
+            .with_system(control_builder_visibility.system())
             .with_system(reattach_camera.system().label("reattach_camera"))
             .with_system(move_free_camera_pivot.system().after("reattach_camera"))
             .with_system(pause_simulation.system().label("pause_simulation"))
@@ -87,7 +91,7 @@ impl Plugin for MuddleClientPlugin {
             .add_plugin(EguiPlugin)
             .add_plugin(WorldInspectorPlugin::new())
             .init_resource::<WindowInnerSize>()
-            .init_resource::<input::MousePosition>()
+            .init_resource::<input::MouseScreenPosition>()
             // Startup systems.
             .add_startup_system(init_state.system())
             .add_startup_system(basic_scene.system())
@@ -105,7 +109,8 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::overlay_ui::connection_status_overlay.system())
             .add_system(ui::debug_ui::inspect_object.system())
             .add_system(ui::help_ui::help_ui.system())
-            .add_system(ui::builder_ui::builder_ui.system());
+            // Not only Egui for builder mode.
+            .add_system_set(ui::builder_ui::builder_system_set());
 
         let world = builder.world_mut();
         world
@@ -122,9 +127,12 @@ impl Plugin for MuddleClientPlugin {
         world.get_resource_or_insert_with(CurrentPlayerNetId::default);
         world.get_resource_or_insert_with(ConnectionState::default);
         world.get_resource_or_insert_with(PlayerRequestsQueue::default);
+        world.get_resource_or_insert_with(EditedLevelObject::default);
         world.get_resource_or_insert_with(LevelObjectRequestsQueue::default);
         world.get_resource_or_insert_with(LevelObjectCorrelations::default);
         world.get_resource_or_insert_with(MouseRay::default);
+        world.get_resource_or_insert_with(MouseWorldPosition::default);
+        world.get_resource_or_insert_with(VisibilitySettings::default);
     }
 }
 
@@ -382,7 +390,7 @@ fn control_ticking_speed(
         };
     }
 
-    if prev_tick_rate.rate != params.tick_rate.rate || *prev_generation != params.time.generation {
+    if prev_tick_rate.rate != params.tick_rate.rate || *prev_generation != params.time.session {
         *frames_ticked = 0;
     }
 
@@ -410,7 +418,7 @@ fn control_ticking_speed(
 
     *frames_ticked += 1;
     prev_tick_rate.rate = params.tick_rate.rate;
-    *prev_generation = params.time.generation;
+    *prev_generation = params.time.session;
 }
 
 fn faster_tick_rate() -> u16 {

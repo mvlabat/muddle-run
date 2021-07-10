@@ -9,6 +9,7 @@ use bevy::{
     prelude::*,
     render::camera::CameraProjection,
 };
+use bevy_egui::EguiContext;
 use bevy_inspector_egui::WorldInspectorParams;
 use bevy_rapier3d::{na, rapier::geometry::Ray};
 use chrono::{DateTime, Utc};
@@ -44,8 +45,13 @@ pub struct InputEvents<'a> {
     pub mouse_button: EventReader<'a, MouseButtonInput>,
 }
 
+/// Represents a cursor position in window coordinates (the ones that are coming from Window events).
 #[derive(Default)]
-pub struct MousePosition(pub Vec2);
+pub struct MouseScreenPosition(pub Vec2);
+
+/// MouseRay intersection with the (center=[0.0, 0.0, 0.0], normal=[0.0, 0.0, 1.0]) plane.
+#[derive(Default)]
+pub struct MouseWorldPosition(pub Vec2);
 
 pub struct MouseRay(pub Ray);
 
@@ -71,18 +77,28 @@ pub struct PlayerUpdatesParams<'a> {
     player_requests: ResMut<'a, PlayerRequestsQueue>,
 }
 
+#[derive(SystemParam)]
+pub struct UiParams<'a> {
+    egui_context: Res<'a, EguiContext>,
+    debug_ui_state: ResMut<'a, DebugUiState>,
+}
+
 pub fn track_input_events(
     mut input_events: InputEvents,
     time: Res<GameTime>,
-    mut debug_ui_state: ResMut<DebugUiState>,
+    mut ui_params: UiParams,
     mut world_inspector_params: ResMut<WorldInspectorParams>,
     mut player_updates_params: PlayerUpdatesParams,
-    mut mouse_position: ResMut<MousePosition>,
+    mut mouse_position: ResMut<MouseScreenPosition>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
+    if ui_params.egui_context.ctx().wants_keyboard_input() {
+        return;
+    }
+
     process_hotkeys(
         &keyboard_input,
-        &mut debug_ui_state,
+        &mut ui_params.debug_ui_state,
         &mut world_inspector_params,
         &mut player_updates_params,
     );
@@ -157,7 +173,7 @@ pub fn track_input_events(
 
 pub fn cast_mouse_ray(
     windows: Res<Windows>,
-    mouse_position: Res<MousePosition>,
+    mouse_position: Res<MouseScreenPosition>,
     main_camera_entity: Res<MainCameraEntity>,
     cameras: Query<(
         &GlobalTransform,
@@ -165,6 +181,7 @@ pub fn cast_mouse_ray(
         &bevy::render::camera::PerspectiveProjection,
     )>,
     mut mouse_ray: ResMut<MouseRay>,
+    mut mouse_world_position: ResMut<MouseWorldPosition>,
 ) {
     let window = windows.iter().next().expect("expected a window");
     let (camera_transform, _camera, camera_projection) = cameras
@@ -176,6 +193,24 @@ pub fn cast_mouse_ray(
         &camera_transform.compute_matrix(),
         &camera_projection.get_projection_matrix(),
     );
+
+    mouse_world_position.0 = {
+        let ray_direction = Vec3::new(mouse_ray.0.dir.x, mouse_ray.0.dir.y, mouse_ray.0.dir.z);
+        let ray_origin = Vec3::new(
+            mouse_ray.0.origin.x,
+            mouse_ray.0.origin.y,
+            mouse_ray.0.origin.z,
+        );
+        let plane_normal = Vec3::Z;
+        let denom = plane_normal.dot(ray_direction);
+        if denom.abs() > f32::EPSILON {
+            let t = (-ray_origin).dot(plane_normal) / denom;
+            let i = ray_origin.lerp(ray_origin + ray_direction, t);
+            Vec2::new(i.x, i.y)
+        } else {
+            Vec2::ZERO
+        }
+    };
 }
 
 fn process_hotkeys(

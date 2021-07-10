@@ -1,7 +1,10 @@
 use crate::{
-    game::commands::{
-        DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
-        SwitchPlayerRole, UpdateLevelObject,
+    game::{
+        commands::{
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
+            SwitchPlayerRole, UpdateLevelObject,
+        },
+        components::LevelObjectStaticGhost,
     },
     messages::{DeferredMessagesQueue, EntityNetId, PlayerNetId, SwitchRole},
     player::{Player, PlayerRole, PlayerUpdates},
@@ -10,6 +13,8 @@ use crate::{
 };
 use bevy::{
     ecs::{
+        entity::Entity,
+        query::With,
         system::{Res, ResMut},
         world::World,
     },
@@ -56,18 +61,42 @@ pub fn restart_game(world: &mut World) {
     }
     player_registry.clear();
 
-    let mut objects_registry = world
-        .get_resource_mut::<EntityRegistry<EntityNetId>>()
-        .unwrap();
-    for (net_id, object_entity) in objects_registry.iter() {
+    for (net_id, object_entity) in world
+        .get_resource::<EntityRegistry<EntityNetId>>()
+        .unwrap()
+        .clone()
+        .iter()
+    {
         log::debug!(
             "Despawning object (entity: {:?}, entity_net_id: {})",
             object_entity,
             net_id.0
         );
         entities_to_despawn.push(*object_entity);
+        #[cfg(feature = "client")]
+        {
+            let handle = world
+                .query::<&bevy::asset::Handle<bevy::render::mesh::Mesh>>()
+                .get(world, *object_entity)
+                .unwrap()
+                .clone();
+            world
+                .get_resource_mut::<bevy::asset::Assets<bevy::render::mesh::Mesh>>()
+                .unwrap()
+                .remove(handle);
+        }
     }
-    objects_registry.clear();
+    world
+        .get_resource_mut::<EntityRegistry<EntityNetId>>()
+        .unwrap()
+        .clear();
+
+    for ghost_entity in world
+        .query_filtered::<Entity, With<LevelObjectStaticGhost>>()
+        .iter(world)
+    {
+        entities_to_despawn.push(ghost_entity);
+    }
 
     for entity in entities_to_despawn {
         world.despawn(entity);

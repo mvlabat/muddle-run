@@ -177,10 +177,13 @@ pub fn process_spawn_level_object_requests(
                     }
                 }
             };
+            let net_id = entity_net_id_counter.increment();
             let spawn_level_object = UpdateLevelObject {
                 object: LevelObject {
-                    net_id: entity_net_id_counter.increment(),
+                    net_id,
+                    label: format!("{} {}", desc.label(), net_id.0),
                     desc,
+                    route: None,
                 },
                 frame_number: time.frame_number,
             };

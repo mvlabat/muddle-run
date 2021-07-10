@@ -50,7 +50,7 @@ pub trait IncrementId {
     fn increment(&mut self) -> Self;
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct EntityRegistry<K: Copy + Hash + Eq> {
     entity_by_id: HashMap<K, Entity>,
     id_by_entity: HashMap<Entity, K>,
