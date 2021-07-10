@@ -50,6 +50,17 @@ impl EditedLevelObject {
     }
 }
 
+pub type LevelObjectsQuery<'a> = Query<
+    'a,
+    (
+        Entity,
+        &'static LevelObjectLabel,
+        &'static Transform,
+        &'static LevelObjectStaticGhostParent,
+        &'static Spawned,
+    ),
+>;
+
 #[derive(SystemParam)]
 pub struct LevelObjects<'a> {
     time: Res<'a, GameTime>,
@@ -57,16 +68,7 @@ pub struct LevelObjects<'a> {
     edited_level_object: ResMut<'a, EditedLevelObject>,
     level_state: Res<'a, LevelState>,
     entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
-    query: Query<
-        'a,
-        (
-            Entity,
-            &'static LevelObjectLabel,
-            &'static Transform,
-            &'static LevelObjectStaticGhostParent,
-            &'static Spawned,
-        ),
-    >,
+    query: LevelObjectsQuery<'a>,
     ghosts_query: Query<'a, (&'static LevelObjectStaticGhost, &'static Transform)>,
 }
 
@@ -80,7 +82,8 @@ pub struct MouseInput<'a> {
 
 #[derive(Default)]
 pub struct BuilderUiState {
-    filter: String,
+    select_edited_level_object_filter: String,
+    route_point_filter: String,
 }
 
 pub fn builder_system_set() -> SystemSet {
@@ -340,6 +343,25 @@ pub fn builder_ui(
             }
         });
 
+        ui.separator();
+        ui.collapsing("Select object to edit", |ui| {
+            if let Some(entity) = level_objects_filter(
+                ui,
+                &mut builder_ui_state.select_edited_level_object_filter,
+                &level_objects.time,
+                &level_objects.query,
+            ) {
+                let entity_net_id = level_objects.entity_registry.get_id(entity).unwrap();
+                let level_object = level_objects
+                    .level_state
+                    .objects
+                    .get(&entity_net_id)
+                    .unwrap()
+                    .clone();
+                level_objects.edited_level_object.object = Some((entity, level_object));
+            }
+        });
+
         if let Some((_, level_object)) = level_objects.edited_level_object.object.clone() {
             let mut dirty_level_object = level_object.clone();
             level_object_ui(
@@ -531,48 +553,61 @@ fn route_settings(
     });
 
     if response.body_returned.is_some() {
-        ui.horizontal(|ui| {
-            ui.label("Filter:");
-            ui.text_edit_singleline(&mut builder_ui_state.filter);
-            if ui.button("❌").clicked() {
-                builder_ui_state.filter = String::new();
+        if let Some(entity) = level_objects_filter(
+            ui,
+            &mut builder_ui_state.route_point_filter,
+            &level_objects.time,
+            &level_objects.query,
+        ) {
+            let selected_entity_net_id = level_objects
+                .entity_registry
+                .get_id(entity)
+                .expect("Expected a registered level object");
+            match &mut dirty_level_object_route.desc {
+                ObjectRouteDesc::Attached(route_point) | ObjectRouteDesc::Radial(route_point) => {
+                    *route_point = Some(selected_entity_net_id);
+                }
+                ObjectRouteDesc::ForwardCycle(route_points)
+                | ObjectRouteDesc::ForwardBackwardsCycle(route_points) => {
+                    route_points.push(selected_entity_net_id);
+                }
+            }
+        }
+    }
+}
+
+fn level_objects_filter(
+    ui: &mut Ui,
+    filter: &mut String,
+    time: &GameTime,
+    objects_query: &LevelObjectsQuery,
+) -> Option<Entity> {
+    ui.horizontal(|ui| {
+        ui.label("Filter:");
+        ui.text_edit_singleline(filter);
+        if ui.button("❌").clicked() {
+            *filter = String::new();
+        }
+    });
+    let mut result = None;
+    egui::ScrollArea::auto_sized().show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            for (entity, label, _, _, spawned) in objects_query.iter() {
+                if !spawned.is_spawned(time.frame_number) {
+                    continue;
+                }
+
+                if !label.0.to_lowercase().contains(&filter.to_lowercase()) {
+                    continue;
+                }
+
+                if ui.button(&label.0).clicked() {
+                    result = Some(entity);
+                }
             }
         });
-        egui::ScrollArea::auto_sized().show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                for (entity, label, _, _, spawned) in level_objects.query.iter() {
-                    if !spawned.is_spawned(level_objects.time.frame_number) {
-                        continue;
-                    }
-
-                    if !label
-                        .0
-                        .to_lowercase()
-                        .contains(&builder_ui_state.filter.to_lowercase())
-                    {
-                        continue;
-                    }
-
-                    if ui.button(&label.0).clicked() {
-                        let selected_entity_net_id = level_objects
-                            .entity_registry
-                            .get_id(entity)
-                            .expect("Expected a registered level object");
-                        match &mut dirty_level_object_route.desc {
-                            ObjectRouteDesc::Attached(route_point)
-                            | ObjectRouteDesc::Radial(route_point) => {
-                                *route_point = Some(selected_entity_net_id);
-                            }
-                            ObjectRouteDesc::ForwardCycle(route_points)
-                            | ObjectRouteDesc::ForwardBackwardsCycle(route_points) => {
-                                route_points.push(selected_entity_net_id);
-                            }
-                        }
-                    }
-                }
-            });
-        });
-    }
+    });
+    result
 }
 
 fn route_type(ui: &mut egui::Ui, dirty_level_object: &mut LevelObject) {
