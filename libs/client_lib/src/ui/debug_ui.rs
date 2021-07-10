@@ -11,7 +11,7 @@ use bevy_egui::{egui, EguiContext, EguiSettings};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
-        components::{LevelObjectMovement, PlayerDirection, Position},
+        components::{LevelObjectMovement, LevelObjectStaticGhost, PlayerDirection, Position},
         level::LevelState,
     },
     messages::{EntityNetId, PlayerNetId},
@@ -162,6 +162,7 @@ pub struct InspectObjectQueries<'a> {
     positions: Query<'a, &'static Position>,
     player_directions: Query<'a, &'static PlayerDirection>,
     level_object_movements: Query<'a, &'static LevelObjectMovement>,
+    ghosts: Query<'a, &'static LevelObjectStaticGhost>,
 }
 
 pub fn inspect_object(
@@ -180,7 +181,7 @@ pub fn inspect_object(
         mouse_entity_picker.pick_entity();
     }
 
-    if let Some(entity) = mouse_entity_picker.picked_entity() {
+    if let Some(mut entity) = mouse_entity_picker.picked_entity() {
         egui::Window::new("Inspect").show(ctx, |ui| {
             if let Some(player_name) = queries
                 .player_registry
@@ -191,6 +192,9 @@ pub fn inspect_object(
                 ui.label(format!("Player name: {}", player_name));
             }
             ui.label(format!("Entity: {:?}", entity));
+            if let Ok(LevelObjectStaticGhost(parent_entity)) = queries.ghosts.get(entity) {
+                entity = *parent_entity;
+            }
             if let Some(level_object_label) = queries
                 .objects_registry
                 .get_id(entity)
