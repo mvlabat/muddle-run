@@ -3,9 +3,11 @@ use bevy::{
     ecs::{
         entity::Entity,
         query::With,
-        system::{Local, Query, QuerySet, ResMut},
+        system::{Local, Query, ResMut},
     },
+    prelude::Without,
     render::draw::Visible,
+    transform::components::Transform,
 };
 use mr_shared_lib::{
     game::{
@@ -16,22 +18,18 @@ use mr_shared_lib::{
     player::PlayerRole,
 };
 
-pub type Queries<'a, 'b, 'c> = QuerySet<(
-    Query<'a, (Entity, &'b mut Visible), With<LevelObjectTag>>,
-    Query<'a, &'c mut Visible, With<LevelObjectStaticGhost>>,
-)>;
-
 pub fn control_builder_visibility(
     mut prev_role: Local<Option<PlayerRole>>,
     player_params: PlayerParams,
     level_params: LevelParams,
     mut visibility_settings: ResMut<VisibilitySettings>,
-    mut queries: Queries,
+    mut level_objects_query: Query<(Entity, &Transform, &mut Visible), With<LevelObjectTag>>,
+    mut ghosts_query: Query<
+        (&Transform, &mut Visible, &LevelObjectStaticGhost),
+        Without<LevelObjectTag>,
+    >,
 ) {
     if let Some(player) = player_params.current_player() {
-        if *prev_role == Some(player.role) {
-            return;
-        }
         *prev_role = Some(player.role);
 
         let is_builder = match player.role {
@@ -41,20 +39,33 @@ pub fn control_builder_visibility(
         visibility_settings.route_points = is_builder;
         visibility_settings.ghosts = is_builder;
 
-        let level_objects_query = queries.q0_mut();
-        for (entity, mut visible) in level_objects_query.iter_mut() {
-            if let Some(level_object) = level_params.level_object_by_entity(entity) {
-                match level_object.desc {
-                    LevelObjectDesc::RoutePoint(_) => {
-                        visible.is_visible = is_builder;
+        // These change only on role update, there's no other reason to update them.
+        if *prev_role != Some(player.role) {
+            for (entity, _, mut visible) in level_objects_query.iter_mut() {
+                if let Some(level_object) = level_params.level_object_by_entity(entity) {
+                    match level_object.desc {
+                        LevelObjectDesc::RoutePoint(_) => {
+                            visible.is_visible = is_builder;
+                        }
+                        LevelObjectDesc::Plane(_) | LevelObjectDesc::Cube(_) => {}
                     }
-                    LevelObjectDesc::Plane(_) | LevelObjectDesc::Cube(_) => {}
                 }
             }
         }
-        let ghosts_query = queries.q1_mut();
-        for mut visible in ghosts_query.iter_mut() {
-            visible.is_visible = is_builder;
+
+        for (transform, mut visible, LevelObjectStaticGhost(parent_entity)) in
+            ghosts_query.iter_mut()
+        {
+            let parent_transform = level_objects_query
+                .get_component::<Transform>(*parent_entity)
+                .unwrap();
+            if (transform.translation.x - parent_transform.translation.x).abs() < f32::EPSILON
+                && (transform.translation.y - parent_transform.translation.y).abs() < f32::EPSILON
+            {
+                visible.is_visible = false
+            } else {
+                visible.is_visible = is_builder;
+            }
         }
     }
 }
