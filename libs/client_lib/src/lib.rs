@@ -91,7 +91,7 @@ impl Plugin for MuddleClientPlugin {
             .add_plugin(EguiPlugin)
             .add_plugin(WorldInspectorPlugin::new())
             .init_resource::<WindowInnerSize>()
-            .init_resource::<input::MousePosition>()
+            .init_resource::<input::MouseScreenPosition>()
             // Startup systems.
             .add_startup_system(init_state.system())
             .add_startup_system(basic_scene.system())

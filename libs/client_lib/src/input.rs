@@ -47,7 +47,7 @@ pub struct InputEvents<'a> {
 
 /// Represents a cursor position in window coordinates (the ones that are coming from Window events).
 #[derive(Default)]
-pub struct MousePosition(pub Vec2);
+pub struct MouseScreenPosition(pub Vec2);
 
 /// MouseRay intersection with the (center=[0.0, 0.0, 0.0], normal=[0.0, 0.0, 1.0]) plane.
 #[derive(Default)]
@@ -89,7 +89,7 @@ pub fn track_input_events(
     mut ui_params: UiParams,
     mut world_inspector_params: ResMut<WorldInspectorParams>,
     mut player_updates_params: PlayerUpdatesParams,
-    mut mouse_position: ResMut<MousePosition>,
+    mut mouse_position: ResMut<MouseScreenPosition>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
     if ui_params.egui_context.ctx().wants_keyboard_input() {
@@ -173,7 +173,7 @@ pub fn track_input_events(
 
 pub fn cast_mouse_ray(
     windows: Res<Windows>,
-    mouse_position: Res<MousePosition>,
+    mouse_position: Res<MouseScreenPosition>,
     main_camera_entity: Res<MainCameraEntity>,
     cameras: Query<(
         &GlobalTransform,

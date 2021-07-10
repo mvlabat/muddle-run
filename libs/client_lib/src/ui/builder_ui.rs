@@ -1,6 +1,6 @@
 use crate::{
     helpers::{MouseEntityPicker, PlayerParams},
-    input::{LevelObjectRequestsQueue, MouseWorldPosition},
+    input::{LevelObjectRequestsQueue, MouseScreenPosition, MouseWorldPosition},
     ui::widgets::sortable::{sortable_list, ListItem},
     LevelObjectCorrelations,
 };
@@ -12,12 +12,16 @@ use bevy::{
     },
     input::{mouse::MouseButton, Input},
     log,
+    math::Vec2,
+    transform::components::Transform,
 };
 use bevy_egui::{egui, egui::Ui, EguiContext};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
-        components::{LevelObjectLabel, LevelObjectStaticGhost, Spawned},
+        components::{
+            LevelObjectLabel, LevelObjectStaticGhost, LevelObjectStaticGhostParent, Spawned,
+        },
         level::{LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc},
         level_objects::{CubeDesc, PlaneDesc, RoutePointDesc},
     },
@@ -53,12 +57,22 @@ pub struct LevelObjects<'a> {
     edited_level_object: ResMut<'a, EditedLevelObject>,
     level_state: Res<'a, LevelState>,
     entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
-    query: Query<'a, (Entity, &'static LevelObjectLabel, &'static Spawned)>,
-    ghosts_query: Query<'a, &'static LevelObjectStaticGhost>,
+    query: Query<
+        'a,
+        (
+            Entity,
+            &'static LevelObjectLabel,
+            &'static Transform,
+            &'static LevelObjectStaticGhostParent,
+            &'static Spawned,
+        ),
+    >,
+    ghosts_query: Query<'a, (&'static LevelObjectStaticGhost, &'static Transform)>,
 }
 
 #[derive(SystemParam)]
 pub struct MouseInput<'a> {
+    mouse_screen_position: Res<'a, MouseScreenPosition>,
     mouse_world_position: Res<'a, MouseWorldPosition>,
     mouse_entity_picker: MouseEntityPicker<'a>,
     mouse_button_input: Res<'a, Input<MouseButton>>,
@@ -99,15 +113,17 @@ pub fn process_builder_mouse_input(
     mut mouse_input: MouseInput,
     mut level_objects: LevelObjects,
     mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
+    // Screen coordinates at where the dragging started.
+    mut dragging_start: Local<Option<Vec2>>,
 ) {
     // If we have a newly placed object, move it with a cursor, until left mouse button is clicked.
     if let EditedLevelObject {
         object: Some((_, level_object)),
         is_being_placed,
-        is_being_dragged: _,
+        is_being_dragged,
     } = &mut *level_objects.edited_level_object
     {
-        if *is_being_placed {
+        if *is_being_placed || *is_being_dragged {
             let object_position = level_object
                 .desc
                 .position_mut()
@@ -123,14 +139,15 @@ pub fn process_builder_mouse_input(
                     route: level_object.route.clone(),
                 });
             }
+        }
 
-            if mouse_input
+        if *is_being_placed
+            && mouse_input
                 .mouse_button_input
                 .just_pressed(MouseButton::Left)
-                && !egui_context.ctx().is_pointer_over_area()
-            {
-                *is_being_placed = false;
-            }
+            && !egui_context.ctx().is_pointer_over_area()
+        {
+            *is_being_placed = false;
         }
     }
 
@@ -142,14 +159,18 @@ pub fn process_builder_mouse_input(
         if !egui_context.ctx().is_pointer_over_area() {
             mouse_input.mouse_entity_picker.pick_entity();
         }
+        let mut is_ghost = false;
         if let Some((entity, _, edited_level_object)) = mouse_input
             .mouse_entity_picker
             .take_picked_entity()
             .and_then(|entity| {
                 // Checking whether we've clicked a ghost.
                 if let Ok(LevelObjectStaticGhost(ghost_parent)) =
-                    level_objects.ghosts_query.get(entity)
+                    level_objects
+                        .ghosts_query
+                        .get_component::<LevelObjectStaticGhost>(entity)
                 {
+                    is_ghost = true;
                     return Some((
                         *ghost_parent,
                         level_objects.entity_registry.get_id(*ghost_parent).unwrap(),
@@ -169,12 +190,42 @@ pub fn process_builder_mouse_input(
                     .map(|level_object| (entity, entity_net_id, level_object.clone()))
             })
         {
+            let is_static = {
+                let (_, _, transform, LevelObjectStaticGhostParent(ghost_entity), _) =
+                    level_objects.query.get(entity).unwrap();
+                let ghost_transform = level_objects
+                    .ghosts_query
+                    .get_component::<Transform>(*ghost_entity)
+                    .unwrap();
+                (transform.translation.x - ghost_transform.translation.x).abs() < f32::EPSILON
+                    && (transform.translation.y - ghost_transform.translation.y).abs()
+                        < f32::EPSILON
+            };
+            let is_draggable = edited_level_object.desc.is_movable_with_mouse()
+                && (edited_level_object.route.is_none() || is_ghost || is_static);
+            if is_draggable {
+                *dragging_start = Some(mouse_input.mouse_screen_position.0);
+            }
             // We don't reset edited state if the clicked object is the same.
             if !matches!(level_objects.edited_level_object.object, Some((picked_entity, _)) if picked_entity == entity)
             {
                 level_objects.edited_level_object.object = Some((entity, edited_level_object));
                 *level_objects.pending_correlation = None;
             }
+        }
+    }
+
+    if let Some(dragging_start_position) = *dragging_start {
+        if mouse_input.mouse_button_input.pressed(MouseButton::Left) {
+            let dragging_threshold_squared = 100.0;
+            if (mouse_input.mouse_screen_position.0 - dragging_start_position).length_squared()
+                > dragging_threshold_squared
+            {
+                level_objects.edited_level_object.is_being_dragged = true;
+            }
+        } else {
+            *dragging_start = None;
+            level_objects.edited_level_object.is_being_dragged = false;
         }
     }
 }
@@ -236,10 +287,9 @@ pub fn builder_ui(
             level_objects.edited_level_object.deselect();
         }
 
-        // We don't want to display the builder UI if the object is moved with mouse.
-        if level_objects.edited_level_object.is_being_placed
-            || level_objects.edited_level_object.is_being_dragged
-        {
+        // We don't want to display the builder UI if the object is being placed.
+        // Dragging is ok though.
+        if level_objects.edited_level_object.is_being_placed {
             return;
         }
     }
@@ -490,7 +540,7 @@ fn route_settings(
         });
         egui::ScrollArea::auto_sized().show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                for (entity, label, spawned) in level_objects.query.iter() {
+                for (entity, label, _, _, spawned) in level_objects.query.iter() {
                     if !spawned.is_spawned(level_objects.time.frame_number) {
                         continue;
                     }
