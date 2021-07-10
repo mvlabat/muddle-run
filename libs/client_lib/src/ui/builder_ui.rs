@@ -453,7 +453,7 @@ fn level_object_ui(
                         // type to another one.
                         if route.period == FrameNumber::new(0) {
                             route.period =
-                                DEFAULT_PERIOD.min(route.start_frame_offset + FrameNumber::new(1));
+                                DEFAULT_PERIOD.max(route.start_frame_offset + FrameNumber::new(1));
                         }
 
                         ui.label("Period (frames)");
