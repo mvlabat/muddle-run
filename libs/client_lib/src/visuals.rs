@@ -30,8 +30,6 @@ pub fn control_builder_visibility(
     >,
 ) {
     if let Some(player) = player_params.current_player() {
-        *prev_role = Some(player.role);
-
         let is_builder = match player.role {
             PlayerRole::Runner => false,
             PlayerRole::Builder => true,
@@ -67,5 +65,7 @@ pub fn control_builder_visibility(
                 visible.is_visible = is_builder;
             }
         }
+
+        *prev_role = Some(player.role);
     }
 }

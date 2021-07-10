@@ -87,7 +87,7 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
                 } else {
                     true
                 },
-                is_transparent: false,
+                is_transparent: input.is_ghost,
             },
             mesh: deps.meshes.add(Mesh::from(XyPlane {
                 size: input.desc.size * 2.0 * ghost_size_multiplier,
@@ -129,7 +129,7 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
                 } else {
                     true
                 },
-                is_transparent: false,
+                is_transparent: input.is_ghost,
             },
             mesh: deps.meshes.add(Mesh::from(shape::Cube {
                 size: input.desc.size * 2.0 * ghost_size_multiplier,
@@ -177,7 +177,7 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
                 } else {
                     deps.visibility_settings.route_points
                 },
-                is_transparent: false,
+                is_transparent: input.is_ghost,
             },
             mesh: deps.meshes.add(Mesh::from(Pyramid {
                 height: ROUTE_POINT_HEIGHT * ghost_size_multiplier,
