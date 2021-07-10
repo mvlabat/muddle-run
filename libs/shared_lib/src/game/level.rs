@@ -90,6 +90,10 @@ impl LevelObjectDesc {
         .to_owned()
     }
 
+    pub fn is_movable_with_mouse(&self) -> bool {
+        !matches!(self, Self::Plane(_))
+    }
+
     pub fn position(&self) -> Option<Vec2> {
         match self {
             Self::Plane(plane) => Some(plane.position),

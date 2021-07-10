@@ -1,6 +1,6 @@
 use crate::{
     helpers::{MouseEntityPicker, PlayerParams},
-    input::LevelObjectRequestsQueue,
+    input::{LevelObjectRequestsQueue, MouseWorldPosition},
     ui::widgets::sortable::{sortable_list, ListItem},
     LevelObjectCorrelations,
 };
@@ -9,8 +9,8 @@ use bevy::{
         entity::Entity,
         system::{Local, Query, Res, ResMut, SystemParam},
     },
+    input::{mouse::MouseButton, Input},
     log,
-    math::Vec2,
 };
 use bevy_egui::{egui, egui::Ui, EguiContext};
 use mr_shared_lib::{
@@ -30,6 +30,12 @@ use std::collections::HashMap;
 
 pub const DEFAULT_PERIOD: FrameNumber = FrameNumber::new(SIMULATIONS_PER_SECOND * 10);
 
+/// When a builder spawns a new objects, they place it with mouse.
+/// A placed level object lives there until left mouse button is clicked. Until then, builder UI
+/// is hidden.
+#[derive(Default, Clone)]
+pub struct PlacedLevelObject(Option<(Entity, EntityNetId)>);
+
 #[derive(Clone)]
 pub struct PickedLevelObject {
     entity: Entity,
@@ -42,10 +48,18 @@ pub struct LevelObjects<'a> {
     time: Res<'a, GameTime>,
     pending_correlation: Local<'a, Option<MessageId>>,
     picked_level_object: Local<'a, Option<PickedLevelObject>>,
+    placed_level_object: ResMut<'a, PlacedLevelObject>,
     level_state: Res<'a, LevelState>,
     entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
     query: Query<'a, (Entity, &'static LevelObjectLabel, &'static Spawned)>,
     ghosts_query: Query<'a, &'static LevelObjectStaticGhost>,
+}
+
+#[derive(SystemParam)]
+pub struct MouseInput<'a> {
+    mouse_world_position: Res<'a, MouseWorldPosition>,
+    mouse_entity_picker: MouseEntityPicker<'a>,
+    mouse_button_input: Res<'a, Input<MouseButton>>,
 }
 
 #[derive(Default)]
@@ -56,7 +70,7 @@ pub struct BuilderUiState {
 pub fn builder_ui(
     egui_context: ResMut<EguiContext>,
     mut builder_ui_state: Local<BuilderUiState>,
-    mut mouse_entity_picker: MouseEntityPicker,
+    mut mouse_input: MouseInput,
     player_params: PlayerParams,
     mut level_object_correlations: ResMut<LevelObjectCorrelations>,
     mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
@@ -93,51 +107,119 @@ pub fn builder_ui(
                     dirty_level_object: level_object.clone(),
                     level_object,
                 });
-            if level_objects.picked_level_object.is_none() {
+            if let Some(picked_level_object) = &*level_objects.picked_level_object {
+                if picked_level_object
+                    .level_object
+                    .desc
+                    .is_movable_with_mouse()
+                {
+                    level_objects.placed_level_object.0 =
+                        Some((picked_level_object.entity, entity_net_id));
+                }
+            } else {
                 log::error!("Level object {} isn't registered", entity_net_id.0);
             }
             *level_objects.pending_correlation = None;
         }
     }
 
-    // Picking a level object with a mouse.
-    if !egui_context.ctx().is_pointer_over_area() {
-        mouse_entity_picker.pick_entity();
-    }
-    if let Some((entity, _, picked_level_object)) = mouse_entity_picker
-        .take_picked_entity()
-        .and_then(|entity| {
-            // Checking whether we've clicked a ghost.
-            if let Ok(LevelObjectStaticGhost(ghost_parent)) = level_objects.ghosts_query.get(entity)
-            {
-                return Some((
-                    *ghost_parent,
-                    level_objects.entity_registry.get_id(*ghost_parent).unwrap(),
-                ));
-            }
-            // Checking normal objects.
-            level_objects
-                .entity_registry
-                .get_id(entity)
-                .map(|entity_net_id| (entity, entity_net_id))
-        })
-        .and_then(|(entity, entity_net_id)| {
-            level_objects
-                .level_state
-                .objects
-                .get(&entity_net_id)
-                .map(|level_object| (entity, entity_net_id, level_object.clone()))
-        })
-    {
-        // We don't reset edited state if the clicked object is the same.
-        if !matches!(*level_objects.picked_level_object, Some(PickedLevelObject { entity: picked_entity, .. }) if picked_entity == entity)
+    // TODO: pretty much the same code is written for PickedLevelObject. Can we refactor it?
+    if level_objects.placed_level_object.0.is_some() {
+        // When an object is updated, it may get re-spawned as a new entity. We need to update
+        // the placed entity in such a case. Despawns may happen as well.
+        if let Some(level_object_entity) = level_objects
+            .entity_registry
+            .get_entity(level_objects.placed_level_object.0.as_ref().unwrap().1)
         {
-            *level_objects.picked_level_object = Some(PickedLevelObject {
-                entity,
-                level_object: picked_level_object.clone(),
-                dirty_level_object: picked_level_object,
+            if level_objects
+                .query
+                .get_component::<Spawned>(level_object_entity)
+                .unwrap()
+                .is_spawned(level_objects.time.frame_number)
+            {
+                level_objects.placed_level_object.0.as_mut().unwrap().0 = level_object_entity;
+            } else {
+                level_objects.placed_level_object.0 = None;
+            }
+        } else {
+            level_objects.placed_level_object.0 = None;
+        }
+    }
+
+    // Processing mouse input.
+
+    // If we have a newly placed object, mouse it with a cursor, until left mouse button is clicked.
+    if let Some((_placed_level_object, placed_level_object_net_id)) =
+        level_objects.placed_level_object.0
+    {
+        let picked_level_object = level_objects.picked_level_object.as_mut().unwrap();
+        let object_position = picked_level_object
+            .level_object
+            .desc
+            .position_mut()
+            .expect("Objects without positions aren't supported yet");
+        if (*object_position - mouse_input.mouse_world_position.0).length_squared() > f32::EPSILON {
+            *object_position = mouse_input.mouse_world_position.0;
+            picked_level_object.dirty_level_object = picked_level_object.level_object.clone();
+            level_object_requests.update_requests.push(LevelObject {
+                net_id: placed_level_object_net_id,
+                label: picked_level_object.dirty_level_object.label.clone(),
+                desc: picked_level_object.dirty_level_object.desc.clone(),
+                route: picked_level_object.dirty_level_object.route.clone(),
             });
-            *level_objects.pending_correlation = None;
+        }
+
+        if mouse_input
+            .mouse_button_input
+            .just_pressed(MouseButton::Left)
+            && !egui_context.ctx().is_pointer_over_area()
+        {
+            level_objects.placed_level_object.0 = None;
+        }
+        // TODO: this control flow is pretty easy to miss, we should refactor this.
+        return;
+    } else {
+        // Picking a level object with a mouse.
+        if !egui_context.ctx().is_pointer_over_area() {
+            mouse_input.mouse_entity_picker.pick_entity();
+        }
+        if let Some((entity, _, picked_level_object)) = mouse_input
+            .mouse_entity_picker
+            .take_picked_entity()
+            .and_then(|entity| {
+                // Checking whether we've clicked a ghost.
+                if let Ok(LevelObjectStaticGhost(ghost_parent)) =
+                    level_objects.ghosts_query.get(entity)
+                {
+                    return Some((
+                        *ghost_parent,
+                        level_objects.entity_registry.get_id(*ghost_parent).unwrap(),
+                    ));
+                }
+                // Checking normal objects.
+                level_objects
+                    .entity_registry
+                    .get_id(entity)
+                    .map(|entity_net_id| (entity, entity_net_id))
+            })
+            .and_then(|(entity, entity_net_id)| {
+                level_objects
+                    .level_state
+                    .objects
+                    .get(&entity_net_id)
+                    .map(|level_object| (entity, entity_net_id, level_object.clone()))
+            })
+        {
+            // We don't reset edited state if the clicked object is the same.
+            if !matches!(*level_objects.picked_level_object, Some(PickedLevelObject { entity: picked_entity, .. }) if picked_entity == entity)
+            {
+                *level_objects.picked_level_object = Some(PickedLevelObject {
+                    entity,
+                    level_object: picked_level_object.clone(),
+                    dirty_level_object: picked_level_object,
+                });
+                *level_objects.pending_correlation = None;
+            }
         }
     }
 
@@ -179,7 +261,7 @@ pub fn builder_ui(
                     .push(SpawnLevelObjectRequest {
                         correlation_id,
                         body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::Plane(PlaneDesc {
-                            position: Vec2::new(0.0, 0.0),
+                            position: mouse_input.mouse_world_position.0,
                             size: 50.0,
                         })),
                     });
@@ -192,7 +274,7 @@ pub fn builder_ui(
                     .push(SpawnLevelObjectRequest {
                         correlation_id,
                         body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::Cube(CubeDesc {
-                            position: Vec2::new(5.0, 5.0),
+                            position: mouse_input.mouse_world_position.0,
                             size: 0.4,
                         })),
                     });
@@ -206,7 +288,7 @@ pub fn builder_ui(
                         correlation_id,
                         body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::RoutePoint(
                             RoutePointDesc {
-                                position: Vec2::new(-5.0, 5.0),
+                                position: mouse_input.mouse_world_position.0,
                             },
                         )),
                     });

@@ -45,8 +45,13 @@ pub struct InputEvents<'a> {
     pub mouse_button: EventReader<'a, MouseButtonInput>,
 }
 
+/// Represents a cursor position in window coordinates (the ones that are coming from Window events).
 #[derive(Default)]
 pub struct MousePosition(pub Vec2);
+
+/// MouseRay intersection with the (center=[0.0, 0.0, 0.0], normal=[0.0, 0.0, 1.0]) plane.
+#[derive(Default)]
+pub struct MouseWorldPosition(pub Vec2);
 
 pub struct MouseRay(pub Ray);
 
@@ -176,6 +181,7 @@ pub fn cast_mouse_ray(
         &bevy::render::camera::PerspectiveProjection,
     )>,
     mut mouse_ray: ResMut<MouseRay>,
+    mut mouse_world_position: ResMut<MouseWorldPosition>,
 ) {
     let window = windows.iter().next().expect("expected a window");
     let (camera_transform, _camera, camera_projection) = cameras
@@ -187,6 +193,20 @@ pub fn cast_mouse_ray(
         &camera_transform.compute_matrix(),
         &camera_projection.get_projection_matrix(),
     );
+
+    mouse_world_position.0 = {
+        let ray_direction = Vec3::new(mouse_ray.0.dir.x, mouse_ray.0.dir.y, mouse_ray.0.dir.z);
+        let ray_origin = Vec3::new(mouse_ray.0.origin.x, mouse_ray.0.origin.y, mouse_ray.0.origin.z);
+        let plane_normal = Vec3::Z;
+        let denom = plane_normal.dot(ray_direction);
+        if denom.abs() > f32::EPSILON {
+            let t = (-ray_origin).dot(plane_normal) / denom;
+            let i = ray_origin.lerp(ray_origin + ray_direction, t);
+            Vec2::new(i.x, i.y)
+        } else {
+            Vec2::ZERO
+        }
+    };
 }
 
 fn process_hotkeys(

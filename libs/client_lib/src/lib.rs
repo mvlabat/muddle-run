@@ -38,6 +38,8 @@ use mr_shared_lib::{
     SIMULATIONS_PER_SECOND,
 };
 use std::borrow::Cow;
+use crate::input::MouseWorldPosition;
+use crate::ui::builder_ui::PlacedLevelObject;
 
 mod camera;
 mod components;
@@ -126,9 +128,11 @@ impl Plugin for MuddleClientPlugin {
         world.get_resource_or_insert_with(CurrentPlayerNetId::default);
         world.get_resource_or_insert_with(ConnectionState::default);
         world.get_resource_or_insert_with(PlayerRequestsQueue::default);
+        world.get_resource_or_insert_with(PlacedLevelObject::default);
         world.get_resource_or_insert_with(LevelObjectRequestsQueue::default);
         world.get_resource_or_insert_with(LevelObjectCorrelations::default);
         world.get_resource_or_insert_with(MouseRay::default);
+        world.get_resource_or_insert_with(MouseWorldPosition::default);
         world.get_resource_or_insert_with(VisibilitySettings::default);
     }
 }
