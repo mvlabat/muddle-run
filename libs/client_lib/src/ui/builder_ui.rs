@@ -7,7 +7,8 @@ use crate::{
 use bevy::{
     ecs::{
         entity::Entity,
-        system::{Local, Query, Res, ResMut, SystemParam},
+        schedule::{ParallelSystemDescriptorCoercion, ShouldRun, SystemSet},
+        system::{IntoSystem, Local, Query, Res, ResMut, SystemParam},
     },
     input::{mouse::MouseButton, Input},
     log,
@@ -30,25 +31,26 @@ use std::collections::HashMap;
 
 pub const DEFAULT_PERIOD: FrameNumber = FrameNumber::new(SIMULATIONS_PER_SECOND * 10);
 
-/// When a builder spawns a new objects, they place it with mouse.
-/// A placed level object lives there until left mouse button is clicked. Until then, builder UI
-/// is hidden.
 #[derive(Default, Clone)]
-pub struct PlacedLevelObject(Option<(Entity, EntityNetId)>);
+pub struct EditedLevelObject {
+    pub object: Option<(Entity, LevelObject)>,
+    pub is_being_placed: bool,
+    pub is_being_dragged: bool,
+}
 
-#[derive(Clone)]
-pub struct PickedLevelObject {
-    entity: Entity,
-    level_object: LevelObject,
-    dirty_level_object: LevelObject,
+impl EditedLevelObject {
+    pub fn deselect(&mut self) {
+        self.object = None;
+        self.is_being_dragged = false;
+        self.is_being_placed = false;
+    }
 }
 
 #[derive(SystemParam)]
 pub struct LevelObjects<'a> {
     time: Res<'a, GameTime>,
     pending_correlation: Local<'a, Option<MessageId>>,
-    picked_level_object: Local<'a, Option<PickedLevelObject>>,
-    placed_level_object: ResMut<'a, PlacedLevelObject>,
+    edited_level_object: ResMut<'a, EditedLevelObject>,
     level_state: Res<'a, LevelState>,
     entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
     query: Query<'a, (Entity, &'static LevelObjectLabel, &'static Spawned)>,
@@ -67,123 +69,80 @@ pub struct BuilderUiState {
     filter: String,
 }
 
-pub fn builder_ui(
-    egui_context: ResMut<EguiContext>,
-    mut builder_ui_state: Local<BuilderUiState>,
-    mut mouse_input: MouseInput,
+pub fn builder_system_set() -> SystemSet {
+    SystemSet::new()
+        .with_run_criteria(builder_run_criteria.system())
+        .with_system(builder_ui.system().label("ui"))
+        .with_system(process_builder_mouse_input.system().after("ui"))
+}
+
+pub fn builder_run_criteria(
     player_params: PlayerParams,
-    mut level_object_correlations: ResMut<LevelObjectCorrelations>,
-    mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
-    mut level_objects: LevelObjects,
-) {
+    mut edited_level_object: ResMut<EditedLevelObject>,
+) -> ShouldRun {
     let player = match player_params.current_player() {
         Some(player) => player,
         None => {
-            *level_objects.picked_level_object = None;
-            return;
+            edited_level_object.deselect();
+            return ShouldRun::No;
         }
     };
     if !matches!(player.role, PlayerRole::Builder) {
-        *level_objects.picked_level_object = None;
-        return;
+        edited_level_object.deselect();
+        return ShouldRun::No;
     }
+    ShouldRun::Yes
+}
 
-    // Picking a level object if we received a confirmation from the server about an object created
-    // by us.
-    if let Some(correlation_id) = *level_objects.pending_correlation {
-        if let Some(entity_net_id) = level_object_correlations.query(correlation_id) {
-            *level_objects.picked_level_object = level_objects
-                .entity_registry
-                .get_entity(entity_net_id)
-                .zip(
-                    level_objects
-                        .level_state
-                        .objects
-                        .get(&entity_net_id)
-                        .cloned(),
-                )
-                .map(|(entity, level_object)| PickedLevelObject {
-                    entity,
-                    dirty_level_object: level_object.clone(),
-                    level_object,
-                });
-            if let Some(picked_level_object) = &*level_objects.picked_level_object {
-                if picked_level_object
-                    .level_object
-                    .desc
-                    .is_movable_with_mouse()
-                {
-                    level_objects.placed_level_object.0 =
-                        Some((picked_level_object.entity, entity_net_id));
-                }
-            } else {
-                log::error!("Level object {} isn't registered", entity_net_id.0);
-            }
-            *level_objects.pending_correlation = None;
-        }
-    }
-
-    // TODO: pretty much the same code is written for PickedLevelObject. Can we refactor it?
-    if level_objects.placed_level_object.0.is_some() {
-        // When an object is updated, it may get re-spawned as a new entity. We need to update
-        // the placed entity in such a case. Despawns may happen as well.
-        if let Some(level_object_entity) = level_objects
-            .entity_registry
-            .get_entity(level_objects.placed_level_object.0.as_ref().unwrap().1)
-        {
-            if level_objects
-                .query
-                .get_component::<Spawned>(level_object_entity)
-                .unwrap()
-                .is_spawned(level_objects.time.frame_number)
-            {
-                level_objects.placed_level_object.0.as_mut().unwrap().0 = level_object_entity;
-            } else {
-                level_objects.placed_level_object.0 = None;
-            }
-        } else {
-            level_objects.placed_level_object.0 = None;
-        }
-    }
-
-    // Processing mouse input.
-
-    // If we have a newly placed object, mouse it with a cursor, until left mouse button is clicked.
-    if let Some((_placed_level_object, placed_level_object_net_id)) =
-        level_objects.placed_level_object.0
+pub fn process_builder_mouse_input(
+    egui_context: ResMut<EguiContext>,
+    mut mouse_input: MouseInput,
+    mut level_objects: LevelObjects,
+    mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
+) {
+    // If we have a newly placed object, move it with a cursor, until left mouse button is clicked.
+    if let EditedLevelObject {
+        object: Some((_, level_object)),
+        is_being_placed,
+        is_being_dragged: _,
+    } = &mut *level_objects.edited_level_object
     {
-        let picked_level_object = level_objects.picked_level_object.as_mut().unwrap();
-        let object_position = picked_level_object
-            .level_object
-            .desc
-            .position_mut()
-            .expect("Objects without positions aren't supported yet");
-        if (*object_position - mouse_input.mouse_world_position.0).length_squared() > f32::EPSILON {
-            *object_position = mouse_input.mouse_world_position.0;
-            picked_level_object.dirty_level_object = picked_level_object.level_object.clone();
-            level_object_requests.update_requests.push(LevelObject {
-                net_id: placed_level_object_net_id,
-                label: picked_level_object.dirty_level_object.label.clone(),
-                desc: picked_level_object.dirty_level_object.desc.clone(),
-                route: picked_level_object.dirty_level_object.route.clone(),
-            });
-        }
+        if *is_being_placed {
+            let object_position = level_object
+                .desc
+                .position_mut()
+                .expect("Objects without positions aren't supported yet");
+            if (*object_position - mouse_input.mouse_world_position.0).length_squared()
+                > f32::EPSILON
+            {
+                *object_position = mouse_input.mouse_world_position.0;
+                level_object_requests.update_requests.push(LevelObject {
+                    net_id: level_object.net_id,
+                    label: level_object.label.clone(),
+                    desc: level_object.desc.clone(),
+                    route: level_object.route.clone(),
+                });
+            }
 
-        if mouse_input
-            .mouse_button_input
-            .just_pressed(MouseButton::Left)
-            && !egui_context.ctx().is_pointer_over_area()
-        {
-            level_objects.placed_level_object.0 = None;
+            if mouse_input
+                .mouse_button_input
+                .just_pressed(MouseButton::Left)
+                && !egui_context.ctx().is_pointer_over_area()
+            {
+                *is_being_placed = false;
+            }
         }
-        // TODO: this control flow is pretty easy to miss, we should refactor this.
-        return;
-    } else {
+    }
+
+    if level_objects.edited_level_object.object.is_none()
+        || !level_objects.edited_level_object.is_being_placed
+            && !level_objects.edited_level_object.is_being_dragged
+    {
         // Picking a level object with a mouse.
         if !egui_context.ctx().is_pointer_over_area() {
             mouse_input.mouse_entity_picker.pick_entity();
         }
-        if let Some((entity, _, picked_level_object)) = mouse_input
+        if let Some((entity, _, edited_level_object)) = mouse_input
             .mouse_entity_picker
             .take_picked_entity()
             .and_then(|entity| {
@@ -211,27 +170,56 @@ pub fn builder_ui(
             })
         {
             // We don't reset edited state if the clicked object is the same.
-            if !matches!(*level_objects.picked_level_object, Some(PickedLevelObject { entity: picked_entity, .. }) if picked_entity == entity)
+            if !matches!(level_objects.edited_level_object.object, Some((picked_entity, _)) if picked_entity == entity)
             {
-                *level_objects.picked_level_object = Some(PickedLevelObject {
-                    entity,
-                    level_object: picked_level_object.clone(),
-                    dirty_level_object: picked_level_object,
-                });
+                level_objects.edited_level_object.object = Some((entity, edited_level_object));
                 *level_objects.pending_correlation = None;
             }
         }
     }
+}
 
-    if level_objects.picked_level_object.is_some() {
+pub fn builder_ui(
+    egui_context: ResMut<EguiContext>,
+    mut builder_ui_state: Local<BuilderUiState>,
+    mouse_input: MouseInput,
+    mut level_object_correlations: ResMut<LevelObjectCorrelations>,
+    mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
+    mut level_objects: LevelObjects,
+) {
+    // Picking a level object if we received a confirmation from the server about an object created
+    // by us.
+    if let Some(correlation_id) = *level_objects.pending_correlation {
+        if let Some(entity_net_id) = level_object_correlations.query(correlation_id) {
+            level_objects.edited_level_object.object =
+                level_objects.entity_registry.get_entity(entity_net_id).zip(
+                    level_objects
+                        .level_state
+                        .objects
+                        .get(&entity_net_id)
+                        .cloned(),
+                );
+            if let Some((_, edited_level_object)) = &level_objects.edited_level_object.object {
+                if edited_level_object.desc.is_movable_with_mouse() {
+                    level_objects.edited_level_object.is_being_placed = true;
+                }
+            } else {
+                log::error!("Level object {} isn't registered", entity_net_id.0);
+            }
+            *level_objects.pending_correlation = None;
+        }
+    }
+
+    if level_objects.edited_level_object.object.is_some() {
         // When an object is updated, it may get re-spawned as a new entity. We need to update
         // the picked entity in such a case. Despawns may happen as well.
         if let Some(level_object_entity) = level_objects.entity_registry.get_entity(
             level_objects
-                .picked_level_object
+                .edited_level_object
+                .object
                 .as_ref()
                 .unwrap()
-                .level_object
+                .1
                 .net_id,
         ) {
             if level_objects
@@ -240,12 +228,19 @@ pub fn builder_ui(
                 .unwrap()
                 .is_spawned(level_objects.time.frame_number)
             {
-                level_objects.picked_level_object.as_mut().unwrap().entity = level_object_entity;
+                level_objects.edited_level_object.object.as_mut().unwrap().0 = level_object_entity;
             } else {
-                *level_objects.picked_level_object = None;
+                level_objects.edited_level_object.deselect();
             }
         } else {
-            *level_objects.picked_level_object = None;
+            level_objects.edited_level_object.deselect();
+        }
+
+        // We don't want to display the builder UI if the object is moved with mouse.
+        if level_objects.edited_level_object.is_being_placed
+            || level_objects.edited_level_object.is_being_dragged
+        {
+            return;
         }
     }
 
@@ -295,12 +290,8 @@ pub fn builder_ui(
             }
         });
 
-        if let Some(PickedLevelObject {
-            entity: _,
-            level_object,
-            mut dirty_level_object,
-        }) = level_objects.picked_level_object.clone()
-        {
+        if let Some((_, level_object)) = level_objects.edited_level_object.object.clone() {
+            let mut dirty_level_object = level_object.clone();
             level_object_ui(
                 &mut level_object_requests,
                 ui,
@@ -326,9 +317,9 @@ pub fn builder_ui(
                     route: dirty_level_object.route.clone(),
                 });
 
-                let picked_level_object = level_objects.picked_level_object.as_mut().unwrap();
-                picked_level_object.level_object = dirty_level_object.clone();
-                picked_level_object.dirty_level_object = dirty_level_object;
+                let (_, edited_level_object) =
+                    level_objects.edited_level_object.object.as_mut().unwrap();
+                *edited_level_object = dirty_level_object;
             }
         }
     });
@@ -341,7 +332,7 @@ fn level_object_ui(
     mut dirty_level_object: &mut LevelObject,
 ) {
     ui.separator();
-    egui::Grid::new("editing_picked_level_object")
+    egui::Grid::new("editing_edited_level_object.object")
         .striped(true)
         .show(ui, |ui| {
             ui.label("Object label");

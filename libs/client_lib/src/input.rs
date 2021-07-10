@@ -196,7 +196,11 @@ pub fn cast_mouse_ray(
 
     mouse_world_position.0 = {
         let ray_direction = Vec3::new(mouse_ray.0.dir.x, mouse_ray.0.dir.y, mouse_ray.0.dir.z);
-        let ray_origin = Vec3::new(mouse_ray.0.origin.x, mouse_ray.0.origin.y, mouse_ray.0.origin.z);
+        let ray_origin = Vec3::new(
+            mouse_ray.0.origin.x,
+            mouse_ray.0.origin.y,
+            mouse_ray.0.origin.z,
+        );
         let plane_normal = Vec3::Z;
         let denom = plane_normal.dot(ray_direction);
         if denom.abs() > f32::EPSILON {

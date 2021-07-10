@@ -1,9 +1,9 @@
 use crate::{
     camera::{move_free_camera_pivot, reattach_camera},
     components::{CameraPivotDirection, CameraPivotTag},
-    input::{LevelObjectRequestsQueue, MouseRay, PlayerRequestsQueue},
+    input::{LevelObjectRequestsQueue, MouseRay, MouseWorldPosition, PlayerRequestsQueue},
     net::{maintain_connection, process_network_events, send_network_updates, send_requests},
-    ui::debug_ui::update_debug_ui_state,
+    ui::{builder_ui::EditedLevelObject, debug_ui::update_debug_ui_state},
     visuals::control_builder_visibility,
 };
 use bevy::{
@@ -38,8 +38,6 @@ use mr_shared_lib::{
     SIMULATIONS_PER_SECOND,
 };
 use std::borrow::Cow;
-use crate::input::MouseWorldPosition;
-use crate::ui::builder_ui::PlacedLevelObject;
 
 mod camera;
 mod components;
@@ -111,7 +109,8 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::overlay_ui::connection_status_overlay.system())
             .add_system(ui::debug_ui::inspect_object.system())
             .add_system(ui::help_ui::help_ui.system())
-            .add_system(ui::builder_ui::builder_ui.system());
+            // Not only Egui for builder mode.
+            .add_system_set(ui::builder_ui::builder_system_set());
 
         let world = builder.world_mut();
         world
@@ -128,7 +127,7 @@ impl Plugin for MuddleClientPlugin {
         world.get_resource_or_insert_with(CurrentPlayerNetId::default);
         world.get_resource_or_insert_with(ConnectionState::default);
         world.get_resource_or_insert_with(PlayerRequestsQueue::default);
-        world.get_resource_or_insert_with(PlacedLevelObject::default);
+        world.get_resource_or_insert_with(EditedLevelObject::default);
         world.get_resource_or_insert_with(LevelObjectRequestsQueue::default);
         world.get_resource_or_insert_with(LevelObjectCorrelations::default);
         world.get_resource_or_insert_with(MouseRay::default);
