@@ -23,7 +23,7 @@ pub trait ClientFactory<'a> {
     ) {
     }
 
-    fn remove_components(_commands: &mut EntityCommands) {}
+    fn remove_components(_commands: &mut EntityCommands, _deps: &mut Self::Dependencies) {}
 }
 
 pub struct PlayerClientFactory;
@@ -52,8 +52,10 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
     }
 
     #[cfg(feature = "client")]
-    fn remove_components(commands: &mut EntityCommands) {
+    fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
         commands.remove_bundle::<PbrBundle>();
+        let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
+        deps.meshes.remove(mesh);
     }
 }
 
@@ -102,8 +104,10 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
     }
 
     #[cfg(feature = "client")]
-    fn remove_components(commands: &mut EntityCommands) {
+    fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
         commands.remove_bundle::<PbrBundle>();
+        let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
+        deps.meshes.remove(mesh);
     }
 }
 
@@ -147,8 +151,10 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
     }
 
     #[cfg(feature = "client")]
-    fn remove_components(commands: &mut EntityCommands) {
+    fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
         commands.remove_bundle::<PbrBundle>();
+        let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
+        deps.meshes.remove(mesh);
     }
 }
 
@@ -196,8 +202,10 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
     }
 
     #[cfg(feature = "client")]
-    fn remove_components(commands: &mut EntityCommands) {
+    fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
         commands.remove_bundle::<PbrBundle>();
+        let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
+        deps.meshes.remove(mesh);
     }
 }
 
@@ -214,6 +222,7 @@ pub struct PbrClientParams<'a> {
     meshes: ResMut<'a, Assets<Mesh>>,
     materials: Res<'a, MuddleMaterials>,
     visibility_settings: Res<'a, VisibilitySettings>,
+    mesh_query: Query<'a, &'static Handle<Mesh>>,
 }
 
 #[cfg(not(feature = "client"))]

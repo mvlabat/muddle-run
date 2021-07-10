@@ -118,6 +118,7 @@ pub fn spawn_players(
 
 pub fn despawn_players(
     mut commands: Commands,
+    mut pbr_client_params: PbrClientParams,
     mut despawn_player_commands: ResMut<DeferredQueue<DespawnPlayer>>,
     player_entities: Res<EntityRegistry<PlayerNetId>>,
     mut players: Query<(Entity, &mut Spawned, &PlayerTag)>,
@@ -155,7 +156,10 @@ pub fn despawn_players(
             command.net_id.0,
             command.frame_number
         );
-        PlayerClientFactory::remove_components(&mut commands.entity(entity));
+        PlayerClientFactory::remove_components(
+            &mut commands.entity(entity),
+            &mut pbr_client_params,
+        );
         spawned.push_command(command.frame_number, SpawnCommand::Despawn);
     }
 }
@@ -316,6 +320,7 @@ pub fn update_level_objects(
 
 pub fn despawn_level_objects(
     mut commands: Commands,
+    mut pbr_client_params: PbrClientParams,
     mut despawn_level_object_commands: ResMut<DeferredQueue<DespawnLevelObject>>,
     object_entities: Res<EntityRegistry<EntityNetId>>,
     mut level_state: ResMut<LevelState>,
@@ -361,41 +366,48 @@ pub fn despawn_level_objects(
             .desc
         {
             LevelObjectDesc::Plane(_) => {
-                PlaneClientFactory::remove_components(&mut commands.entity(entity));
-                PlaneClientFactory::remove_components(&mut commands.entity(*ghost_entity));
+                PlaneClientFactory::remove_components(
+                    &mut commands.entity(entity),
+                    &mut pbr_client_params,
+                );
+                PlaneClientFactory::remove_components(
+                    &mut commands.entity(*ghost_entity),
+                    &mut pbr_client_params,
+                );
             }
             LevelObjectDesc::Cube(_) => {
-                CubeClientFactory::remove_components(&mut commands.entity(entity));
-                CubeClientFactory::remove_components(&mut commands.entity(*ghost_entity));
+                CubeClientFactory::remove_components(
+                    &mut commands.entity(entity),
+                    &mut pbr_client_params,
+                );
+                CubeClientFactory::remove_components(
+                    &mut commands.entity(*ghost_entity),
+                    &mut pbr_client_params,
+                );
             }
             LevelObjectDesc::RoutePoint(_) => {
-                RoutePointClientFactory::remove_components(&mut commands.entity(entity));
-                RoutePointClientFactory::remove_components(&mut commands.entity(*ghost_entity));
+                RoutePointClientFactory::remove_components(
+                    &mut commands.entity(entity),
+                    &mut pbr_client_params,
+                );
+                RoutePointClientFactory::remove_components(
+                    &mut commands.entity(*ghost_entity),
+                    &mut pbr_client_params,
+                );
             }
         }
         spawned.push_command(command.frame_number, SpawnCommand::Despawn);
     }
 }
 
-#[cfg(feature = "client")]
-pub type OptionalAsset = bevy::asset::Handle<bevy::render::mesh::Mesh>;
-#[cfg(not(feature = "client"))]
-pub type OptionalAsset = Option<()>;
-
 pub fn process_spawned_entities(
     mut commands: Commands,
     game_time: Res<GameTime>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
-    #[cfg(feature = "client")] mut assets: ResMut<bevy::asset::Assets<bevy::render::mesh::Mesh>>,
-    mut spawned_entities: Query<(
-        Entity,
-        &mut Spawned,
-        Option<&LevelObjectStaticGhostParent>,
-        &OptionalAsset,
-    )>,
+    mut spawned_entities: Query<(Entity, &mut Spawned, Option<&LevelObjectStaticGhostParent>)>,
 ) {
-    for (entity, mut spawned, ghost, _handle) in spawned_entities.iter_mut() {
+    for (entity, mut spawned, ghost) in spawned_entities.iter_mut() {
         spawned.pop_outdated_commands(game_time.frame_number);
         if spawned.can_be_removed(game_time.frame_number) {
             log::debug!("Despawning entity {:?}", entity);
@@ -405,9 +417,6 @@ pub fn process_spawned_entities(
             }
             player_entities.remove_by_entity(entity);
             object_entities.remove_by_entity(entity);
-
-            #[cfg(feature = "client")]
-            assets.remove(_handle);
         }
     }
 }
