@@ -58,11 +58,12 @@ pub fn update_level_object_movement_route_settings(
         .iter_mut()
         .filter(|(_, _, _, spawned)| spawned.is_spawned(time.player_frame))
     {
-        let level_def = level
-            .objects
-            .get(&objects_registry.get_id(entity).unwrap())
-            .unwrap()
-            .clone();
+        let level_def = match level.objects.get(&objects_registry.get_id(entity).unwrap()) {
+            Some(level_def) => level_def.clone(),
+            // The object is might be removed from the level when we are rewinding to the frame
+            // when it still existed. We can skip it, it's not the end of the world.
+            None => continue,
+        };
 
         let initial_object_position = level_def
             .desc
