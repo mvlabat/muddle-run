@@ -24,7 +24,9 @@ to test levels while they are being designed.
 - Initial version of Builder mode (collaborative level editor)
 
 ### Roadmap
-- [Builder mode](https://github.com/mvlabat/muddle-run/projects/2)
+- [Gameplay](https://github.com/mvlabat/muddle-run/projects/6)
+- [Builder Mode](https://github.com/mvlabat/muddle-run/projects/2)
+- [Techdebt, Performance & Stability](https://github.com/mvlabat/muddle-run/projects/5)
 
 ## Building and running
 
