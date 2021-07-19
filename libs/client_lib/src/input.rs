@@ -92,6 +92,7 @@ pub fn track_input_events(
     mut mouse_position: ResMut<MouseScreenPosition>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
+    puffin::profile_function!();
     if ui_params.egui_context.ctx().wants_keyboard_input() {
         return;
     }
@@ -183,6 +184,7 @@ pub fn cast_mouse_ray(
     mut mouse_ray: ResMut<MouseRay>,
     mut mouse_world_position: ResMut<MouseWorldPosition>,
 ) {
+    puffin::profile_function!();
     let window = windows.iter().next().expect("expected a window");
     let (camera_transform, _camera, camera_projection) = cameras
         .get(main_camera_entity.0)
@@ -222,6 +224,7 @@ fn process_hotkeys(
     if keyboard_input.just_pressed(KeyCode::Period) {
         debug_ui_state.show = !debug_ui_state.show;
         world_inspector_params.enabled = debug_ui_state.show;
+        puffin::set_scopes_on(debug_ui_state.show);
     }
 
     let net_id = player_updates_params.current_player_net_id.0;

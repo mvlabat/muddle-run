@@ -10,9 +10,9 @@ checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
 
 [[package]]
 name = "ab_glyph"
-version = "0.2.10"
+version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a933731feda8b460bdad9a9e43bb386baba6ec593d2bc19716ef3c75c09085c"
+checksum = "af0ac006645f86f20f6c6fa4dcaef920bf803df819123626f9440e35835e7d80"
 dependencies = [
  "ab_glyph_rasterizer",
  "owned_ttf_parser 0.12.0",
@@ -385,8 +385,8 @@ checksum = "0d5f2f58f0aec3c50a20799792c3705e80dd7df327e79791cacec197e84e5e61"
 
 [[package]]
 name = "bevy-inspector-egui"
-version = "0.5.1"
-source = "git+https://github.com/jakobhellermann/bevy-inspector-egui.git#ecc6a9fdf8af9a475335689eabe8d015c336371f"
+version = "0.6.0"
+source = "git+https://github.com/jakobhellermann/bevy-inspector-egui.git#2a7a0c1#2a7a0c1f64fd311955d14b8384a42738d38debb8"
 dependencies = [
  "bevy",
  "bevy-inspector-egui-derive",
@@ -394,12 +394,13 @@ dependencies = [
  "emath",
  "image",
  "pretty-type-name",
+ "rand 0.8.3",
 ]
 
 [[package]]
 name = "bevy-inspector-egui-derive"
-version = "0.5.0"
-source = "git+https://github.com/jakobhellermann/bevy-inspector-egui.git#ecc6a9fdf8af9a475335689eabe8d015c336371f"
+version = "0.6.0"
+source = "git+https://github.com/jakobhellermann/bevy-inspector-egui.git#2a7a0c1#2a7a0c1f64fd311955d14b8384a42738d38debb8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -553,9 +554,9 @@ dependencies = [
 
 [[package]]
 name = "bevy_egui"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "deb8eba352b755e7b5b934a7ceade017dde82ecea6585ffd65f6690abbf1ff20"
+checksum = "b6a1f976affbb86413e00eb2b387a8b4d5d831854413b991895ee5fbec511595"
 dependencies = [
  "bevy",
  "clipboard",
@@ -1647,9 +1648,9 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
 name = "egui"
-version = "0.12.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "788148861d80b87d28d64440a3d31cae190e50ccc3ea585597466d38428365d7"
+checksum = "77f9b394ccacc0cccb30f6de7371038a116931aa3186acd908b9ec61f405f15c"
 dependencies = [
  "epaint",
 ]
@@ -1662,9 +1663,9 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
 name = "emath"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e73d6c8c70eadb71756fbbc3c303ab25e163b46b656886dd250de5636efea12"
+checksum = "80eea7508c08a7b4e2a041adcdca6f400d8606622c6bb980ecbbdc5f1aff9a4c"
 
 [[package]]
 name = "encoding_rs"
@@ -1700,15 +1701,15 @@ dependencies = [
 
 [[package]]
 name = "epaint"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80e2db640801230bdda80629bc3a063927a462f5eaf38a98da676954e78ccb99"
+checksum = "132e30d483d9fa252fe06aa112de777d068503c379fa51bc5834204ee3258fce"
 dependencies = [
+ "ab_glyph",
  "ahash 0.7.2",
  "atomic_refcell",
  "emath",
  "ordered-float",
- "rusttype",
 ]
 
 [[package]]
@@ -2982,6 +2983,8 @@ dependencies = [
  "chrono",
  "env_logger 0.8.3",
  "mr_shared_lib",
+ "puffin",
+ "puffin_egui",
 ]
 
 [[package]]
@@ -3013,6 +3016,7 @@ dependencies = [
  "chrono",
  "env_logger 0.8.3",
  "mr_shared_lib",
+ "puffin",
 ]
 
 [[package]]
@@ -3027,6 +3031,7 @@ dependencies = [
  "chrono",
  "names",
  "num",
+ "puffin",
  "serde",
  "thiserror",
 ]
@@ -3168,6 +3173,12 @@ dependencies = [
  "security-framework-sys",
  "tempfile",
 ]
+
+[[package]]
+name = "natord"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "308d96db8debc727c3fd9744aac51751243420e46edf401010908da7f8d5e57c"
 
 [[package]]
 name = "ndk"
@@ -3807,6 +3818,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a152013215dca273577e18d2bf00fa862b89b24169fb78c4c95aeb07992c9cec"
 dependencies = [
  "unicode-xid",
+]
+
+[[package]]
+name = "puffin"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bcce085db63f3cdad58de588b983b3c5f6d9699d8d0f8a9a97bbcc72c79529c"
+dependencies = [
+ "byteorder",
+ "once_cell",
+]
+
+[[package]]
+name = "puffin_egui"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b03a5381948a650869a4d1dd634bb6c2d8d166359ce2ee55e6caf90bee724871"
+dependencies = [
+ "egui",
+ "natord",
+ "once_cell",
+ "puffin",
 ]
 
 [[package]]

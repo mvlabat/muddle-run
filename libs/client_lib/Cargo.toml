@@ -13,12 +13,14 @@ use-webrtc = ["bevy_networking_turbulence/use-webrtc"]
 web = ["mr_shared_lib/web", "chrono/wasmbind"]
 
 [dependencies]
-bevy_egui = "0.5.0"
-bevy-inspector-egui = { git = "https://github.com/jakobhellermann/bevy-inspector-egui.git" }
+bevy_egui = "0.6.0"
+bevy-inspector-egui = { git = "https://github.com/jakobhellermann/bevy-inspector-egui.git#2a7a0c1" }
 bevy_networking_turbulence = { version = "0.3.3", default-features = false }
 bevy_rapier3d = { version = "0.10.2", features = ["wasm-bindgen"] }
 chrono = "0.4.19"
 env_logger = "0.8.1"
+puffin = "0.6.0"
+puffin_egui = "0.4.1"
 
 [dependencies.bevy]
 version = "0.5"

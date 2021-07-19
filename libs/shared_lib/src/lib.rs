@@ -262,6 +262,14 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         #[cfg(feature = "client")]
         builder.add_startup_system(crate::client::materials::init_object_materials.system());
 
+        builder.add_system_to_stage(
+            bevy::app::CoreStage::First,
+            (|| {
+                puffin::GlobalProfiler::lock().new_frame();
+            })
+            .system(),
+        );
+
         let resources = builder.world_mut();
         resources.get_resource_or_insert_with(GameTime::default);
         resources.get_resource_or_insert_with(SimulationTime::default);
@@ -422,6 +430,7 @@ impl GameTickRunCriteria {
         mut state: Local<GameTickRunCriteriaState>,
         time: Res<GameTime>,
     ) -> ShouldRun {
+        puffin::profile_function!();
         if state.last_generation != Some(time.session) {
             state.last_generation = Some(time.session);
             state.last_tick = time.frame_number - state.ticks_per_step;
@@ -521,6 +530,7 @@ impl SimulationTickRunCriteria {
         game_time: Res<GameTime>,
         simulation_time: Res<SimulationTime>,
     ) -> ShouldRun {
+        puffin::profile_function!();
         // Checking that a game frame has changed will make us avoid panicking in case we rewind
         // simulation frame just 1 frame back.
         if state.last_game_frame != Some(game_time.frame_number) {
@@ -626,6 +636,7 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
 }
 
 pub fn tick_game_frame(mut time: ResMut<GameTime>) {
+    puffin::profile_function!();
     log::trace!("Concluding game frame tick: {}", time.frame_number.value());
     time.frame_number += FrameNumber::new(1);
 }

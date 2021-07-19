@@ -5,6 +5,7 @@ use bevy::{
 use bevy_egui::{egui, EguiContext};
 
 pub fn help_ui(egui_context: ResMut<EguiContext>, windows: Res<Windows>) {
+    puffin::profile_function!();
     let primary_window = windows.get_primary().unwrap();
     let window_width = 280.0;
     let window_height = 30.0;

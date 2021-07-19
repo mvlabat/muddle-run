@@ -10,6 +10,7 @@ pub fn connection_status_overlay(
     connection_state: Res<ConnectionState>,
     windows: Res<Windows>,
 ) {
+    puffin::profile_function!();
     if let ConnectionStatus::Connected = connection_state.status() {
         return;
     }

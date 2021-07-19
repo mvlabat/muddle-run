@@ -69,6 +69,7 @@ pub fn process_network_events(
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut update_params: UpdateParams,
 ) {
+    puffin::profile_function!();
     for event in network_events.iter() {
         match event {
             NetworkEvent::Connected(handle) => {
@@ -409,6 +410,8 @@ pub fn maintain_connection(
     mut network_params: NetworkParams,
     mut initial_rtt: ResMut<InitialRtt>,
 ) {
+    puffin::profile_function!();
+
     // TODO: if a client isn't getting any updates, we may also want to pause the game and wait for
     //  some time for a server to respond.
 
@@ -478,6 +481,7 @@ pub fn send_network_updates(
     player_registry: Res<EntityRegistry<PlayerNetId>>,
     player_update_params: PlayerUpdateParams,
 ) {
+    puffin::profile_function!();
     let (connection_handle, address) = match network_params.net.connections.iter_mut().next() {
         Some((&handle, connection)) => (handle, connection.remote_address()),
         None => return,
@@ -567,6 +571,7 @@ pub fn send_requests(
     mut player_requests: ResMut<PlayerRequestsQueue>,
     mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
 ) {
+    puffin::profile_function!();
     let (connection_handle, _) = match network_params.net.connections.iter_mut().next() {
         Some((&handle, connection)) => (handle, connection.remote_address()),
         None => return,

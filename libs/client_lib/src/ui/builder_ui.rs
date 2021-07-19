@@ -97,6 +97,7 @@ pub fn builder_run_criteria(
     player_params: PlayerParams,
     mut edited_level_object: ResMut<EditedLevelObject>,
 ) -> ShouldRun {
+    puffin::profile_function!();
     let player = match player_params.current_player() {
         Some(player) => player,
         None => {
@@ -119,6 +120,7 @@ pub fn process_builder_mouse_input(
     // Screen coordinates at where the dragging started.
     mut dragging_start: Local<Option<Vec2>>,
 ) {
+    puffin::profile_function!();
     // If we have a newly placed object, move it with a cursor, until left mouse button is clicked.
     if let EditedLevelObject {
         object: Some((_, level_object)),
@@ -241,6 +243,7 @@ pub fn builder_ui(
     mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
     mut level_objects: LevelObjects,
 ) {
+    puffin::profile_function!();
     // Picking a level object if we received a confirmation from the server about an object created
     // by us.
     if let Some(correlation_id) = *level_objects.pending_correlation {

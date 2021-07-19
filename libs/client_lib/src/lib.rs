@@ -106,6 +106,7 @@ impl Plugin for MuddleClientPlugin {
             // Egui.
             .add_system(ui::debug_ui::update_ui_scale_factor.system())
             .add_system(ui::debug_ui::debug_ui.system())
+            .add_system(ui::debug_ui::profiler_ui.system())
             .add_system(ui::overlay_ui::connection_status_overlay.system())
             .add_system(ui::debug_ui::inspect_object.system())
             .add_system(ui::help_ui::help_ui.system())
@@ -246,6 +247,7 @@ fn pause_simulation(
     game_time: Res<GameTime>,
     estimated_server_time: Res<EstimatedServerTime>,
 ) {
+    puffin::profile_function!();
     let is_connected = matches!(connection_state.status(), ConnectionStatus::Connected);
 
     let has_server_updates = game_time
@@ -348,6 +350,7 @@ fn control_ticking_speed(
     mut params: ControlTickingSpeedParams,
 ) {
     use std::cmp::Ordering;
+    puffin::profile_function!();
 
     let target_player_frame =
         params.simulation_time.server_frame + params.target_frames_ahead.frames_count;
@@ -467,6 +470,7 @@ impl NetAdaptiveTimestemp {
         time: Res<Time>,
         game_ticks_per_second: Res<GameTicksPerSecond>,
     ) -> ShouldRun {
+        puffin::profile_function!();
         let rate = game_ticks_per_second.rate;
         let step = 1.0 / rate as f64;
 

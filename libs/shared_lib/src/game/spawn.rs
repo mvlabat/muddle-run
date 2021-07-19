@@ -36,6 +36,7 @@ pub fn spawn_players(
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
     mut players: Query<(Entity, &mut Spawned, &mut Position, &mut PlayerDirection)>,
 ) {
+    puffin::profile_function!();
     let mut spawn_player_commands = spawn_player_commands.drain();
     dedup_by_key_unsorted(&mut spawn_player_commands, |command| command.net_id);
 
@@ -123,6 +124,7 @@ pub fn despawn_players(
     player_entities: Res<EntityRegistry<PlayerNetId>>,
     mut players: Query<(Entity, &mut Spawned, &PlayerTag)>,
 ) {
+    puffin::profile_function!();
     for command in despawn_player_commands.drain() {
         let entity = match player_entities.get_entity(command.net_id) {
             Some(entity) => entity,
@@ -181,6 +183,7 @@ pub fn update_level_objects(
         With<LevelObjectTag>,
     >,
 ) {
+    puffin::profile_function!();
     // There may be several updates of the same entity per frame. We need to dedup them,
     // otherwise we crash when trying to clone from the entities that haven't been created yet
     // (because of not yet flushed command buffer).
@@ -326,6 +329,7 @@ pub fn despawn_level_objects(
     mut level_state: ResMut<LevelState>,
     mut level_objects: Query<(&mut Spawned, &LevelObjectStaticGhostParent), With<LevelObjectTag>>,
 ) {
+    puffin::profile_function!();
     for command in despawn_level_object_commands.drain() {
         let entity = match object_entities.get_entity(command.net_id) {
             Some(entity) => entity,
@@ -407,6 +411,7 @@ pub fn process_spawned_entities(
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
     mut spawned_entities: Query<(Entity, &mut Spawned, Option<&LevelObjectStaticGhostParent>)>,
 ) {
+    puffin::profile_function!();
     for (entity, mut spawned, ghost) in spawned_entities.iter_mut() {
         spawned.pop_outdated_commands(game_time.frame_number);
         if spawned.can_be_removed(game_time.frame_number) {

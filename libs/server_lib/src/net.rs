@@ -64,6 +64,7 @@ pub fn process_network_events(
     mut network_params: NetworkParams,
     mut update_params: UpdateParams,
 ) {
+    puffin::profile_function!();
     log::trace!("Processing network updates (frame: {})", time.frame_number);
 
     // Processing connection events.
@@ -572,6 +573,7 @@ pub fn send_network_updates(
     players_registry: Res<EntityRegistry<PlayerNetId>>,
     mut deferred_message_queues: DeferredMessageQueues,
 ) {
+    puffin::profile_function!();
     // We run this system after we've concluded the simulation. As we don't have updates for the
     // next frame yet, we decrement the frame number.
     let time = time.prev_frame();

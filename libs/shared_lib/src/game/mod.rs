@@ -128,6 +128,7 @@ pub fn switch_player_role(
     mut despawn_player_commands: ResMut<DeferredQueue<DespawnPlayer>>,
     mut switch_role_messages: ResMut<DeferredMessagesQueue<SwitchRole>>,
 ) {
+    puffin::profile_function!();
     let mut switch_role_commands = switch_role_commands.drain();
     // We want to keep the last command instead of the first one.
     switch_role_commands.reverse();
@@ -193,6 +194,7 @@ pub fn remove_disconnected_players(
     player_entities: Res<EntityRegistry<PlayerNetId>>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
 ) {
+    puffin::profile_function!();
     players.drain_filter(|player_net_id, player| {
         let remove = !player.is_connected && player_entities.get_entity(*player_net_id).is_none();
         if remove {
