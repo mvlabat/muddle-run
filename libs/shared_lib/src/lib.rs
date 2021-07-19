@@ -124,6 +124,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         builder.add_plugin(RapierResourcesPlugin);
         builder.add_plugin(NetworkingPlugin {
             link_conditioner: self.link_conditioner.clone(),
+            ..NetworkingPlugin::default()
         });
 
         let mut main_run_criteria = self

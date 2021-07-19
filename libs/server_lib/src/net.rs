@@ -28,7 +28,11 @@ pub fn startup(mut net: ResMut<NetworkResource>) {
     let (listen, public) = listen_addr()
         .zip(public_id_addr())
         .expect("Expected MUDDLE_LISTEN_PORT and MUDDLE_PUBLIC_IP_ADDR env variables");
-    net.listen(listen, public);
+    net.listen(
+        listen,
+        Some(listen),
+        Some(SocketAddr::new(public, listen.port())),
+    );
 }
 
 pub type PlayerConnections = Registry<PlayerNetId, u32>;
@@ -77,8 +81,6 @@ pub fn process_network_events(
                 }
                 match connection_state.status() {
                     ConnectionStatus::Disconnecting | ConnectionStatus::Disconnected => {
-                        // It's unlikely that this branch will ever be called with the current state of bevy_networking_turbulence.
-                        // TODO: track https://github.com/smokku/bevy_networking_turbulence/issues/6.
                         connection_state.set_status(ConnectionStatus::Uninitialized);
                         connection_state.session_id += SessionId::new(1);
                     }
@@ -548,7 +550,7 @@ fn disconnect_players(
     for handle in disconnected_handles {
         log::info!("Removing connection {}", handle);
         network_params.connection_states.remove(&handle);
-        network_params.net.connections.remove(&handle);
+        network_params.net.disconnect(handle);
         network_params.player_connections.remove_by_value(handle);
     }
 }
