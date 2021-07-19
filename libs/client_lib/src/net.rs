@@ -530,7 +530,7 @@ pub fn send_network_updates(
             for (frame_number, &direction) in player_direction
                 .buffer
                 .iter_with_interpolation()
-                // TODO: should client always sent redundant inputs or only the current ones (unless packet loss is detected)?
+                // TODO: should client always send redundant inputs or only the current ones (unless packet loss is detected)?
                 .skip_while(|(frame_number, _)| *frame_number < first_unacknowledged_frame)
             {
                 if Some(direction) != inputs.last().map(|i| i.direction) {

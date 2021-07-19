@@ -673,12 +673,11 @@ dependencies = [
 
 [[package]]
 name = "bevy_networking_turbulence"
-version = "0.2.0"
-source = "git+https://github.com/mvlabat/bevy_networking_turbulence.git?branch=muddle-run#b5eabb0a9e046437a13a092604f996cd73630a67"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55e63877f77f20306f68f602a817f10902e21be9a198b53a6b87cfc4bce28911"
 dependencies = [
- "bevy_app",
- "bevy_ecs",
- "bevy_tasks",
+ "bevy",
  "bytes 1.0.1",
  "cfg-if 1.0.0",
  "crossbeam-channel",
@@ -690,7 +689,6 @@ dependencies = [
  "naia-client-socket",
  "naia-server-socket",
  "turbulence",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -3066,8 +3064,9 @@ dependencies = [
 
 [[package]]
 name = "naia-client-socket"
-version = "0.5.3"
-source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#b7d679be96ddf6f76451259d8359485200b30069"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "755a837708b6ac614913b107839515cdb3906eb80ea4c3213e421c8894b70a21"
 dependencies = [
  "cfg-if 0.1.10",
  "js-sys",
@@ -3082,8 +3081,9 @@ dependencies = [
 
 [[package]]
 name = "naia-server-socket"
-version = "0.4.3"
-source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#b7d679be96ddf6f76451259d8359485200b30069"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "205182fa790df87cb64f9f2fa9b6e8f38a63604c9c2dc503534bf0e56b305559"
 dependencies = [
  "async-dup",
  "async-io",
@@ -3101,8 +3101,9 @@ dependencies = [
 
 [[package]]
 name = "naia-socket-shared"
-version = "0.4.1"
-source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#b7d679be96ddf6f76451259d8359485200b30069"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fb9afc08251e7c56f1e512e0593fb90f19bea982d76c68426d40cc659833ed7"
 dependencies = [
  "byteorder",
  "cfg-if 0.1.10",
