@@ -280,7 +280,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             (|| {
                 puffin::GlobalProfiler::lock().new_frame();
             })
-            .system(),
+            .exclusive_system().at_start(),
         );
 
         let resources = builder.world_mut();
