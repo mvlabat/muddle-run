@@ -14,6 +14,7 @@ use bevy::{
         system::{Res, SystemParam},
     },
     math::Vec2,
+    utils::HashMap,
 };
 use bevy_rapier3d::{
     physics::{ColliderBundle, RigidBodyBundle},
@@ -24,7 +25,6 @@ use bevy_rapier3d::{
     },
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(SystemParam)]
 pub struct LevelParams<'a> {

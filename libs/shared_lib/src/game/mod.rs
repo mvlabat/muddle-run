@@ -19,8 +19,8 @@ use bevy::{
         world::World,
     },
     log,
+    utils::HashMap,
 };
-use std::collections::HashMap;
 
 pub mod client_factories;
 pub mod commands;

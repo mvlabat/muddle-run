@@ -1,5 +1,5 @@
-use bevy::prelude::*;
-use std::{collections::HashMap, hash::Hash};
+use bevy::{prelude::*, utils::HashMap};
+use std::hash::Hash;
 
 #[derive(Default)]
 pub struct Registry<K: Copy + Hash + IncrementId + Eq, V: Copy + Hash> {

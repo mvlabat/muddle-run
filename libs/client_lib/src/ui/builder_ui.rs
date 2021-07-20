@@ -14,6 +14,7 @@ use bevy::{
     log,
     math::Vec2,
     transform::components::Transform,
+    utils::HashMap,
 };
 use bevy_egui::{egui, egui::Ui, EguiContext};
 use mr_shared_lib::{
@@ -31,7 +32,6 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     GameTime, SIMULATIONS_PER_SECOND,
 };
-use std::collections::HashMap;
 
 pub const DEFAULT_PERIOD: FrameNumber = FrameNumber::new(SIMULATIONS_PER_SECOND * 10);
 
@@ -520,7 +520,7 @@ fn route_settings(
             ObjectRouteDesc::ForwardCycle(route_points)
             | ObjectRouteDesc::ForwardBackwardsCycle(route_points) => {
                 let mut list = Vec::new();
-                let mut duplicate_counts = HashMap::new();
+                let mut duplicate_counts = HashMap::default();
                 for point in &*route_points {
                     if let Some(level_object) = level_objects.level_state.objects.get(point) {
                         let n = duplicate_counts

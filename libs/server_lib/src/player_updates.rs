@@ -2,6 +2,7 @@ use crate::net::PlayerConnections;
 use bevy::{
     ecs::system::{Res, ResMut},
     log,
+    utils::HashMap,
 };
 use mr_shared_lib::{
     framebuffer::FrameNumber,
@@ -19,7 +20,6 @@ use mr_shared_lib::{
     util::dedup_by_key_unsorted,
     GameTime, SimulationTime, SIMULATIONS_PER_SECOND,
 };
-use std::collections::HashMap;
 
 pub const SERVER_UPDATES_LIMIT: u16 = 64;
 pub const MAX_LAG_COMPENSATION_MILLIS: u16 = 200;

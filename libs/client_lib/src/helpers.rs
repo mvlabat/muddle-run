@@ -6,6 +6,7 @@ use bevy::{
     },
     input::{mouse::MouseButton, Input},
     math::{Mat4, Vec2, Vec4},
+    utils::HashMap,
     window::Window,
 };
 use bevy_rapier3d::{
@@ -19,7 +20,6 @@ use bevy_rapier3d::{
     },
 };
 use mr_shared_lib::{messages::PlayerNetId, player::Player};
-use std::collections::HashMap;
 
 #[derive(SystemParam)]
 pub struct PlayerParams<'a> {

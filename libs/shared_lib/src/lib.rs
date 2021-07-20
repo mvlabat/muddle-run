@@ -37,6 +37,7 @@ use bevy::{
     },
     log,
     prelude::*,
+    utils::HashMap,
 };
 use bevy_networking_turbulence::{LinkConditionerConfig, NetworkingPlugin};
 use bevy_rapier3d::{
@@ -53,7 +54,7 @@ use bevy_rapier3d::{
     },
 };
 use messages::{EntityNetId, PlayerNetId};
-use std::{borrow::Cow, collections::HashMap, sync::Mutex};
+use std::{borrow::Cow, sync::Mutex};
 
 #[cfg(feature = "client")]
 pub mod client;

@@ -6,6 +6,7 @@ use bevy::{
     diagnostic::{DiagnosticMeasurement, Diagnostics, FrameTimeDiagnosticsPlugin},
     ecs::system::SystemParam,
     prelude::*,
+    utils::HashMap,
 };
 use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::{
@@ -20,7 +21,7 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     SimulationTime,
 };
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 #[derive(SystemParam)]
 pub struct DebugData<'a> {

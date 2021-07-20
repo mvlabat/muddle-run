@@ -8,6 +8,7 @@ use bevy::{
     log,
     prelude::*,
     render::camera::CameraProjection,
+    utils::HashMap,
 };
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::WorldInspectorParams;
@@ -20,7 +21,6 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
-use std::collections::HashMap;
 
 const SWITCH_ROLE_COOLDOWN_SECS: i64 = 1;
 

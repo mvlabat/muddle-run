@@ -1,4 +1,9 @@
-use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashSet};
+use bevy::{
+    ecs::system::SystemParam,
+    log,
+    prelude::*,
+    utils::{HashMap, HashSet},
+};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
 use mr_shared_lib::{
@@ -19,7 +24,7 @@ use mr_shared_lib::{
     GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::hash_map::Entry,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 

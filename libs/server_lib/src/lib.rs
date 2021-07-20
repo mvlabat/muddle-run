@@ -9,7 +9,7 @@ use crate::{
         process_update_level_object_requests,
     },
 };
-use bevy::{core::FixedTimestep, prelude::*};
+use bevy::{core::FixedTimestep, prelude::*, utils::HashMap};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -26,7 +26,6 @@ use mr_shared_lib::{
     registry::IncrementId,
     MuddleSharedPlugin, PLANE_SIZE, SIMULATIONS_PER_SECOND,
 };
-use std::collections::HashMap;
 
 mod net;
 mod player_updates;
