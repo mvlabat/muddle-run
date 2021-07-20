@@ -11,6 +11,9 @@ members = [
 [profile.dev.package."*"]
 opt-level = 3
 
+[profile.dev]
+opt-level = 1
+
 [patch.crates-io]
 bevy = { git = "https://github.com/mvlabat/bevy//", branch = "stage-label-v0.5.0" }
 #bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
