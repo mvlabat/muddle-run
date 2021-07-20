@@ -7,7 +7,7 @@ use bevy::{
     ecs::system::SystemParam,
     prelude::*,
 };
-use bevy_egui::{egui, EguiContext, EguiSettings};
+use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -21,13 +21,6 @@ use mr_shared_lib::{
     SimulationTime,
 };
 use std::collections::{HashMap, VecDeque};
-
-pub fn update_ui_scale_factor(mut egui_settings: ResMut<EguiSettings>, windows: Res<Windows>) {
-    puffin::profile_function!();
-    if let Some(window) = windows.get_primary() {
-        egui_settings.scale_factor = 1.0 / window.scale_factor();
-    }
-}
 
 #[derive(SystemParam)]
 pub struct DebugData<'a> {

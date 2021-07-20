@@ -111,7 +111,7 @@ impl Plugin for MuddleClientPlugin {
                 None,
             ))
             // Egui.
-            .add_system(ui::debug_ui::update_ui_scale_factor.system())
+            .add_system(ui::update_ui_scale_factor.system())
             .add_system(ui::debug_ui::debug_ui.system())
             .add_system(ui::debug_ui::profiler_ui.system())
             .add_system(ui::overlay_ui::connection_status_overlay.system())
