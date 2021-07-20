@@ -15,8 +15,13 @@ use bevy::{
         component::ComponentId,
         entity::Entity,
         query::Access,
-        schedule::{ParallelSystemDescriptorCoercion, ShouldRun, State, StateError, SystemStage},
-        system::{Commands, IntoSystem, Local, Res, ResMut, System, SystemId, SystemParam},
+        schedule::{
+            ParallelSystemDescriptorCoercion, ShouldRun, StageLabel, State, StateError, SystemStage,
+        },
+        system::{
+            Commands, IntoExclusiveSystem, IntoSystem, Local, Res, ResMut, System, SystemId,
+            SystemParam,
+        },
         world::World,
     },
     log,
@@ -37,7 +42,7 @@ use mr_shared_lib::{
     GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
     SIMULATIONS_PER_SECOND,
 };
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::RefCell, thread_local};
 
 mod camera;
 mod components;
@@ -48,6 +53,8 @@ mod ui;
 mod visuals;
 
 const TICKING_SPEED_FACTOR: u16 = 10;
+
+thread_local!(static PUFFIN_SCOPES: RefCell<HashMap<Box<dyn StageLabel>, puffin::ProfilerScope>> = RefCell::new(HashMap::default()));
 
 pub struct MuddleClientPlugin;
 
@@ -112,6 +119,55 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::help_ui::help_ui.system())
             // Not only Egui for builder mode.
             .add_system_set(ui::builder_ui::builder_system_set());
+
+        let stages = builder
+            .app
+            .schedule
+            .iter_stages()
+            .map(|(stage_label, _)| stage_label.dyn_clone())
+            .collect::<Vec<_>>();
+        for stage_label in stages {
+            let puffin_id: &'static str = Box::leak(format!("{:?}", stage_label).into_boxed_str());
+            let before_stage_label: &'static str =
+                Box::leak(format!("puffin_before {:?}", stage_label).into_boxed_str());
+            let after_stage_label: &'static str =
+                Box::leak(format!("puffin_after {:?}", stage_label).into_boxed_str());
+            let stage_label_to_remove = stage_label.dyn_clone();
+
+            builder.add_stage_before(
+                stage_label.dyn_clone(),
+                before_stage_label,
+                SystemStage::parallel().with_system(
+                    (move |_world: &mut World| {
+                        PUFFIN_SCOPES.with(|scopes| {
+                            let mut scopes = scopes.borrow_mut();
+                            scopes.insert(
+                                stage_label.dyn_clone(),
+                                puffin::ProfilerScope::new(
+                                    puffin_id,
+                                    puffin::current_file_name!(),
+                                    "",
+                                ),
+                            );
+                        });
+                    })
+                    .exclusive_system(),
+                ),
+            );
+            builder.add_stage_after(
+                stage_label_to_remove.dyn_clone(),
+                after_stage_label,
+                SystemStage::parallel().with_system(
+                    (move |_world: &mut World| {
+                        PUFFIN_SCOPES.with(|scopes| {
+                            let mut scopes = scopes.borrow_mut();
+                            scopes.remove(&stage_label_to_remove);
+                        });
+                    })
+                    .exclusive_system(),
+                ),
+            );
+        }
 
         let world = builder.world_mut();
         world
