@@ -25,6 +25,7 @@ use crate::{
     net::network_setup,
     player::{Player, PlayerUpdates},
     registry::EntityRegistry,
+    util::profile_schedule,
 };
 use bevy::{
     app::Events,
@@ -145,7 +146,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .lock()
             .expect("Can't initialize the plugin more than once");
 
-        let simulation_schedule = Schedule::default()
+        let mut simulation_schedule = Schedule::default()
             .with_run_criteria(SimulationTickRunCriteria::default())
             .with_stage(
                 stage::SPAWN,
@@ -199,8 +200,9 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 stage::POST_GAME,
                 SystemStage::parallel().with_system(tick_simulation_frame.system()),
             );
+        profile_schedule(&mut simulation_schedule);
 
-        let main_schedule = Schedule::default()
+        let mut main_schedule = Schedule::default()
             .with_run_criteria(
                 main_run_criteria
                     .take()
@@ -229,6 +231,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                     .expect("Can't initialize the plugin more than once")
                     .with_system(physics::collect_removals.system()),
             );
+        profile_schedule(&mut main_schedule);
 
         builder.add_stage_before(
             bevy::app::CoreStage::Update,
