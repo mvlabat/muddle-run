@@ -12,7 +12,6 @@ use bevy::{
 };
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::WorldInspectorParams;
-use bevy_rapier3d::{na, rapier::geometry::Ray};
 use chrono::{DateTime, Utc};
 use mr_shared_lib::{
     game::{components::Spawned, level::LevelObject},
@@ -53,14 +52,17 @@ pub struct MouseScreenPosition(pub Vec2);
 #[derive(Default)]
 pub struct MouseWorldPosition(pub Vec2);
 
-pub struct MouseRay(pub Ray);
+pub struct MouseRay {
+    pub origin: Vec3,
+    pub direction: Vec3,
+}
 
 impl Default for MouseRay {
     fn default() -> Self {
-        Self(Ray::new(
-            na::Point3::new(0.0, 0.0, 0.0),
-            na::Vector3::new(0.0, 0.0, 0.0),
-        ))
+        Self {
+            origin: Vec3::ZERO,
+            direction: Vec3::ZERO,
+        }
     }
 }
 
@@ -189,7 +191,7 @@ pub fn cast_mouse_ray(
     let (camera_transform, _camera, camera_projection) = cameras
         .get(main_camera_entity.0)
         .expect("expected a main camera");
-    mouse_ray.0 = helpers::cursor_pos_to_ray(
+    *mouse_ray = helpers::cursor_pos_to_ray(
         mouse_position.0,
         window,
         &camera_transform.compute_matrix(),
@@ -197,17 +199,13 @@ pub fn cast_mouse_ray(
     );
 
     mouse_world_position.0 = {
-        let ray_direction = Vec3::new(mouse_ray.0.dir.x, mouse_ray.0.dir.y, mouse_ray.0.dir.z);
-        let ray_origin = Vec3::new(
-            mouse_ray.0.origin.x,
-            mouse_ray.0.origin.y,
-            mouse_ray.0.origin.z,
-        );
         let plane_normal = Vec3::Z;
-        let denom = plane_normal.dot(ray_direction);
+        let denom = plane_normal.dot(mouse_ray.direction);
         if denom.abs() > f32::EPSILON {
-            let t = (-ray_origin).dot(plane_normal) / denom;
-            let i = ray_origin.lerp(ray_origin + ray_direction, t);
+            let t = (-mouse_ray.origin).dot(plane_normal) / denom;
+            let i = mouse_ray
+                .origin
+                .lerp(mouse_ray.origin + mouse_ray.direction, t);
             Vec2::new(i.x, i.y)
         } else {
             Vec2::ZERO

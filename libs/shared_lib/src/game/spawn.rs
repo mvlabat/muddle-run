@@ -20,7 +20,7 @@ use crate::{
     GameTime, SimulationTime, PLAYER_SIZE,
 };
 use bevy::{log, prelude::*};
-use bevy_rapier3d::{
+use bevy_rapier2d::{
     physics::{ColliderBundle, ColliderPositionSync, RigidBodyBundle},
     rapier::{
         dynamics::{RigidBodyMassProps, RigidBodyMassPropsFlags},
@@ -84,7 +84,7 @@ pub fn spawn_players(
         entity_commands
             .insert(PlayerTag)
             .insert_bundle(RigidBodyBundle {
-                position: [0.0, 0.0, PLAYER_SIZE].into(),
+                position: [0.0, 0.0].into(),
                 mass_properties: RigidBodyMassProps {
                     flags: RigidBodyMassPropsFlags::ROTATION_LOCKED,
                     ..RigidBodyMassProps::default()
@@ -92,7 +92,7 @@ pub fn spawn_players(
                 ..RigidBodyBundle::default()
             })
             .insert_bundle(ColliderBundle {
-                shape: ColliderShape::cuboid(PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE),
+                shape: ColliderShape::cuboid(PLAYER_SIZE, PLAYER_SIZE),
                 ..ColliderBundle::default()
             })
             .insert(Position::new(

@@ -43,9 +43,11 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
                 size: PLAYER_SIZE * 2.0,
             })),
             material: deps.materials.player.clone(),
+            transform: Transform::from_translation(position.extend(PLAYER_SIZE)),
             ..Default::default()
         });
         commands.insert(PredictedPosition { value: *position });
+        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
         if *is_player_frame_simulated {
             commands.insert(PlayerFrameSimulated);
         }
@@ -54,6 +56,7 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
         commands.remove_bundle::<PbrBundle>();
+        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
         let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
@@ -98,14 +101,17 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
             } else {
                 deps.materials.normal.plane.clone()
             },
+            transform: Transform::from_translation(input.desc.position.extend(0.0)),
             ..Default::default()
         });
+        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
         commands.insert(PlayerFrameSimulated);
     }
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
         commands.remove_bundle::<PbrBundle>();
+        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
         let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
@@ -145,14 +151,17 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
             } else {
                 deps.materials.normal.cube.clone()
             },
+            transform: Transform::from_translation(input.desc.position.extend(input.desc.size)),
             ..Default::default()
         });
+        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
         commands.insert(PlayerFrameSimulated);
     }
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
         commands.remove_bundle::<PbrBundle>();
+        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
         let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
@@ -198,12 +207,14 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
             },
             ..Default::default()
         });
+        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
         commands.insert(PlayerFrameSimulated);
     }
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
         commands.remove_bundle::<PbrBundle>();
+        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
         let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }

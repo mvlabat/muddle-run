@@ -41,7 +41,7 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_networking_turbulence::{LinkConditionerConfig, NetworkingPlugin};
-use bevy_rapier3d::{
+use bevy_rapier2d::{
     physics,
     physics::{
         JointsEntityMap, ModificationTracker, NoUserData, PhysicsHooksWithQueryObject,
@@ -301,7 +301,7 @@ impl Plugin for RapierResourcesPlugin {
             .insert_resource(PhysicsPipeline::new())
             .insert_resource(QueryPipeline::new())
             .insert_resource(RapierConfiguration {
-                gravity: Vector::new(0.0, 0.0, 0.0),
+                gravity: Vector::new(0.0, 0.0),
                 timestep_mode: TimestepMode::FixedTimestep,
                 ..RapierConfiguration::default()
             })

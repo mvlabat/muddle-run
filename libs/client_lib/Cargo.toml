@@ -15,8 +15,9 @@ web = ["mr_shared_lib/web", "chrono/wasmbind"]
 [dependencies]
 bevy_egui = "0.6.1"
 bevy-inspector-egui = { git = "https://github.com/jakobhellermann/bevy-inspector-egui.git", rev = "2a7a0c1" }
+bevy_mod_picking = "0.4.0"
 bevy_networking_turbulence = { version = "0.3.3", default-features = false }
-bevy_rapier3d = { version = "0.10.2", features = ["wasm-bindgen"] }
+bevy_rapier2d = { version = "0.10.2", features = ["wasm-bindgen"] }
 chrono = "0.4.19"
 env_logger = "0.8.1"
 puffin = "0.6.0"

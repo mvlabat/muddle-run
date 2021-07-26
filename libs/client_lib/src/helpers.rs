@@ -1,23 +1,13 @@
-use crate::{input::MouseRay, CurrentPlayerNetId};
+use crate::{input::MouseRay, CurrentPlayerNetId, MainCameraEntity};
 use bevy::{
     ecs::{
         entity::Entity,
-        system::{Local, Res, SystemParam},
+        system::{Local, Query, Res, SystemParam},
     },
     input::{mouse::MouseButton, Input},
     math::{Mat4, Vec2, Vec4},
     utils::HashMap,
     window::Window,
-};
-use bevy_rapier3d::{
-    physics::{
-        IntoEntity, QueryPipelineColliderComponentsQuery, QueryPipelineColliderComponentsSet,
-    },
-    rapier::{
-        geometry::{InteractionGroups, Ray},
-        na,
-        pipeline::QueryPipeline,
-    },
 };
 use mr_shared_lib::{messages::PlayerNetId, player::Player};
 
@@ -38,25 +28,15 @@ impl<'a> PlayerParams<'a> {
 #[derive(SystemParam)]
 pub struct MouseEntityPicker<'a> {
     picked_entity: Local<'a, Option<Entity>>,
-    colliders: QueryPipelineColliderComponentsQuery<'a, 'static>,
     mouse_input: Res<'a, Input<MouseButton>>,
-    mouse_ray: Res<'a, MouseRay>,
-    query_pipeline: Res<'a, QueryPipeline>,
+    camera_query: Query<'a, &'static bevy_mod_picking::PickingCamera>,
+    camera_entity: Res<'a, MainCameraEntity>,
 }
 
 impl<'a> MouseEntityPicker<'a> {
     pub fn hovered_entity(&self) -> Option<Entity> {
-        let colliders = QueryPipelineColliderComponentsSet(&self.colliders);
-        self.query_pipeline
-            .cast_ray(
-                &colliders,
-                &self.mouse_ray.0,
-                f32::MAX,
-                true,
-                InteractionGroups::all(),
-                None,
-            )
-            .map(|(collider, _)| collider.entity())
+        let picking_camera = self.camera_query.get(self.camera_entity.0).unwrap();
+        picking_camera.intersect_top().map(|(entity, _)| entity)
     }
 
     pub fn pick_entity(&mut self) {
@@ -80,7 +60,7 @@ pub fn cursor_pos_to_ray(
     window: &Window,
     camera_transform: &Mat4,
     camera_perspective: &Mat4,
-) -> Ray {
+) -> MouseRay {
     // Calculate the cursor pos in NDC space [(-1,-1), (1,1)].
     let cursor_ndc = Vec4::from((
         (cursor_viewport.x / window.width() as f32) * 2.0 - 1.0,
@@ -102,10 +82,8 @@ pub fn cursor_pos_to_ray(
     let ray_world = object_to_world.mul_vec4(ray_camera);
     let ray_world = ray_world.truncate();
 
-    let camera_pos = camera_transform.w_axis.truncate();
-    let camera_pos = na::Point3::new(camera_pos.x, camera_pos.y, camera_pos.z);
-    Ray::new(
-        camera_pos,
-        na::Vector3::from_row_slice(ray_world.normalize().as_ref()),
-    )
+    MouseRay {
+        origin: camera_transform.w_axis.truncate(),
+        direction: ray_world.normalize(),
+    }
 }

@@ -88,6 +88,7 @@ impl Plugin for MuddleClientPlugin {
             .with_system(update_debug_ui_state.system().after("pause_simulation"));
 
         builder
+            .add_plugin(bevy_mod_picking::PickingPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(EguiPlugin)
             .add_plugin(WorldInspectorPlugin::new())
@@ -316,6 +317,7 @@ fn basic_scene(mut commands: Commands) {
                 .looking_at(Vec3::default(), Vec3::Z),
             ..Default::default()
         })
+        .insert_bundle(bevy_mod_picking::PickingCameraBundle::default())
         .insert(Parent(main_camera_pivot_entity))
         .id();
     commands.insert_resource(MainCameraPivotEntity(main_camera_pivot_entity));

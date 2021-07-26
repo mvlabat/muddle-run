@@ -6,7 +6,7 @@ use crate::{
     messages::PlayerNetId,
     player::PlayerUpdates,
     registry::EntityRegistry,
-    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, PLAYER_SIZE, SIMULATIONS_PER_SECOND,
+    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
 };
 use bevy::{
     ecs::{
@@ -18,7 +18,7 @@ use bevy::{
     math::Vec2,
     transform::components::Transform,
 };
-use bevy_rapier3d::rapier::{
+use bevy_rapier2d::rapier::{
     dynamics::{RigidBodyPosition, RigidBodyVelocity},
     math::Vector,
 };
@@ -165,7 +165,6 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
         });
         body_position.translation.x = current_position.x;
         body_position.translation.y = current_position.y;
-        body_position.translation.z = PLAYER_SIZE;
 
         let zero_vec = Vec2::new(0.0, 0.0);
         let (_, current_direction) = player_direction
@@ -189,7 +188,7 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
             });
         let current_direction_norm = current_direction.normalize_or_zero() * PLAYER_MOVEMENT_SPEED;
         rigid_body_velocity.linvel =
-            Vector::new(current_direction_norm.x, current_direction_norm.y, 0.0);
+            Vector::new(current_direction_norm.x, current_direction_norm.y);
     }
 }
 
