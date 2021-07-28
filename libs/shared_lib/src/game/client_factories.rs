@@ -5,11 +5,14 @@ use crate::{
     game::components::{PlayerFrameSimulated, PredictedPosition},
     GHOST_SIZE_MULTIPLIER, PLAYER_SIZE,
 };
-#[cfg(feature = "client")]
-use bevy::prelude::*;
 use bevy::{
     ecs::system::{EntityCommands, SystemParam},
     math::Vec2,
+};
+#[cfg(feature = "client")]
+use bevy::{
+    prelude::*,
+    render::{mesh::Indices, pipeline::PrimitiveTopology},
 };
 
 pub trait ClientFactory<'a> {
@@ -19,7 +22,7 @@ pub trait ClientFactory<'a> {
     fn insert_components(
         _commands: &mut EntityCommands,
         _deps: &mut Self::Dependencies,
-        _input: &Self::Input,
+        _input: Self::Input,
     ) {
     }
 
@@ -36,7 +39,7 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
     fn insert_components(
         commands: &mut EntityCommands,
         deps: &mut Self::Dependencies,
-        (position, is_player_frame_simulated): &Self::Input,
+        (position, is_player_frame_simulated): Self::Input,
     ) {
         commands.insert_bundle(PbrBundle {
             mesh: deps.meshes.add(Mesh::from(shape::Cube {
@@ -46,9 +49,9 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
             transform: Transform::from_translation(position.extend(PLAYER_SIZE)),
             ..Default::default()
         });
-        commands.insert(PredictedPosition { value: *position });
+        commands.insert(PredictedPosition { value: position });
         commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
-        if *is_player_frame_simulated {
+        if is_player_frame_simulated {
             commands.insert(PlayerFrameSimulated);
         }
     }
@@ -64,26 +67,105 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
 
 pub struct PlaneClientFactory;
 
-pub struct LevelObjectInput<T> {
+#[derive(Clone)]
+pub struct LevelObjectInput<T: Clone> {
     pub desc: T,
     pub is_ghost: bool,
 }
 
 impl<'a> ClientFactory<'a> for PlaneClientFactory {
     type Dependencies = PbrClientParams<'a>;
-    type Input = LevelObjectInput<PlaneDesc>;
+    type Input = (
+        LevelObjectInput<PlaneDesc>,
+        Option<bevy_rapier2d::rapier::geometry::SharedShape>,
+    );
 
     #[cfg(feature = "client")]
     fn insert_components(
         commands: &mut EntityCommands,
         deps: &mut Self::Dependencies,
-        input: &Self::Input,
+        (input, shape): Self::Input,
     ) {
         let ghost_size_multiplier = if input.is_ghost {
             GHOST_SIZE_MULTIPLIER
         } else {
             1.0
         };
+
+        let mesh = match &input.desc.form_desc {
+            PlaneFormDesc::Circle { radius } => Mesh::from(XyCircle {
+                radius: radius * ghost_size_multiplier,
+            }),
+            PlaneFormDesc::Rectangle { size } => Mesh::from(XyPlane {
+                size: *size * ghost_size_multiplier,
+            }),
+            PlaneFormDesc::Concave { points: _ } => {
+                let shape = shape
+                    .as_ref()
+                    .expect("Expected a collider shape for a concave plane");
+
+                let mut index = 0;
+                let mut indices: Vec<u32> = Vec::new();
+                let mut positions: Vec<[f32; 3]> = Vec::new();
+                let mut normals: Vec<[f32; 3]> = Vec::new();
+                let mut uvs: Vec<[f32; 2]> = Vec::new();
+                match shape.as_typed_shape() {
+                    bevy_rapier2d::rapier::geometry::TypedShape::Compound(compound) => {
+                        for (isometry, shape) in compound.shapes() {
+                            match shape.as_typed_shape() {
+                                bevy_rapier2d::rapier::geometry::TypedShape::ConvexPolygon(
+                                    convex,
+                                ) => {
+                                    for i in 1..convex.points().len() - 1 {
+                                        let i = convex.points().len() - i - 1;
+                                        let points = vec![
+                                            isometry * convex.points()[convex.points().len() - 1],
+                                            isometry * convex.points()[i],
+                                            isometry * convex.points()[i - 1],
+                                        ];
+                                        for point in points {
+                                            let position = [
+                                                point.x * ghost_size_multiplier,
+                                                point.y * ghost_size_multiplier,
+                                                0.0,
+                                            ];
+                                            #[allow(clippy::float_cmp)]
+                                            if let Some(existing_index) =
+                                                positions.iter().position(|p| *p == position)
+                                            {
+                                                indices.push(existing_index as u32);
+                                            } else {
+                                                indices.push(index);
+                                                positions.push(position);
+                                                normals.push([0.0, 0.0, 1.0]);
+                                                uvs.push([0.0, 0.0]);
+                                                index += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => panic!(
+                                    "Unexpected shape type (ConvexPolygon is expected): {:?}",
+                                    shape.shape_type()
+                                ),
+                            };
+                        }
+                    }
+                    _ => panic!(
+                        "Unexpected shape type (Compound is expected): {:?}",
+                        shape.shape_type()
+                    ),
+                }
+
+                let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+                mesh.set_indices(Some(Indices::U32(indices)));
+                mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+                mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+                mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+                mesh
+            }
+        };
+
         commands.insert_bundle(PbrBundle {
             visible: Visible {
                 is_visible: if input.is_ghost {
@@ -93,9 +175,7 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
                 },
                 is_transparent: input.is_ghost,
             },
-            mesh: deps.meshes.add(Mesh::from(XyPlane {
-                size: input.desc.size * 2.0 * ghost_size_multiplier,
-            })),
+            mesh: deps.meshes.add(mesh),
             material: if input.is_ghost {
                 deps.materials.ghost.plane.clone()
             } else {
@@ -127,7 +207,7 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
     fn insert_components(
         commands: &mut EntityCommands,
         deps: &mut Self::Dependencies,
-        input: &Self::Input,
+        input: Self::Input,
     ) {
         let ghost_size_multiplier = if input.is_ghost {
             GHOST_SIZE_MULTIPLIER
@@ -180,7 +260,7 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
     fn insert_components(
         commands: &mut EntityCommands,
         deps: &mut Self::Dependencies,
-        input: &Self::Input,
+        input: Self::Input,
     ) {
         let ghost_size_multiplier = if input.is_ghost {
             GHOST_SIZE_MULTIPLIER

@@ -3,7 +3,6 @@ use crate::{
     game::{client_factories::ROUTE_POINT_BASE_EDGE_HALF_LEN, level_objects::*},
     messages::EntityNetId,
     registry::EntityRegistry,
-    GHOST_SIZE_MULTIPLIER,
 };
 use bevy::{
     ecs::{
@@ -14,10 +13,12 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_rapier2d::{
+    na::Point2,
     physics::{ColliderBundle, RigidBodyBundle},
     rapier::{
         dynamics::RigidBodyType,
         geometry::{ColliderShape, ColliderType},
+        parry::transformation::vhacd::VHACDParameters,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -107,23 +108,54 @@ impl LevelObjectDesc {
     }
 
     pub fn physics_body(&self, is_ghost: bool) -> (RigidBodyBundle, ColliderBundle) {
-        let ghost_multiplier = if is_ghost { GHOST_SIZE_MULTIPLIER } else { 1.0 };
         match self {
-            Self::Plane(plane) => (
-                RigidBodyBundle {
-                    body_type: RigidBodyType::KinematicPositionBased,
-                    position: self.position().unwrap().into(),
-                    ..RigidBodyBundle::default()
-                },
-                ColliderBundle {
-                    collider_type: ColliderType::Sensor,
-                    shape: ColliderShape::cuboid(
-                        plane.size * ghost_multiplier,
-                        plane.size * ghost_multiplier,
-                    ),
-                    ..ColliderBundle::default()
-                },
-            ),
+            Self::Plane(plane) => {
+                let shape = match &plane.form_desc {
+                    PlaneFormDesc::Circle { radius } => ColliderShape::ball(*radius),
+                    PlaneFormDesc::Rectangle { size } => {
+                        let hsize = *size / 2.0;
+                        ColliderShape::cuboid(hsize.x, hsize.y)
+                    }
+                    PlaneFormDesc::Concave { points } => {
+                        assert!(points.len() > 2);
+                        let vertices = points
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, point)| {
+                                if i > 0 && points[i - 1] == *point {
+                                    None
+                                } else {
+                                    Some(Point2::new(point.x, point.y))
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        let mut indices = (0..vertices.len() - 1)
+                            .map(|i| [i as u32, i as u32 + 1])
+                            .collect::<Vec<_>>();
+                        indices.push([indices.last().unwrap()[1], 0]);
+                        ColliderShape::convex_decomposition_with_params(
+                            &vertices,
+                            &indices,
+                            &VHACDParameters {
+                                concavity: 0.01,
+                                ..Default::default()
+                            },
+                        )
+                    }
+                };
+                (
+                    RigidBodyBundle {
+                        body_type: RigidBodyType::KinematicPositionBased,
+                        position: self.position().unwrap().into(),
+                        ..RigidBodyBundle::default()
+                    },
+                    ColliderBundle {
+                        collider_type: ColliderType::Sensor,
+                        shape,
+                        ..ColliderBundle::default()
+                    },
+                )
+            }
             Self::Cube(cube) => (
                 RigidBodyBundle {
                     body_type: RigidBodyType::KinematicPositionBased,
@@ -136,10 +168,7 @@ impl LevelObjectDesc {
                     } else {
                         ColliderType::Solid
                     },
-                    shape: ColliderShape::cuboid(
-                        cube.size * ghost_multiplier,
-                        cube.size * ghost_multiplier,
-                    ),
+                    shape: ColliderShape::cuboid(cube.size, cube.size),
                     ..ColliderBundle::default()
                 },
             ),
@@ -152,8 +181,8 @@ impl LevelObjectDesc {
                 ColliderBundle {
                     collider_type: ColliderType::Sensor,
                     shape: ColliderShape::cuboid(
-                        ROUTE_POINT_BASE_EDGE_HALF_LEN * 2.0 * ghost_multiplier,
-                        ROUTE_POINT_BASE_EDGE_HALF_LEN * 2.0 * ghost_multiplier,
+                        ROUTE_POINT_BASE_EDGE_HALF_LEN * 2.0,
+                        ROUTE_POINT_BASE_EDGE_HALF_LEN * 2.0,
                     ),
                     ..ColliderBundle::default()
                 },

@@ -16,7 +16,10 @@ use bevy::{
     transform::components::Transform,
     utils::HashMap,
 };
-use bevy_egui::{egui, egui::Ui, EguiContext};
+use bevy_egui::{
+    egui::{self, Ui, Widget},
+    EguiContext,
+};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -24,7 +27,7 @@ use mr_shared_lib::{
             LevelObjectLabel, LevelObjectStaticGhost, LevelObjectStaticGhostParent, Spawned,
         },
         level::{LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc},
-        level_objects::{CubeDesc, PlaneDesc, RoutePointDesc},
+        level_objects::{CubeDesc, PlaneDesc, PlaneFormDesc, RoutePointDesc},
     },
     messages::{EntityNetId, SpawnLevelObjectRequest, SpawnLevelObjectRequestBody},
     net::MessageId,
@@ -32,6 +35,16 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     simulations_per_second, GameTime,
 };
+
+pub const DEFAULT_PLANE_CIRCLE_RADIUS: f32 = 10.0;
+pub const DEFAULT_PLANE_RECTANGLE_SIZE: [f32; 2] = [10.0, 10.0];
+pub const DEFAULT_PLANE_CONCAVE_POINTS: &[[f32; 2]] = &[
+    [-8.0, -5.0],
+    [8.0, -5.0],
+    [10.0, 5.0],
+    [0.0, 3.50],
+    [-10.0, 5.0],
+];
 
 pub fn default_period() -> FrameNumber {
     FrameNumber::new(simulations_per_second() * 10)
@@ -315,7 +328,9 @@ pub fn builder_ui(
                         correlation_id,
                         body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::Plane(PlaneDesc {
                             position: mouse_input.mouse_world_position.0,
-                            size: 50.0,
+                            form_desc: PlaneFormDesc::Rectangle {
+                                size: DEFAULT_PLANE_RECTANGLE_SIZE.into(),
+                            },
                         })),
                     });
             }
@@ -426,11 +441,13 @@ fn level_object_ui(
             }
 
             match &mut dirty_level_object.desc {
-                LevelObjectDesc::Cube(CubeDesc { size, .. })
-                | LevelObjectDesc::Plane(PlaneDesc { size, .. }) => {
+                LevelObjectDesc::Cube(CubeDesc { size, .. }) => {
                     ui.label("Size");
                     ui.add(egui::widgets::DragValue::new(size).speed(0.01));
                     ui.end_row();
+                }
+                LevelObjectDesc::Plane(PlaneDesc { form_desc, .. }) => {
+                    plane_form(ui, form_desc);
                 }
                 LevelObjectDesc::RoutePoint(_) => {}
             }
@@ -499,6 +516,141 @@ fn level_object_ui(
                 }
             }
         });
+}
+
+fn plane_form(ui: &mut egui::Ui, dirty_plane_form_desc: &mut PlaneFormDesc) {
+    ui.label("Form type");
+    plane_form_type(ui, dirty_plane_form_desc);
+    ui.end_row();
+
+    match dirty_plane_form_desc {
+        PlaneFormDesc::Circle { radius } => {
+            ui.label("Radius");
+            ui.add(
+                egui::widgets::DragValue::new(radius)
+                    .speed(0.01)
+                    .clamp_range(1.0..=f32::MAX),
+            );
+            ui.end_row();
+        }
+        PlaneFormDesc::Rectangle { size } => {
+            ui.label("Size");
+            ui.horizontal(|ui| {
+                ui.label("Width:");
+                ui.add(
+                    egui::widgets::DragValue::new(&mut size.x)
+                        .speed(0.01)
+                        .clamp_range(1.0..=f32::MAX),
+                );
+                ui.label("Height:");
+                ui.add(
+                    egui::widgets::DragValue::new(&mut size.y)
+                        .speed(0.01)
+                        .clamp_range(1.0..=f32::MAX),
+                );
+            });
+            ui.end_row();
+        }
+        PlaneFormDesc::Concave { points } => {
+            ui.label("Points");
+            ui.vertical(|ui| {
+                ui.group(|ui| {
+                    egui::ScrollArea::from_max_height(200.0).show(ui, |ui| {
+                        let removing_enabled = points.len() > 3;
+                        let mut point_to_remove = None;
+                        for (i, point) in points.iter_mut().enumerate() {
+                            ui.horizontal(|ui| {
+                                ui.label("X:");
+                                ui.add(egui::widgets::DragValue::new(&mut point.x).speed(0.1));
+                                ui.label("Y:");
+                                ui.add(egui::widgets::DragValue::new(&mut point.y).speed(0.1));
+                                if egui::Button::new("❌")
+                                    .enabled(removing_enabled)
+                                    .ui(ui)
+                                    .clicked()
+                                {
+                                    point_to_remove = Some(i);
+                                }
+                            });
+                        }
+                        if let Some(point_to_remove) = point_to_remove {
+                            points.remove(point_to_remove);
+                        }
+                    });
+                    if ui.button("Add").clicked() {
+                        points.push(Vec2::new(1.0, 1.0));
+                    }
+                });
+            });
+            ui.end_row();
+        }
+    }
+}
+
+fn plane_form_type(ui: &mut egui::Ui, dirty_plane_form_desc: &mut PlaneFormDesc) {
+    #[derive(Copy, Clone, PartialEq, Debug)]
+    enum Type {
+        Circle,
+        Rectangle,
+        Concave,
+    }
+
+    impl std::fmt::Display for Type {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Type::Circle => write!(f, "Circle"),
+                Type::Rectangle => write!(f, "Rectangle"),
+                Type::Concave => write!(f, "Concave"),
+            }
+        }
+    }
+
+    let plane_form_type = match dirty_plane_form_desc {
+        PlaneFormDesc::Circle { .. } => Type::Circle,
+        PlaneFormDesc::Rectangle { .. } => Type::Rectangle,
+        PlaneFormDesc::Concave { .. } => Type::Concave,
+    };
+    let mut dirty_plane_form_type = plane_form_type;
+
+    egui::containers::ComboBox::from_id_source("plane_form")
+        .width(200.0)
+        .selected_text(plane_form_type.to_string())
+        .show_ui(ui, |ui| {
+            ui.selectable_value(
+                &mut dirty_plane_form_type,
+                Type::Circle,
+                Type::Circle.to_string(),
+            );
+            ui.selectable_value(
+                &mut dirty_plane_form_type,
+                Type::Rectangle,
+                Type::Rectangle.to_string(),
+            );
+            ui.selectable_value(
+                &mut dirty_plane_form_type,
+                Type::Concave,
+                Type::Concave.to_string(),
+            );
+        });
+
+    if plane_form_type == dirty_plane_form_type {
+        return;
+    }
+
+    *dirty_plane_form_desc = match dirty_plane_form_type {
+        Type::Circle => PlaneFormDesc::Circle {
+            radius: DEFAULT_PLANE_CIRCLE_RADIUS,
+        },
+        Type::Rectangle => PlaneFormDesc::Rectangle {
+            size: DEFAULT_PLANE_RECTANGLE_SIZE.into(),
+        },
+        Type::Concave => PlaneFormDesc::Concave {
+            points: DEFAULT_PLANE_CONCAVE_POINTS
+                .iter()
+                .map(|line| (*line).into())
+                .collect(),
+        },
+    };
 }
 
 fn route_settings(
@@ -659,7 +811,7 @@ fn route_type(ui: &mut egui::Ui, dirty_level_object: &mut LevelObject) {
     };
     let mut dirty_route_type = route_type;
 
-    egui::containers::ComboBox::from_label("")
+    egui::containers::ComboBox::from_id_source("route_type")
         .width(200.0)
         .selected_text(route_type.to_string())
         .show_ui(ui, |ui| {

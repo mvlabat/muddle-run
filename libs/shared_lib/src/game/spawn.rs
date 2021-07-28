@@ -68,7 +68,7 @@ pub fn spawn_players(
             PlayerClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,
-                &(command.start_position, command.is_player_frame_simulated),
+                (command.start_position, command.is_player_frame_simulated),
             );
             spawned.push_command(time.server_frame, SpawnCommand::Spawn);
 
@@ -79,7 +79,7 @@ pub fn spawn_players(
         PlayerClientFactory::insert_components(
             &mut entity_commands,
             &mut pbr_client_params,
-            &(command.start_position, command.is_player_frame_simulated),
+            (command.start_position, command.is_player_frame_simulated),
         );
         entity_commands
             .insert(PlayerTag)
@@ -221,19 +221,23 @@ pub fn update_level_objects(
             .objects
             .insert(command.object.net_id, command.object.clone());
         let mut entity_commands = commands.spawn();
+        let (rigid_body, collider) = command.object.desc.physics_body(false);
         match &command.object.desc {
             LevelObjectDesc::Plane(plane) => PlaneClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,
-                &LevelObjectInput {
-                    desc: plane.clone(),
-                    is_ghost: false,
-                },
+                (
+                    LevelObjectInput {
+                        desc: plane.clone(),
+                        is_ghost: false,
+                    },
+                    Some(collider.shape.clone()),
+                ),
             ),
             LevelObjectDesc::Cube(cube) => CubeClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,
-                &LevelObjectInput {
+                LevelObjectInput {
                     desc: cube.clone(),
                     is_ghost: false,
                 },
@@ -241,7 +245,7 @@ pub fn update_level_objects(
             LevelObjectDesc::RoutePoint(route_point) => RoutePointClientFactory::insert_components(
                 &mut entity_commands,
                 &mut pbr_client_params,
-                &LevelObjectInput {
+                LevelObjectInput {
                     desc: route_point.clone(),
                     is_ghost: false,
                 },
@@ -267,7 +271,6 @@ pub fn update_level_objects(
             };
             entity_commands.insert(position_component);
         }
-        let (rigid_body, collider) = command.object.desc.physics_body(false);
         entity_commands
             .insert(command.object.net_id)
             .insert(LevelObjectTag)
@@ -284,24 +287,22 @@ pub fn update_level_objects(
             // Spawning the ghost object.
             let mut ghost_commands = commands.entity(ghost_entity);
             let (rigid_body, collider) = command.object.desc.physics_body(true);
-            ghost_commands
-                .insert(LevelObjectStaticGhost(level_object_entity))
-                .insert_bundle(rigid_body)
-                .insert_bundle(collider)
-                .insert(ColliderPositionSync::Discrete);
             match &command.object.desc {
                 LevelObjectDesc::Plane(plane) => PlaneClientFactory::insert_components(
                     &mut ghost_commands,
                     &mut pbr_client_params,
-                    &LevelObjectInput {
-                        desc: plane.clone(),
-                        is_ghost: true,
-                    },
+                    (
+                        LevelObjectInput {
+                            desc: plane.clone(),
+                            is_ghost: true,
+                        },
+                        Some(collider.shape.clone()),
+                    ),
                 ),
                 LevelObjectDesc::Cube(cube) => CubeClientFactory::insert_components(
                     &mut ghost_commands,
                     &mut pbr_client_params,
-                    &LevelObjectInput {
+                    LevelObjectInput {
                         desc: cube.clone(),
                         is_ghost: true,
                     },
@@ -310,13 +311,18 @@ pub fn update_level_objects(
                     RoutePointClientFactory::insert_components(
                         &mut ghost_commands,
                         &mut pbr_client_params,
-                        &LevelObjectInput {
+                        LevelObjectInput {
                             desc: route_point.clone(),
                             is_ghost: true,
                         },
                     )
                 }
             };
+            ghost_commands
+                .insert(LevelObjectStaticGhost(level_object_entity))
+                .insert_bundle(rigid_body)
+                .insert_bundle(collider)
+                .insert(ColliderPositionSync::Discrete);
         }
     }
 }

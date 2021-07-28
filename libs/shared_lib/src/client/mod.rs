@@ -1,23 +1,81 @@
 pub mod materials;
 
+use crate::game::components::rotate;
 use bevy::{
-    math::Vec3,
+    math::{Vec2, Vec3},
     render::{
         mesh::{Indices, Mesh},
         pipeline::PrimitiveTopology,
     },
 };
 
-/// A square on the XZ plane.
+/// A circle on the XZ plane.
+#[derive(Debug, Copy, Clone)]
+pub struct XyCircle {
+    pub radius: f32,
+}
+
+impl Default for XyCircle {
+    fn default() -> Self {
+        Self { radius: 1.0 }
+    }
+}
+
+impl From<XyCircle> for Mesh {
+    fn from(plane: XyCircle) -> Self {
+        let segments = plane.optimal_segments_count();
+        let radius = Vec2::new(plane.radius, 0.0);
+
+        let mut positions = vec![[0.0, 0.0, 0.0]];
+        let mut indices = Vec::new();
+        for i in 0..segments {
+            positions.push(
+                rotate(
+                    radius,
+                    2.0 * std::f32::consts::PI / segments as f32 * i as f32,
+                )
+                .extend(0.0)
+                .into(),
+            );
+            indices.push(0u32);
+            indices.push(i + 1);
+            indices.push((i + 1) % segments + 1);
+        }
+        let normals = positions
+            .iter()
+            .map(|_| [0.0, 0.0, 1.0])
+            .collect::<Vec<_>>();
+        let uvs = positions.iter().map(|_| [0.0, 0.0]).collect::<Vec<_>>();
+
+        let indices = Indices::U32(indices);
+
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.set_indices(Some(indices));
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+        mesh
+    }
+}
+
+impl XyCircle {
+    fn optimal_segments_count(&self) -> u32 {
+        (self.radius.sqrt() * 24.0) as u32
+    }
+}
+
+/// A rectangle on the XZ plane.
 #[derive(Debug, Copy, Clone)]
 pub struct XyPlane {
     /// The total side length of the square.
-    pub size: f32,
+    pub size: Vec2,
 }
 
 impl Default for XyPlane {
     fn default() -> Self {
-        Self { size: 1.0 }
+        Self {
+            size: Vec2::new(1.0, 1.0),
+        }
     }
 }
 
@@ -26,10 +84,10 @@ impl From<XyPlane> for Mesh {
         let extent = plane.size / 2.0;
 
         let vertices = [
-            ([extent, -extent, 0.0], [0.0, 0.0, 1.0], [1.0, 1.0]),
-            ([extent, extent, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0]),
-            ([-extent, extent, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0]),
-            ([-extent, -extent, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0]),
+            ([extent.x, -extent.y, 0.0], [0.0, 0.0, 1.0], [1.0, 1.0]),
+            ([extent.x, extent.y, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0]),
+            ([-extent.x, extent.y, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0]),
+            ([-extent.x, -extent.y, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0]),
         ];
 
         let indices = Indices::U32(vec![0, 1, 2, 0, 2, 3]);

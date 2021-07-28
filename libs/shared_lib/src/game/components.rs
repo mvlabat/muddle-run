@@ -259,7 +259,8 @@ impl LevelObjectMovement {
     }
 }
 
-fn rotate(v: Vec2, radians: f32) -> Vec2 {
+// TODO: move to a separate math module.
+pub fn rotate(v: Vec2, radians: f32) -> Vec2 {
     Vec2::new(
         v.x * radians.cos() - v.y * radians.sin(),
         v.x * radians.sin() + v.y * radians.cos(),

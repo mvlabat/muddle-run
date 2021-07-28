@@ -15,7 +15,7 @@ use mr_shared_lib::{
     game::{
         commands::{DeferredPlayerQueues, DeferredQueue, DespawnLevelObject, UpdateLevelObject},
         level::{LevelObject, LevelObjectDesc},
-        level_objects::PlaneDesc,
+        level_objects::{PlaneDesc, PlaneFormDesc},
     },
     messages::{
         self, DeferredMessagesQueue, EntityNetId, PlayerNetId, RunnerInput, SpawnLevelObject,
@@ -24,7 +24,7 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::PlayerRole,
     registry::IncrementId,
-    simulations_per_second, MuddleSharedPlugin, PLANE_SIZE,
+    simulations_per_second, MuddleSharedPlugin,
 };
 
 mod net;
@@ -97,7 +97,15 @@ pub fn init_level(
             label: "Ground".to_owned(),
             desc: LevelObjectDesc::Plane(PlaneDesc {
                 position: Vec2::ZERO,
-                size: PLANE_SIZE,
+                form_desc: PlaneFormDesc::Concave {
+                    points: vec![
+                        Vec2::new(-8.0, -5.0),
+                        Vec2::new(8.0, -5.0),
+                        Vec2::new(10.0, 5.0),
+                        Vec2::new(0.0, 3.50),
+                        Vec2::new(-10.0, 5.0),
+                    ],
+                },
             }),
             route: None,
         },
