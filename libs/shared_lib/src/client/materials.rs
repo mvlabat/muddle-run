@@ -2,18 +2,27 @@ use bevy::{
     asset::{Assets, Handle},
     ecs::system::{Commands, ResMut},
     prelude::StandardMaterial,
-    render::color::Color,
+    render::{
+        color::Color,
+        mesh::{shape::Icosphere, Mesh},
+    },
 };
 
 pub struct MuddleMaterials {
     pub player: Handle<StandardMaterial>,
     pub normal: ObjectMaterials,
     pub ghost: ObjectMaterials,
+    pub control_point: Handle<StandardMaterial>,
 }
 
-pub fn init_object_materials(
+pub struct MuddleMeshes {
+    pub control_point: Handle<Mesh>,
+}
+
+pub fn init_muddle_assets(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let a = 0.5;
     commands.insert_resource(MuddleMaterials {
@@ -38,6 +47,17 @@ pub fn init_object_materials(
                 materials.add(material)
             },
         },
+        control_point: materials.add(Color::rgb(1.0, 0.99, 0.82).into()),
+    });
+
+    commands.insert_resource(MuddleMeshes {
+        control_point: meshes.add(
+            Icosphere {
+                radius: 0.15,
+                subdivisions: 32,
+            }
+            .into(),
+        ),
     })
 }
 

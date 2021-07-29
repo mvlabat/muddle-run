@@ -259,6 +259,16 @@ impl LevelObjectMovement {
     }
 }
 
+/// Visible dots that players can move to control LevelObject points' positions.
+// TODO: come up with a better name?
+pub struct LevelObjectControlPoints {
+    pub points: Vec<Entity>,
+}
+
+pub struct LevelObjectControlPoint {
+    pub parent: Entity,
+}
+
 // TODO: move to a separate math module.
 pub fn rotate(v: Vec2, radians: f32) -> Vec2 {
     Vec2::new(

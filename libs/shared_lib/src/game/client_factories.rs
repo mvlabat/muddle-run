@@ -5,43 +5,49 @@ use crate::{
     game::components::{PlayerFrameSimulated, PredictedPosition},
     GHOST_SIZE_MULTIPLIER, PLAYER_SIZE,
 };
-use bevy::{
-    ecs::system::{EntityCommands, SystemParam},
-    math::Vec2,
-};
 #[cfg(feature = "client")]
-use bevy::{
-    prelude::*,
-    render::{mesh::Indices, pipeline::PrimitiveTopology},
-};
+use bevy::render::{mesh::Indices, pipeline::PrimitiveTopology};
+use bevy::{ecs::system::SystemParam, prelude::*};
 
-pub trait ClientFactory<'a> {
+pub trait ClientBuilder<'a> {
     type Dependencies;
     type Input;
 
-    fn insert_components(
-        _commands: &mut EntityCommands,
+    fn insert(
+        &self,
+        _commands: &mut Commands,
         _deps: &mut Self::Dependencies,
         _input: Self::Input,
     ) {
     }
 
-    fn remove_components(_commands: &mut EntityCommands, _deps: &mut Self::Dependencies) {}
+    fn remove(&self, _commands: &mut Commands, _deps: &mut Self::Dependencies) {}
 }
 
-pub struct PlayerClientFactory;
+pub struct PlayerClientBuilder {
+    #[cfg_attr(not(feature = "client"), allow(dead_code))]
+    entity: Entity,
+}
 
-impl<'a> ClientFactory<'a> for PlayerClientFactory {
+impl PlayerClientBuilder {
+    pub fn new(entity: Entity) -> Self {
+        Self { entity }
+    }
+}
+
+impl<'a> ClientBuilder<'a> for PlayerClientBuilder {
     type Dependencies = PbrClientParams<'a>;
     type Input = (Vec2, bool);
 
     #[cfg(feature = "client")]
-    fn insert_components(
-        commands: &mut EntityCommands,
+    fn insert(
+        &self,
+        commands: &mut Commands,
         deps: &mut Self::Dependencies,
         (position, is_player_frame_simulated): Self::Input,
     ) {
-        commands.insert_bundle(PbrBundle {
+        let mut entity_commands = commands.entity(self.entity);
+        entity_commands.insert_bundle(PbrBundle {
             mesh: deps.meshes.add(Mesh::from(shape::Cube {
                 size: PLAYER_SIZE * 2.0,
             })),
@@ -49,23 +55,33 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
             transform: Transform::from_translation(position.extend(PLAYER_SIZE)),
             ..Default::default()
         });
-        commands.insert(PredictedPosition { value: position });
-        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
+        entity_commands.insert(PredictedPosition { value: position });
+        entity_commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
         if is_player_frame_simulated {
-            commands.insert(PlayerFrameSimulated);
+            entity_commands.insert(PlayerFrameSimulated);
         }
     }
 
     #[cfg(feature = "client")]
-    fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
-        commands.remove_bundle::<PbrBundle>();
-        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
-        let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
+    fn remove(&self, commands: &mut Commands, deps: &mut Self::Dependencies) {
+        let mut entity_commands = commands.entity(self.entity);
+        entity_commands.remove_bundle::<PbrBundle>();
+        entity_commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
+        let mesh = deps.mesh_query.get(entity_commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
 }
 
-pub struct PlaneClientFactory;
+pub struct PlaneClientBuilder {
+    #[cfg_attr(not(feature = "client"), allow(dead_code))]
+    entity: Entity,
+}
+
+impl PlaneClientBuilder {
+    pub fn new(entity: Entity) -> Self {
+        Self { entity }
+    }
+}
 
 #[derive(Clone)]
 pub struct LevelObjectInput<T: Clone> {
@@ -73,7 +89,7 @@ pub struct LevelObjectInput<T: Clone> {
     pub is_ghost: bool,
 }
 
-impl<'a> ClientFactory<'a> for PlaneClientFactory {
+impl<'a> ClientBuilder<'a> for PlaneClientBuilder {
     type Dependencies = PbrClientParams<'a>;
     type Input = (
         LevelObjectInput<PlaneDesc>,
@@ -81,11 +97,13 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
     );
 
     #[cfg(feature = "client")]
-    fn insert_components(
-        commands: &mut EntityCommands,
+    fn insert(
+        &self,
+        commands: &mut Commands,
         deps: &mut Self::Dependencies,
         (input, shape): Self::Input,
     ) {
+        let mut entity_commands = commands.entity(self.entity);
         let ghost_size_multiplier = if input.is_ghost {
             GHOST_SIZE_MULTIPLIER
         } else {
@@ -166,7 +184,7 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
             }
         };
 
-        commands.insert_bundle(PbrBundle {
+        entity_commands.insert_bundle(PbrBundle {
             visible: Visible {
                 is_visible: if input.is_ghost {
                     deps.visibility_settings.ghosts
@@ -184,37 +202,44 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
             transform: Transform::from_translation(input.desc.position.extend(0.0)),
             ..Default::default()
         });
-        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
-        commands.insert(PlayerFrameSimulated);
+        entity_commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
+        entity_commands.insert(PlayerFrameSimulated);
     }
 
     #[cfg(feature = "client")]
-    fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
-        commands.remove_bundle::<PbrBundle>();
-        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
-        let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
+    fn remove(&self, commands: &mut Commands, deps: &mut Self::Dependencies) {
+        let mut entity_commands = commands.entity(self.entity);
+        entity_commands.remove_bundle::<PbrBundle>();
+        entity_commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
+        let mesh = deps.mesh_query.get(entity_commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
 }
 
-pub struct CubeClientFactory;
+pub struct CubeClientFactory {
+    #[cfg_attr(not(feature = "client"), allow(dead_code))]
+    entity: Entity,
+}
 
-impl<'a> ClientFactory<'a> for CubeClientFactory {
+impl CubeClientFactory {
+    pub fn new(entity: Entity) -> Self {
+        Self { entity }
+    }
+}
+
+impl<'a> ClientBuilder<'a> for CubeClientFactory {
     type Dependencies = PbrClientParams<'a>;
     type Input = LevelObjectInput<CubeDesc>;
 
     #[cfg(feature = "client")]
-    fn insert_components(
-        commands: &mut EntityCommands,
-        deps: &mut Self::Dependencies,
-        input: Self::Input,
-    ) {
+    fn insert(&self, commands: &mut Commands, deps: &mut Self::Dependencies, input: Self::Input) {
+        let mut entity_commands = commands.entity(self.entity);
         let ghost_size_multiplier = if input.is_ghost {
             GHOST_SIZE_MULTIPLIER
         } else {
             1.0
         };
-        commands.insert_bundle(PbrBundle {
+        entity_commands.insert_bundle(PbrBundle {
             visible: Visible {
                 is_visible: if input.is_ghost {
                     deps.visibility_settings.ghosts
@@ -234,15 +259,16 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
             transform: Transform::from_translation(input.desc.position.extend(input.desc.size)),
             ..Default::default()
         });
-        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
-        commands.insert(PlayerFrameSimulated);
+        entity_commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
+        entity_commands.insert(PlayerFrameSimulated);
     }
 
     #[cfg(feature = "client")]
-    fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
-        commands.remove_bundle::<PbrBundle>();
-        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
-        let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
+    fn remove(&self, commands: &mut Commands, deps: &mut Self::Dependencies) {
+        let mut entity_commands = commands.entity(self.entity);
+        entity_commands.remove_bundle::<PbrBundle>();
+        entity_commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
+        let mesh = deps.mesh_query.get(entity_commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
 }
@@ -250,24 +276,30 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
 pub const ROUTE_POINT_HEIGHT: f32 = 0.8;
 pub const ROUTE_POINT_BASE_EDGE_HALF_LEN: f32 = 0.25;
 
-pub struct RoutePointClientFactory;
+pub struct RoutePointClientBuilder {
+    #[cfg_attr(not(feature = "client"), allow(dead_code))]
+    entity: Entity,
+}
 
-impl<'a> ClientFactory<'a> for RoutePointClientFactory {
+impl RoutePointClientBuilder {
+    pub fn new(entity: Entity) -> Self {
+        Self { entity }
+    }
+}
+
+impl<'a> ClientBuilder<'a> for RoutePointClientBuilder {
     type Dependencies = PbrClientParams<'a>;
     type Input = LevelObjectInput<RoutePointDesc>;
 
     #[cfg(feature = "client")]
-    fn insert_components(
-        commands: &mut EntityCommands,
-        deps: &mut Self::Dependencies,
-        input: Self::Input,
-    ) {
+    fn insert(&self, commands: &mut Commands, deps: &mut Self::Dependencies, input: Self::Input) {
+        let mut entity_commands = commands.entity(self.entity);
         let ghost_size_multiplier = if input.is_ghost {
             GHOST_SIZE_MULTIPLIER
         } else {
             1.0
         };
-        commands.insert_bundle(PbrBundle {
+        entity_commands.insert_bundle(PbrBundle {
             visible: Visible {
                 is_visible: if input.is_ghost {
                     deps.visibility_settings.ghosts
@@ -287,15 +319,16 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
             },
             ..Default::default()
         });
-        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
-        commands.insert(PlayerFrameSimulated);
+        entity_commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
+        entity_commands.insert(PlayerFrameSimulated);
     }
 
     #[cfg(feature = "client")]
-    fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
-        commands.remove_bundle::<PbrBundle>();
-        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
-        let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
+    fn remove(&self, commands: &mut Commands, deps: &mut Self::Dependencies) {
+        let mut entity_commands = commands.entity(self.entity);
+        entity_commands.remove_bundle::<PbrBundle>();
+        entity_commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
+        let mesh = deps.mesh_query.get(entity_commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
 }
