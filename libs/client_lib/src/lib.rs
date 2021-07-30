@@ -4,7 +4,7 @@ use crate::{
     input::{LevelObjectRequestsQueue, MouseRay, MouseWorldPosition, PlayerRequestsQueue},
     net::{maintain_connection, process_network_events, send_network_updates, send_requests},
     ui::{builder_ui::EditedLevelObject, debug_ui::update_debug_ui_state},
-    visuals::control_builder_visibility,
+    visuals::{control_builder_visibility, process_control_points_input, spawn_control_points},
 };
 use bevy::{
     app::{AppBuilder, Plugin},
@@ -113,7 +113,14 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::inspect_object.system())
             .add_system(ui::help_ui::help_ui.system())
             // Not only Egui for builder mode.
-            .add_system_set(ui::builder_ui::builder_system_set());
+            .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))
+            // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.
+            .add_system(
+                process_control_points_input
+                    .system()
+                    .after("builder_system_set"),
+            )
+            .add_system(spawn_control_points.system().after("builder_system_set"));
 
         profile_schedule(&mut builder.app.schedule);
 

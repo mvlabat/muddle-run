@@ -1,4 +1,5 @@
-pub mod materials;
+pub mod assets;
+pub mod components;
 
 use crate::game::components::rotate;
 use bevy::{

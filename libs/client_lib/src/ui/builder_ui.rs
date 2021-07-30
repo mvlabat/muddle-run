@@ -53,6 +53,7 @@ pub fn default_period() -> FrameNumber {
 #[derive(Default, Clone)]
 pub struct EditedLevelObject {
     pub object: Option<(Entity, LevelObject)>,
+    pub dragged_control_point_index: Option<usize>,
     pub is_being_placed: bool,
     pub is_being_dragged: bool,
 }
@@ -60,6 +61,7 @@ pub struct EditedLevelObject {
 impl EditedLevelObject {
     pub fn deselect(&mut self) {
         self.object = None;
+        self.dragged_control_point_index = None;
         self.is_being_dragged = false;
         self.is_being_placed = false;
     }
@@ -89,10 +91,10 @@ pub struct LevelObjects<'a> {
 
 #[derive(SystemParam)]
 pub struct MouseInput<'a> {
-    mouse_screen_position: Res<'a, MouseScreenPosition>,
-    mouse_world_position: Res<'a, MouseWorldPosition>,
-    mouse_entity_picker: MouseEntityPicker<'a>,
-    mouse_button_input: Res<'a, Input<MouseButton>>,
+    pub mouse_screen_position: Res<'a, MouseScreenPosition>,
+    pub mouse_world_position: Res<'a, MouseWorldPosition>,
+    pub mouse_entity_picker: MouseEntityPicker<'a>,
+    pub mouse_button_input: Res<'a, Input<MouseButton>>,
 }
 
 #[derive(Default)]
@@ -141,6 +143,7 @@ pub fn process_builder_mouse_input(
         object: Some((_, level_object)),
         is_being_placed,
         is_being_dragged,
+        ..
     } = &mut *level_objects.edited_level_object
     {
         if *is_being_placed || *is_being_dragged {
@@ -174,6 +177,10 @@ pub fn process_builder_mouse_input(
     if level_objects.edited_level_object.object.is_none()
         || !level_objects.edited_level_object.is_being_placed
             && !level_objects.edited_level_object.is_being_dragged
+            && level_objects
+                .edited_level_object
+                .dragged_control_point_index
+                .is_none()
     {
         // Picking a level object with a mouse.
         if !egui_context.ctx().is_pointer_over_area() {
@@ -259,6 +266,8 @@ pub fn builder_ui(
     mut level_objects: LevelObjects,
 ) {
     puffin::profile_function!();
+    let ctx = egui_context.ctx();
+
     // Picking a level object if we received a confirmation from the server about an object created
     // by us.
     if let Some(correlation_id) = *level_objects.pending_correlation {
@@ -285,22 +294,36 @@ pub fn builder_ui(
     if level_objects.edited_level_object.object.is_some() {
         // When an object is updated, it may get re-spawned as a new entity. We need to update
         // the picked entity in such a case. Despawns may happen as well.
-        if let Some(level_object_entity) = level_objects.entity_registry.get_entity(
-            level_objects
-                .edited_level_object
-                .object
-                .as_ref()
-                .unwrap()
-                .1
-                .net_id,
-        ) {
+        let edited_object_net_id = level_objects
+            .edited_level_object
+            .object
+            .as_ref()
+            .unwrap()
+            .1
+            .net_id;
+        if let Some(level_object_entity) = level_objects
+            .entity_registry
+            .get_entity(edited_object_net_id)
+        {
             if level_objects
                 .query
                 .get_component::<Spawned>(level_object_entity)
                 .unwrap()
                 .is_spawned(level_objects.time.frame_number)
             {
-                level_objects.edited_level_object.object.as_mut().unwrap().0 = level_object_entity;
+                let (entity, level_object) =
+                    level_objects.edited_level_object.object.as_mut().unwrap();
+                if *entity != level_object_entity {
+                    *entity = level_object_entity;
+                    if !ctx.is_using_pointer() {
+                        *level_object = level_objects
+                            .level_state
+                            .objects
+                            .get(&edited_object_net_id)
+                            .cloned()
+                            .unwrap();
+                    }
+                }
             } else {
                 level_objects.edited_level_object.deselect();
             }
@@ -315,7 +338,6 @@ pub fn builder_ui(
         }
     }
 
-    let ctx = egui_context.ctx();
     egui::Window::new("Builder menu").show(ctx, |ui| {
         ui.label("Create new object:");
         ui.horizontal_wrapped(|ui| {

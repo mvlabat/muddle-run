@@ -189,4 +189,26 @@ impl LevelObjectDesc {
             ),
         }
     }
+
+    pub fn control_points(&self) -> Vec<Vec2> {
+        match self {
+            Self::Plane(PlaneDesc {
+                form_desc: PlaneFormDesc::Concave { points },
+                ..
+            }) => points.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn set_control_point(&mut self, index: usize, point: Vec2) {
+        match self {
+            Self::Plane(PlaneDesc {
+                form_desc: PlaneFormDesc::Concave { ref mut points },
+                ..
+            }) => {
+                points[index] = point;
+            }
+            _ => unimplemented!(),
+        }
+    }
 }

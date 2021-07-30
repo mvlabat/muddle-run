@@ -273,7 +273,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         builder.add_startup_system(network_setup.system());
 
         #[cfg(feature = "client")]
-        builder.add_startup_system(crate::client::materials::init_object_materials.system());
+        builder.add_startup_system(crate::client::assets::init_muddle_assets.system());
 
         builder.add_system_to_stage(
             bevy::app::CoreStage::First,

@@ -1,7 +1,7 @@
 use crate::game::level_objects::*;
 #[cfg(feature = "client")]
 use crate::{
-    client::{materials::MuddleMaterials, *},
+    client::{assets::MuddleMaterials, components::LevelObjectControlPoints, *},
     game::components::{PlayerFrameSimulated, PredictedPosition},
     GHOST_SIZE_MULTIPLIER, PLAYER_SIZE,
 };
@@ -100,6 +100,9 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
                 size: *size * ghost_size_multiplier,
             }),
             PlaneFormDesc::Concave { points: _ } => {
+                // We don't want to clean up this component in `remove_components`.
+                commands.insert(LevelObjectControlPoints { points: Vec::new() });
+
                 let shape = shape
                     .as_ref()
                     .expect("Expected a collider shape for a concave plane");
