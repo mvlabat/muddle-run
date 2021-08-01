@@ -47,6 +47,12 @@ pub fn process_player_input_updates(
             // A player has just connected, and it's got only the initial empty update, so it's fine.
             .unwrap_or(time.frame_number);
 
+        // A client might be able to send several messages with the same unacknowledged updates
+        // between runs of this system.
+        dedup_by_key_unsorted(&mut player_updates, |update| update.frame_number);
+        // We want to sort after deduping, to prevent users from re-ordering inputs.
+        player_updates.sort_by_key(|update| update.frame_number);
+
         let player_update = player_updates
             .first()
             .expect("Expected at least one update for a player hash map entry");
@@ -55,12 +61,6 @@ pub fn process_player_input_updates(
             player_update.frame_number,
             SERVER_UPDATES_LIMIT,
         );
-
-        // A client might be able to send several messages with the same unacknowledged updates
-        // between runs of this system.
-        dedup_by_key_unsorted(&mut player_updates, |update| update.frame_number);
-        // We want to sort after deduping, to prevent users from re-ordering inputs.
-        player_updates.sort_by_key(|update| update.frame_number);
 
         let mut updates_iter = player_updates.iter().peekable();
         while let Some(player_update) = updates_iter.next() {
