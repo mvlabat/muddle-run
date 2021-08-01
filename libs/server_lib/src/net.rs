@@ -220,6 +220,7 @@ pub fn process_network_events(
 
             match client_message {
                 UnreliableClientMessage::PlayerUpdate(update) => {
+                    log::trace!("Incoming update message: {:?}", update);
                     if let Err(err) = connection_state.acknowledge_incoming(update.frame_number) {
                         connection_state.set_status(ConnectionStatus::Disconnecting);
                         log::error!(

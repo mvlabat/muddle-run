@@ -65,21 +65,26 @@ pub fn process_player_input_updates(
         let mut updates_iter = player_updates.iter().peekable();
         while let Some(player_update) = updates_iter.next() {
             let next_player_update = updates_iter.peek();
-            log::trace!(
-                "Player ({}) update for frame {}",
-                player_net_id.0,
-                player_update.frame_number.value()
-            );
 
             let duplicate_updates_from =
                 std::cmp::max(player_update.frame_number, min_frame_number);
-            let duplicate_updates_to =
-                next_player_update.map_or(player_frame_number, |update| update.frame_number);
+            let duplicate_updates_to = next_player_update.map_or_else(
+                || player_frame_number + FrameNumber::new(1),
+                |update| update.frame_number,
+            );
 
             let update_to_insert = Some(PlayerDirectionUpdate {
                 direction: player_update.direction,
                 is_processed_client_input: None,
             });
+
+            log::trace!(
+                "Player ({}) update for frame {} (fill from {} up to {})",
+                player_net_id.0,
+                player_update.frame_number.value(),
+                duplicate_updates_from,
+                duplicate_updates_to,
+            );
 
             // We fill the buffer of player direction commands with the updates that come from
             // clients. We populate each frame until a command changes or we've reached the last
