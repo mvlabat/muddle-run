@@ -16,8 +16,8 @@ use crate::{
         movement::{load_object_positions, player_movement, read_movement_updates, sync_position},
         remove_disconnected_players, restart_game,
         spawn::{
-            despawn_level_objects, despawn_players, process_spawned_entities, spawn_players,
-            update_level_objects,
+            despawn_level_objects, despawn_players, poll_calculating_shapes,
+            process_spawned_entities, spawn_players, update_level_objects,
         },
         switch_player_role,
     },
@@ -173,7 +173,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                     // updated with replacement. Running it before `despawn_level_objects` might
                     // result into an edge-case where changes to the `Spawned` component are not
                     // propagated.
-                    .with_system(update_level_objects.system().after("despawn_objects")),
+                    .with_system(update_level_objects.system().after("despawn_objects"))
+                    .with_system(poll_calculating_shapes.system().after("despawn_objects")),
             )
             .with_stage(
                 stage::PRE_GAME,

@@ -86,10 +86,7 @@ pub fn spawn_control_points(
     muddle_assets: MuddleAssets,
     edited_level_object: Res<EditedLevelObject>,
     mut prev_edited_level_object: Local<Option<Entity>>,
-    mut control_points_parent_query: Query<(
-        &mut LevelObjectControlPoints,
-        &LevelObjectStaticGhostParent,
-    )>,
+    mut control_points_parent_query: Query<&LevelObjectStaticGhostParent>,
     control_points_query: Query<Entity, With<LevelObjectControlPoint>>,
 ) {
     let edited_level_object_entity = edited_level_object
@@ -107,10 +104,8 @@ pub fn spawn_control_points(
 
     if let Some((edited_level_object_entity, edited_level_object)) = &edited_level_object.object {
         if changed {
-            if let Ok((
-                mut level_object_control_points,
-                LevelObjectStaticGhostParent(ghost_entity),
-            )) = control_points_parent_query.get_mut(*edited_level_object_entity)
+            if let Ok(LevelObjectStaticGhostParent(ghost_entity)) =
+                control_points_parent_query.get_mut(*edited_level_object_entity)
             {
                 let mut points = Vec::new();
                 for point in &edited_level_object.desc.control_points() {
@@ -127,7 +122,11 @@ pub fn spawn_control_points(
                         .insert_bundle(bevy_mod_picking::PickableBundle::default());
                     points.push(entity_commands.id());
                 }
-                level_object_control_points.points = points;
+                if !points.is_empty() {
+                    commands
+                        .entity(*edited_level_object_entity)
+                        .insert(LevelObjectControlPoints { points });
+                }
             }
         }
     }

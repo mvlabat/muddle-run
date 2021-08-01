@@ -1,8 +1,8 @@
 use crate::game::level_objects::*;
 #[cfg(feature = "client")]
 use crate::{
-    client::{assets::MuddleMaterials, components::LevelObjectControlPoints, *},
-    game::components::{PlayerFrameSimulated, PredictedPosition},
+    client::{assets::MuddleMaterials, *},
+    game::components::PredictedPosition,
     GHOST_SIZE_MULTIPLIER, PLAYER_SIZE,
 };
 use bevy::{
@@ -33,13 +33,13 @@ pub struct PlayerClientFactory;
 
 impl<'a> ClientFactory<'a> for PlayerClientFactory {
     type Dependencies = PbrClientParams<'a>;
-    type Input = (Vec2, bool);
+    type Input = Vec2;
 
     #[cfg(feature = "client")]
     fn insert_components(
         commands: &mut EntityCommands,
         deps: &mut Self::Dependencies,
-        (position, is_player_frame_simulated): Self::Input,
+        position: Self::Input,
     ) {
         commands.insert_bundle(PbrBundle {
             mesh: deps.meshes.add(Mesh::from(shape::Cube {
@@ -51,9 +51,6 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
         });
         commands.insert(PredictedPosition { value: position });
         commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
-        if is_player_frame_simulated {
-            commands.insert(PlayerFrameSimulated);
-        }
     }
 
     #[cfg(feature = "client")]
@@ -100,9 +97,6 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
                 size: *size * ghost_size_multiplier,
             }),
             PlaneFormDesc::Concave { points: _ } => {
-                // We don't want to clean up this component in `remove_components`.
-                commands.insert(LevelObjectControlPoints { points: Vec::new() });
-
                 let shape = shape
                     .as_ref()
                     .expect("Expected a collider shape for a concave plane");
@@ -188,7 +182,6 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
             ..Default::default()
         });
         commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
-        commands.insert(PlayerFrameSimulated);
     }
 
     #[cfg(feature = "client")]
@@ -238,7 +231,6 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
             ..Default::default()
         });
         commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
-        commands.insert(PlayerFrameSimulated);
     }
 
     #[cfg(feature = "client")]
@@ -291,7 +283,6 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
             ..Default::default()
         });
         commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
-        commands.insert(PlayerFrameSimulated);
     }
 
     #[cfg(feature = "client")]

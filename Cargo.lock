@@ -3012,6 +3012,7 @@ dependencies = [
  "bevy_rapier2d",
  "bincode",
  "chrono",
+ "futures-lite",
  "names",
  "num",
  "puffin",
