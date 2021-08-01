@@ -17,8 +17,9 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     registry::IncrementId,
+    simulations_per_second,
     util::dedup_by_key_unsorted,
-    GameTime, SimulationTime, SIMULATIONS_PER_SECOND,
+    GameTime, SimulationTime,
 };
 
 pub const SERVER_UPDATES_LIMIT: u16 = 64;
@@ -34,7 +35,7 @@ pub fn process_player_input_updates(
 ) {
     puffin::profile_function!();
     let lag_compensated_frames =
-        (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / SIMULATIONS_PER_SECOND as f32)) as u16;
+        (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / simulations_per_second() as f32)) as u16;
     let min_frame_number = time.frame_number - FrameNumber::new(lag_compensated_frames);
 
     let deferred_updates = deferred_updates.drain();

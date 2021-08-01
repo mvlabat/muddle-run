@@ -34,9 +34,9 @@ use mr_shared_lib::{
     game::client_factories::VisibilitySettings,
     messages::{EntityNetId, PlayerNetId},
     net::{ConnectionState, ConnectionStatus, MessageId},
+    simulations_per_second,
     util::profile_schedule,
     GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
-    SIMULATIONS_PER_SECOND,
 };
 use std::borrow::Cow;
 
@@ -174,7 +174,7 @@ impl InitialRtt {
 
     pub fn frames(&self) -> Option<FrameNumber> {
         self.duration_secs()
-            .map(|duration| FrameNumber::new((SIMULATIONS_PER_SECOND as f32 * duration) as u16))
+            .map(|duration| FrameNumber::new((simulations_per_second() as f32 * duration) as u16))
     }
 }
 
@@ -204,7 +204,7 @@ pub struct GameTicksPerSecond {
 impl Default for GameTicksPerSecond {
     fn default() -> Self {
         Self {
-            rate: SIMULATIONS_PER_SECOND,
+            rate: simulations_per_second(),
         }
     }
 }
@@ -366,7 +366,7 @@ fn control_ticking_speed(
     {
         Ordering::Equal => {
             *params.adjusted_speed_reason = AdjustedSpeedReason::None;
-            SIMULATIONS_PER_SECOND
+            simulations_per_second()
         }
         Ordering::Greater => {
             *params.adjusted_speed_reason = AdjustedSpeedReason::ResizingServerInputBuffer;
@@ -385,7 +385,7 @@ fn control_ticking_speed(
         params.tick_rate.rate = match params.player_delay.frame_count.cmp(&0) {
             Ordering::Equal => {
                 *params.adjusted_speed_reason = AdjustedSpeedReason::None;
-                SIMULATIONS_PER_SECOND
+                simulations_per_second()
             }
             Ordering::Greater => {
                 *params.adjusted_speed_reason = AdjustedSpeedReason::SyncingFrames;
@@ -430,23 +430,23 @@ fn control_ticking_speed(
 }
 
 fn faster_tick_rate() -> u16 {
-    if SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR != 0 {
+    if simulations_per_second() % TICKING_SPEED_FACTOR != 0 {
         panic!(
             "SIMULATIONS_PER_SECOND must a multiple of {}",
             TICKING_SPEED_FACTOR
         );
     }
-    SIMULATIONS_PER_SECOND + SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
+    simulations_per_second() + simulations_per_second() / TICKING_SPEED_FACTOR
 }
 
 fn slower_tick_rate() -> u16 {
-    if SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR != 0 {
+    if simulations_per_second() % TICKING_SPEED_FACTOR != 0 {
         panic!(
             "SIMULATIONS_PER_SECOND must a multiple of {}",
             TICKING_SPEED_FACTOR
         );
     }
-    SIMULATIONS_PER_SECOND - SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
+    simulations_per_second() - simulations_per_second() / TICKING_SPEED_FACTOR
 }
 
 #[derive(Default, Clone)]

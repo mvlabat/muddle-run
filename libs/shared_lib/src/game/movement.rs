@@ -6,7 +6,7 @@ use crate::{
     messages::PlayerNetId,
     player::PlayerUpdates,
     registry::EntityRegistry,
-    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
+    simulations_per_second, GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use bevy::{
     ecs::{
@@ -24,10 +24,14 @@ use bevy_rapier2d::rapier::{
 };
 
 /// Positions should align in half a second.
-const LERP_FACTOR: f32 = 1.0 / SIMULATIONS_PER_SECOND as f32 * 2.0;
+fn lerp_factor() -> f32 {
+    1.0 / simulations_per_second() as f32 * 2.0
+}
 
 /// The scaling factor for the player's linear velocity.
-const PLAYER_MOVEMENT_SPEED: f32 = 240.0 / SIMULATIONS_PER_SECOND as f32;
+fn player_movement_speed() -> f32 {
+    240.0 / simulations_per_second() as f32
+}
 
 pub fn read_movement_updates(
     time: Res<GameTime>,
@@ -186,7 +190,8 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
                     (FrameNumber::new(0), &zero_vec)
                 }
             });
-        let current_direction_norm = current_direction.normalize_or_zero() * PLAYER_MOVEMENT_SPEED;
+        let current_direction_norm =
+            current_direction.normalize_or_zero() * player_movement_speed();
         rigid_body_velocity.linvel =
             Vector::new(current_direction_norm.x, current_direction_norm.y);
     }
@@ -283,8 +288,8 @@ pub fn sync_position(
             if needs_lerping_predicted_position {
                 let real_diff = new_position - current_position;
                 let new_predicted_position = predicted_position.value + real_diff;
-                let lerp =
-                    new_predicted_position + (new_position - new_predicted_position) * LERP_FACTOR;
+                let lerp = new_predicted_position
+                    + (new_position - new_predicted_position) * lerp_factor();
 
                 predicted_position.value = lerp;
                 // Might be missing if we've just despawned the entity.

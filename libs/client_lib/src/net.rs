@@ -26,7 +26,7 @@ use mr_shared_lib::{
     },
     player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     registry::EntityRegistry,
-    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
+    simulations_per_second, GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::net::{IpAddr, SocketAddr};
 
@@ -656,9 +656,9 @@ fn process_delta_update_message(
     let mut rewind_to_simulation_frame = delta_update.frame_number;
 
     // Calculating how many frames ahead of the server we want to be (implies resizing input buffer for the server).
-    let frames_rtt = SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0;
+    let frames_rtt = simulations_per_second() as f32 * connection_state.rtt_millis() / 1000.0;
     let packet_loss_buffer = frames_rtt * connection_state.packet_loss();
-    let jitter_buffer = SIMULATIONS_PER_SECOND as f32 * connection_state.jitter_millis() / 1000.0;
+    let jitter_buffer = simulations_per_second() as f32 * connection_state.jitter_millis() / 1000.0;
     let frames_to_be_ahead =
         frames_rtt.ceil() + packet_loss_buffer.ceil() + jitter_buffer.ceil() + 1.0;
     let diff = update_params
@@ -855,10 +855,10 @@ fn process_start_game_message(
         );
         update_params.game_time.session += 1;
         let rtt_frames = FrameNumber::new(
-            (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0) as u16,
+            (simulations_per_second() as f32 * connection_state.rtt_millis() / 1000.0) as u16,
         );
         let half_rtt_frames = FrameNumber::new(
-            (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
+            (simulations_per_second() as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
         );
         update_params.target_frames_ahead.frames_count = rtt_frames;
         update_params.simulation_time.server_generation = start_game.generation;

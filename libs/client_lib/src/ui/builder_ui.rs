@@ -30,10 +30,12 @@ use mr_shared_lib::{
     net::MessageId,
     player::PlayerRole,
     registry::EntityRegistry,
-    GameTime, SIMULATIONS_PER_SECOND,
+    simulations_per_second, GameTime,
 };
 
-pub const DEFAULT_PERIOD: FrameNumber = FrameNumber::new(SIMULATIONS_PER_SECOND * 10);
+pub fn default_period() -> FrameNumber {
+    FrameNumber::new(simulations_per_second() * 10)
+}
 
 #[derive(Default, Clone)]
 pub struct EditedLevelObject {
@@ -455,8 +457,8 @@ fn level_object_ui(
                         // Period may be equal 0 if we are switching from the Attached route
                         // type to another one.
                         if route.period == FrameNumber::new(0) {
-                            route.period =
-                                DEFAULT_PERIOD.max(route.start_frame_offset + FrameNumber::new(1));
+                            route.period = default_period()
+                                .max(route.start_frame_offset + FrameNumber::new(1));
                         }
 
                         ui.label("Period (frames)");
@@ -464,8 +466,9 @@ fn level_object_ui(
                             egui::widgets::DragValue::new(&mut route.period)
                                 .speed(0.1)
                                 .clamp_range(
-                                    SIMULATIONS_PER_SECOND.max(route.start_frame_offset.value() + 1)
-                                        ..=SIMULATIONS_PER_SECOND * 60,
+                                    simulations_per_second()
+                                        .max(route.start_frame_offset.value() + 1)
+                                        ..=simulations_per_second() * 60,
                                 ),
                         );
                         ui.end_row();
@@ -473,7 +476,7 @@ fn level_object_ui(
                         ui.label("Period (second)");
                         ui.label(format!(
                             "{:.2}",
-                            route.period.value() as f32 / SIMULATIONS_PER_SECOND as f32
+                            route.period.value() as f32 / simulations_per_second() as f32
                         ));
                         ui.end_row();
 
@@ -747,7 +750,7 @@ fn replace_route_desc(route: &mut Option<ObjectRoute>, desc: ObjectRouteDesc) {
         route.desc = desc;
     } else {
         *route = Some(ObjectRoute {
-            period: DEFAULT_PERIOD,
+            period: default_period(),
             start_frame_offset: FrameNumber::new(0),
             desc,
         });

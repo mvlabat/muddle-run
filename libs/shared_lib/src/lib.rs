@@ -91,9 +91,18 @@ pub mod stage {
 pub const GHOST_SIZE_MULTIPLIER: f32 = 1.001;
 pub const PLAYER_SIZE: f32 = 0.5;
 pub const PLANE_SIZE: f32 = 20.0;
-pub const SIMULATIONS_PER_SECOND: u16 = 30;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
 pub const TICKS_PER_NETWORK_BROADCAST: u16 = 2;
+
+const SIMULATIONS_PER_SECOND: Option<&'static str> = std::option_env!("SIMULATIONS_PER_SECOND");
+const SIMULATIONS_PER_SECOND_DEFAULT: u16 = 120;
+
+#[inline(always)]
+pub fn simulations_per_second() -> u16 {
+    SIMULATIONS_PER_SECOND
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(SIMULATIONS_PER_SECOND_DEFAULT)
+}
 
 pub struct MuddleSharedPlugin<S: System<In = (), Out = ShouldRun>> {
     main_run_criteria: Mutex<Option<S>>,

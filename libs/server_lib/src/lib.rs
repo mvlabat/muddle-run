@@ -24,7 +24,7 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::PlayerRole,
     registry::IncrementId,
-    MuddleSharedPlugin, PLANE_SIZE, SIMULATIONS_PER_SECOND,
+    simulations_per_second, MuddleSharedPlugin, PLANE_SIZE,
 };
 
 mod net;
@@ -58,7 +58,7 @@ impl Plugin for MuddleServerPlugin {
 
         // Game.
         builder.add_plugin(MuddleSharedPlugin::new(
-            FixedTimestep::steps_per_second(SIMULATIONS_PER_SECOND as f64),
+            FixedTimestep::steps_per_second(simulations_per_second() as f64),
             input_stage,
             broadcast_updates_stage,
             SystemStage::parallel(),
