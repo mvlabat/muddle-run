@@ -2,9 +2,8 @@ use crate::{
     framebuffer::{FrameNumber, Framebuffer},
     messages::PlayerNetId,
 };
-use bevy::{log, math::Vec2};
+use bevy::{log, math::Vec2, utils::HashMap};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 pub struct PlayerUpdates {

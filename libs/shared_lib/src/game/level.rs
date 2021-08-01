@@ -1,9 +1,6 @@
 use crate::{
     framebuffer::FrameNumber,
-    game::{
-        client_factories::{ROUTE_POINT_BASE_EDGE_HALF_LEN, ROUTE_POINT_HEIGHT},
-        level_objects::*,
-    },
+    game::{client_factories::ROUTE_POINT_BASE_EDGE_HALF_LEN, level_objects::*},
     messages::EntityNetId,
     registry::EntityRegistry,
     GHOST_SIZE_MULTIPLIER,
@@ -14,17 +11,16 @@ use bevy::{
         system::{Res, SystemParam},
     },
     math::Vec2,
+    utils::HashMap,
 };
-use bevy_rapier3d::{
+use bevy_rapier2d::{
     physics::{ColliderBundle, RigidBodyBundle},
     rapier::{
         dynamics::RigidBodyType,
         geometry::{ColliderShape, ColliderType},
-        math::Point,
     },
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(SystemParam)]
 pub struct LevelParams<'a> {
@@ -116,7 +112,7 @@ impl LevelObjectDesc {
             Self::Plane(plane) => (
                 RigidBodyBundle {
                     body_type: RigidBodyType::KinematicPositionBased,
-                    position: [self.position().unwrap().x, self.position().unwrap().y, 0.0].into(),
+                    position: self.position().unwrap().into(),
                     ..RigidBodyBundle::default()
                 },
                 ColliderBundle {
@@ -124,7 +120,6 @@ impl LevelObjectDesc {
                     shape: ColliderShape::cuboid(
                         plane.size * ghost_multiplier,
                         plane.size * ghost_multiplier,
-                        0.01 * ghost_multiplier,
                     ),
                     ..ColliderBundle::default()
                 },
@@ -132,12 +127,7 @@ impl LevelObjectDesc {
             Self::Cube(cube) => (
                 RigidBodyBundle {
                     body_type: RigidBodyType::KinematicPositionBased,
-                    position: [
-                        self.position().unwrap().x,
-                        self.position().unwrap().y,
-                        cube.size,
-                    ]
-                    .into(),
+                    position: [self.position().unwrap().x, self.position().unwrap().y].into(),
                     ..RigidBodyBundle::default()
                 },
                 ColliderBundle {
@@ -149,7 +139,6 @@ impl LevelObjectDesc {
                     shape: ColliderShape::cuboid(
                         cube.size * ghost_multiplier,
                         cube.size * ghost_multiplier,
-                        cube.size * ghost_multiplier,
                     ),
                     ..ColliderBundle::default()
                 },
@@ -157,35 +146,15 @@ impl LevelObjectDesc {
             Self::RoutePoint(_) => (
                 RigidBodyBundle {
                     body_type: RigidBodyType::KinematicPositionBased,
-                    position: [self.position().unwrap().x, self.position().unwrap().y, 0.0].into(),
+                    position: [self.position().unwrap().x, self.position().unwrap().y].into(),
                     ..RigidBodyBundle::default()
                 },
                 ColliderBundle {
                     collider_type: ColliderType::Sensor,
-                    shape: ColliderShape::convex_hull(&[
-                        Point::new(
-                            -ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
-                            -ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
-                            0.0,
-                        ),
-                        Point::new(
-                            -ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
-                            ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
-                            0.0,
-                        ),
-                        Point::new(
-                            ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
-                            ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
-                            0.0,
-                        ),
-                        Point::new(
-                            ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
-                            -ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_multiplier,
-                            0.0,
-                        ),
-                        Point::new(0.0, 0.0, ROUTE_POINT_HEIGHT * ghost_multiplier),
-                    ])
-                    .unwrap(),
+                    shape: ColliderShape::cuboid(
+                        ROUTE_POINT_BASE_EDGE_HALF_LEN * 2.0 * ghost_multiplier,
+                        ROUTE_POINT_BASE_EDGE_HALF_LEN * 2.0 * ghost_multiplier,
+                    ),
                     ..ColliderBundle::default()
                 },
             ),

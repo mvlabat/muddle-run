@@ -1,4 +1,12 @@
-use bevy_egui::egui::{self, Ui};
+use bevy::{
+    ecs::system::{Local, Res, ResMut},
+    input::{keyboard::KeyCode, Input},
+    window::Windows,
+};
+use bevy_egui::{
+    egui::{self, Ui},
+    EguiSettings,
+};
 use mr_shared_lib::game::components::{PlayerDirection, Position};
 
 pub mod builder_ui;
@@ -7,6 +15,26 @@ pub mod help_ui;
 pub mod overlay_ui;
 
 mod widgets;
+
+pub fn update_ui_scale_factor(
+    keyboard_input: Res<Input<KeyCode>>,
+    mut toggle_scale_factor: Local<Option<bool>>,
+    mut egui_settings: ResMut<EguiSettings>,
+    windows: Res<Windows>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Slash) || toggle_scale_factor.is_none() {
+        *toggle_scale_factor = Some(!toggle_scale_factor.unwrap_or(true));
+
+        if let Some(window) = windows.get_primary() {
+            let scale_factor = if toggle_scale_factor.unwrap() {
+                1.0
+            } else {
+                1.0 / window.scale_factor()
+            };
+            egui_settings.scale_factor = scale_factor;
+        }
+    }
+}
 
 pub trait MuddleInspectable {
     fn inspect(&self, ui: &mut Ui);

@@ -1,3 +1,13 @@
+use bevy::{
+    ecs::{
+        schedule::{Schedule, StageLabel, SystemStage},
+        system::IntoExclusiveSystem,
+        world::World,
+    },
+    utils::HashMap,
+};
+use std::cell::RefCell;
+
 pub fn dedup_by_key_unsorted<T, F, K>(vec: &mut Vec<T>, mut key: F)
 where
     F: FnMut(&T) -> K,
@@ -11,4 +21,52 @@ where
         }
     }
     std::mem::swap(&mut new, vec);
+}
+
+thread_local!(static PUFFIN_SCOPES: RefCell<HashMap<Box<dyn StageLabel>, puffin::ProfilerScope>> = RefCell::new(HashMap::default()));
+
+pub fn profile_schedule(schedule: &mut Schedule) {
+    let stages = schedule
+        .iter_stages()
+        .map(|(stage_label, _)| stage_label.dyn_clone())
+        .collect::<Vec<_>>();
+    for stage_label in stages {
+        let puffin_id: &'static str =
+            Box::leak(format!("Stage {:?}", stage_label).into_boxed_str());
+        let before_stage_label: &'static str =
+            Box::leak(format!("puffin_before {:?}", stage_label).into_boxed_str());
+        let after_stage_label: &'static str =
+            Box::leak(format!("puffin_after {:?}", stage_label).into_boxed_str());
+        let stage_label_to_remove = stage_label.dyn_clone();
+
+        schedule.add_stage_before(
+            stage_label.dyn_clone(),
+            before_stage_label,
+            SystemStage::parallel().with_system(
+                (move |_world: &mut World| {
+                    PUFFIN_SCOPES.with(|scopes| {
+                        let mut scopes = scopes.borrow_mut();
+                        scopes.insert(
+                            stage_label.dyn_clone(),
+                            puffin::ProfilerScope::new(puffin_id, puffin::current_file_name!(), ""),
+                        );
+                    });
+                })
+                .exclusive_system(),
+            ),
+        );
+        schedule.add_stage_after(
+            stage_label_to_remove.dyn_clone(),
+            after_stage_label,
+            SystemStage::parallel().with_system(
+                (move |_world: &mut World| {
+                    PUFFIN_SCOPES.with(|scopes| {
+                        let mut scopes = scopes.borrow_mut();
+                        scopes.remove(&stage_label_to_remove);
+                    });
+                })
+                .exclusive_system(),
+            ),
+        );
+    }
 }

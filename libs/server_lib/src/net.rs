@@ -1,4 +1,9 @@
-use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashSet};
+use bevy::{
+    ecs::system::SystemParam,
+    log,
+    prelude::*,
+    utils::{HashMap, HashSet},
+};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
 use mr_shared_lib::{
@@ -19,7 +24,7 @@ use mr_shared_lib::{
     GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::hash_map::Entry,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
@@ -64,6 +69,7 @@ pub fn process_network_events(
     mut network_params: NetworkParams,
     mut update_params: UpdateParams,
 ) {
+    puffin::profile_function!();
     log::trace!("Processing network updates (frame: {})", time.frame_number);
 
     // Processing connection events.
@@ -214,6 +220,7 @@ pub fn process_network_events(
 
             match client_message {
                 UnreliableClientMessage::PlayerUpdate(update) => {
+                    log::trace!("Incoming update message: {:?}", update);
                     if let Err(err) = connection_state.acknowledge_incoming(update.frame_number) {
                         connection_state.set_status(ConnectionStatus::Disconnecting);
                         log::error!(
@@ -572,6 +579,7 @@ pub fn send_network_updates(
     players_registry: Res<EntityRegistry<PlayerNetId>>,
     mut deferred_message_queues: DeferredMessageQueues,
 ) {
+    puffin::profile_function!();
     // We run this system after we've concluded the simulation. As we don't have updates for the
     // next frame yet, we decrement the frame number.
     let time = time.prev_frame();

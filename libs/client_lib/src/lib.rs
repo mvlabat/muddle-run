@@ -34,8 +34,9 @@ use mr_shared_lib::{
     game::client_factories::VisibilitySettings,
     messages::{EntityNetId, PlayerNetId},
     net::{ConnectionState, ConnectionStatus, MessageId},
+    simulations_per_second,
+    util::profile_schedule,
     GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
-    SIMULATIONS_PER_SECOND,
 };
 use std::borrow::Cow;
 
@@ -87,6 +88,7 @@ impl Plugin for MuddleClientPlugin {
             .with_system(update_debug_ui_state.system().after("pause_simulation"));
 
         builder
+            .add_plugin(bevy_mod_picking::PickingPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(EguiPlugin)
             .add_plugin(WorldInspectorPlugin::new())
@@ -104,13 +106,16 @@ impl Plugin for MuddleClientPlugin {
                 None,
             ))
             // Egui.
-            .add_system(ui::debug_ui::update_ui_scale_factor.system())
+            .add_system(ui::update_ui_scale_factor.system())
             .add_system(ui::debug_ui::debug_ui.system())
+            .add_system(ui::debug_ui::profiler_ui.system())
             .add_system(ui::overlay_ui::connection_status_overlay.system())
             .add_system(ui::debug_ui::inspect_object.system())
             .add_system(ui::help_ui::help_ui.system())
             // Not only Egui for builder mode.
             .add_system_set(ui::builder_ui::builder_system_set());
+
+        profile_schedule(&mut builder.app.schedule);
 
         let world = builder.world_mut();
         world
@@ -169,7 +174,7 @@ impl InitialRtt {
 
     pub fn frames(&self) -> Option<FrameNumber> {
         self.duration_secs()
-            .map(|duration| FrameNumber::new((SIMULATIONS_PER_SECOND as f32 * duration) as u16))
+            .map(|duration| FrameNumber::new((simulations_per_second() as f32 * duration) as u16))
     }
 }
 
@@ -199,7 +204,7 @@ pub struct GameTicksPerSecond {
 impl Default for GameTicksPerSecond {
     fn default() -> Self {
         Self {
-            rate: SIMULATIONS_PER_SECOND,
+            rate: simulations_per_second(),
         }
     }
 }
@@ -246,6 +251,7 @@ fn pause_simulation(
     game_time: Res<GameTime>,
     estimated_server_time: Res<EstimatedServerTime>,
 ) {
+    puffin::profile_function!();
     let is_connected = matches!(connection_state.status(), ConnectionStatus::Connected);
 
     let has_server_updates = game_time
@@ -311,6 +317,7 @@ fn basic_scene(mut commands: Commands) {
                 .looking_at(Vec3::default(), Vec3::Z),
             ..Default::default()
         })
+        .insert_bundle(bevy_mod_picking::PickingCameraBundle::default())
         .insert(Parent(main_camera_pivot_entity))
         .id();
     commands.insert_resource(MainCameraPivotEntity(main_camera_pivot_entity));
@@ -348,6 +355,7 @@ fn control_ticking_speed(
     mut params: ControlTickingSpeedParams,
 ) {
     use std::cmp::Ordering;
+    puffin::profile_function!();
 
     let target_player_frame =
         params.simulation_time.server_frame + params.target_frames_ahead.frames_count;
@@ -358,7 +366,7 @@ fn control_ticking_speed(
     {
         Ordering::Equal => {
             *params.adjusted_speed_reason = AdjustedSpeedReason::None;
-            SIMULATIONS_PER_SECOND
+            simulations_per_second()
         }
         Ordering::Greater => {
             *params.adjusted_speed_reason = AdjustedSpeedReason::ResizingServerInputBuffer;
@@ -377,7 +385,7 @@ fn control_ticking_speed(
         params.tick_rate.rate = match params.player_delay.frame_count.cmp(&0) {
             Ordering::Equal => {
                 *params.adjusted_speed_reason = AdjustedSpeedReason::None;
-                SIMULATIONS_PER_SECOND
+                simulations_per_second()
             }
             Ordering::Greater => {
                 *params.adjusted_speed_reason = AdjustedSpeedReason::SyncingFrames;
@@ -422,23 +430,23 @@ fn control_ticking_speed(
 }
 
 fn faster_tick_rate() -> u16 {
-    if SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR != 0 {
+    if simulations_per_second() % TICKING_SPEED_FACTOR != 0 {
         panic!(
             "SIMULATIONS_PER_SECOND must a multiple of {}",
             TICKING_SPEED_FACTOR
         );
     }
-    SIMULATIONS_PER_SECOND + SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
+    simulations_per_second() + simulations_per_second() / TICKING_SPEED_FACTOR
 }
 
 fn slower_tick_rate() -> u16 {
-    if SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR != 0 {
+    if simulations_per_second() % TICKING_SPEED_FACTOR != 0 {
         panic!(
             "SIMULATIONS_PER_SECOND must a multiple of {}",
             TICKING_SPEED_FACTOR
         );
     }
-    SIMULATIONS_PER_SECOND - SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
+    simulations_per_second() - simulations_per_second() / TICKING_SPEED_FACTOR
 }
 
 #[derive(Default, Clone)]
@@ -467,6 +475,7 @@ impl NetAdaptiveTimestemp {
         time: Res<Time>,
         game_ticks_per_second: Res<GameTicksPerSecond>,
     ) -> ShouldRun {
+        puffin::profile_function!();
         let rate = game_ticks_per_second.rate;
         let step = 1.0 / rate as f64;
 

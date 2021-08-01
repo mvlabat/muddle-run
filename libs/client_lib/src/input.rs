@@ -8,10 +8,10 @@ use bevy::{
     log,
     prelude::*,
     render::camera::CameraProjection,
+    utils::HashMap,
 };
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::WorldInspectorParams;
-use bevy_rapier3d::{na, rapier::geometry::Ray};
 use chrono::{DateTime, Utc};
 use mr_shared_lib::{
     game::{components::Spawned, level::LevelObject},
@@ -20,7 +20,6 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
-use std::collections::HashMap;
 
 const SWITCH_ROLE_COOLDOWN_SECS: i64 = 1;
 
@@ -53,14 +52,17 @@ pub struct MouseScreenPosition(pub Vec2);
 #[derive(Default)]
 pub struct MouseWorldPosition(pub Vec2);
 
-pub struct MouseRay(pub Ray);
+pub struct MouseRay {
+    pub origin: Vec3,
+    pub direction: Vec3,
+}
 
 impl Default for MouseRay {
     fn default() -> Self {
-        Self(Ray::new(
-            na::Point3::new(0.0, 0.0, 0.0),
-            na::Vector3::new(0.0, 0.0, 0.0),
-        ))
+        Self {
+            origin: Vec3::ZERO,
+            direction: Vec3::ZERO,
+        }
     }
 }
 
@@ -92,6 +94,7 @@ pub fn track_input_events(
     mut mouse_position: ResMut<MouseScreenPosition>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
+    puffin::profile_function!();
     if ui_params.egui_context.ctx().wants_keyboard_input() {
         return;
     }
@@ -183,11 +186,12 @@ pub fn cast_mouse_ray(
     mut mouse_ray: ResMut<MouseRay>,
     mut mouse_world_position: ResMut<MouseWorldPosition>,
 ) {
+    puffin::profile_function!();
     let window = windows.iter().next().expect("expected a window");
     let (camera_transform, _camera, camera_projection) = cameras
         .get(main_camera_entity.0)
         .expect("expected a main camera");
-    mouse_ray.0 = helpers::cursor_pos_to_ray(
+    *mouse_ray = helpers::cursor_pos_to_ray(
         mouse_position.0,
         window,
         &camera_transform.compute_matrix(),
@@ -195,17 +199,13 @@ pub fn cast_mouse_ray(
     );
 
     mouse_world_position.0 = {
-        let ray_direction = Vec3::new(mouse_ray.0.dir.x, mouse_ray.0.dir.y, mouse_ray.0.dir.z);
-        let ray_origin = Vec3::new(
-            mouse_ray.0.origin.x,
-            mouse_ray.0.origin.y,
-            mouse_ray.0.origin.z,
-        );
         let plane_normal = Vec3::Z;
-        let denom = plane_normal.dot(ray_direction);
+        let denom = plane_normal.dot(mouse_ray.direction);
         if denom.abs() > f32::EPSILON {
-            let t = (-ray_origin).dot(plane_normal) / denom;
-            let i = ray_origin.lerp(ray_origin + ray_direction, t);
+            let t = (-mouse_ray.origin).dot(plane_normal) / denom;
+            let i = mouse_ray
+                .origin
+                .lerp(mouse_ray.origin + mouse_ray.direction, t);
             Vec2::new(i.x, i.y)
         } else {
             Vec2::ZERO
@@ -222,6 +222,7 @@ fn process_hotkeys(
     if keyboard_input.just_pressed(KeyCode::Period) {
         debug_ui_state.show = !debug_ui_state.show;
         world_inspector_params.enabled = debug_ui_state.show;
+        puffin::set_scopes_on(debug_ui_state.show);
     }
 
     let net_id = player_updates_params.current_player_net_id.0;

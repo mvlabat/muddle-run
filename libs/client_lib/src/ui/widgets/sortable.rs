@@ -1,5 +1,5 @@
+use bevy::utils::HashSet;
 use bevy_egui::egui::{self, Id, Ui};
-use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ListItem<T> {

@@ -3,7 +3,7 @@ use crate::{
     CurrentPlayerNetId, EstimatedServerTime, InitialRtt, LevelObjectCorrelations, PlayerDelay,
     TargetFramesAhead,
 };
-use bevy::{ecs::system::SystemParam, log, prelude::*};
+use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashMap};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
 use mr_shared_lib::{
@@ -26,12 +26,9 @@ use mr_shared_lib::{
     },
     player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     registry::EntityRegistry,
-    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
+    simulations_per_second, GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
-use std::{
-    collections::HashMap,
-    net::{IpAddr, SocketAddr},
-};
+use std::net::{IpAddr, SocketAddr};
 
 const DEFAULT_SERVER_PORT: u16 = 3455;
 const DEFAULT_SERVER_IP_ADDR: &str = "127.0.0.1";
@@ -69,6 +66,7 @@ pub fn process_network_events(
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut update_params: UpdateParams,
 ) {
+    puffin::profile_function!();
     for event in network_events.iter() {
         match event {
             NetworkEvent::Connected(handle) => {
@@ -409,6 +407,8 @@ pub fn maintain_connection(
     mut network_params: NetworkParams,
     mut initial_rtt: ResMut<InitialRtt>,
 ) {
+    puffin::profile_function!();
+
     // TODO: if a client isn't getting any updates, we may also want to pause the game and wait for
     //  some time for a server to respond.
 
@@ -478,6 +478,7 @@ pub fn send_network_updates(
     player_registry: Res<EntityRegistry<PlayerNetId>>,
     player_update_params: PlayerUpdateParams,
 ) {
+    puffin::profile_function!();
     let (connection_handle, address) = match network_params.net.connections.iter_mut().next() {
         Some((&handle, connection)) => (handle, connection.remote_address()),
         None => return,
@@ -567,6 +568,7 @@ pub fn send_requests(
     mut player_requests: ResMut<PlayerRequestsQueue>,
     mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
 ) {
+    puffin::profile_function!();
     let (connection_handle, _) = match network_params.net.connections.iter_mut().next() {
         Some((&handle, connection)) => (handle, connection.remote_address()),
         None => return,
@@ -654,9 +656,9 @@ fn process_delta_update_message(
     let mut rewind_to_simulation_frame = delta_update.frame_number;
 
     // Calculating how many frames ahead of the server we want to be (implies resizing input buffer for the server).
-    let frames_rtt = SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0;
+    let frames_rtt = simulations_per_second() as f32 * connection_state.rtt_millis() / 1000.0;
     let packet_loss_buffer = frames_rtt * connection_state.packet_loss();
-    let jitter_buffer = SIMULATIONS_PER_SECOND as f32 * connection_state.jitter_millis() / 1000.0;
+    let jitter_buffer = simulations_per_second() as f32 * connection_state.jitter_millis() / 1000.0;
     let frames_to_be_ahead =
         frames_rtt.ceil() + packet_loss_buffer.ceil() + jitter_buffer.ceil() + 1.0;
     let diff = update_params
@@ -853,10 +855,10 @@ fn process_start_game_message(
         );
         update_params.game_time.session += 1;
         let rtt_frames = FrameNumber::new(
-            (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0) as u16,
+            (simulations_per_second() as f32 * connection_state.rtt_millis() / 1000.0) as u16,
         );
         let half_rtt_frames = FrameNumber::new(
-            (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
+            (simulations_per_second() as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
         );
         update_params.target_frames_ahead.frames_count = rtt_frames;
         update_params.simulation_time.server_generation = start_game.generation;

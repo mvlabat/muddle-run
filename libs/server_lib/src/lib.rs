@@ -9,7 +9,7 @@ use crate::{
         process_update_level_object_requests,
     },
 };
-use bevy::{core::FixedTimestep, prelude::*};
+use bevy::{core::FixedTimestep, prelude::*, utils::HashMap};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -24,9 +24,8 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::PlayerRole,
     registry::IncrementId,
-    MuddleSharedPlugin, PLANE_SIZE, SIMULATIONS_PER_SECOND,
+    simulations_per_second, MuddleSharedPlugin, PLANE_SIZE,
 };
-use std::collections::HashMap;
 
 mod net;
 mod player_updates;
@@ -59,7 +58,7 @@ impl Plugin for MuddleServerPlugin {
 
         // Game.
         builder.add_plugin(MuddleSharedPlugin::new(
-            FixedTimestep::steps_per_second(SIMULATIONS_PER_SECOND as f64),
+            FixedTimestep::steps_per_second(simulations_per_second() as f64),
             input_stage,
             broadcast_updates_stage,
             SystemStage::parallel(),

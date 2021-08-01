@@ -1,20 +1,16 @@
-use bevy::{
-    ecs::system::{Res, ResMut},
-    window::Windows,
-};
+use bevy::ecs::system::{Res, ResMut};
 use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
 
 pub fn connection_status_overlay(
     egui_context: ResMut<EguiContext>,
     connection_state: Res<ConnectionState>,
-    windows: Res<Windows>,
 ) {
+    puffin::profile_function!();
     if let ConnectionStatus::Connected = connection_state.status() {
         return;
     }
 
-    let primary_window = windows.get_primary().unwrap();
     let window_width = 200.0;
     let window_height = 100.0;
 
@@ -26,10 +22,7 @@ pub fn connection_status_overlay(
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
-                .fixed_pos(egui::Pos2::new(
-                    (primary_window.physical_width() as f32 - window_width) / 2.0,
-                    (primary_window.physical_height() as f32 - window_height) / 2.0,
-                ))
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .fixed_size(egui::Vec2::new(window_width, window_height))
                 .show(ui.ctx(), |ui| {
                     ui.centered_and_justified(|ui| {

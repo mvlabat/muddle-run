@@ -6,8 +6,9 @@ use bevy::{
     diagnostic::{DiagnosticMeasurement, Diagnostics, FrameTimeDiagnosticsPlugin},
     ecs::system::SystemParam,
     prelude::*,
+    utils::HashMap,
 };
-use bevy_egui::{egui, EguiContext, EguiSettings};
+use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -20,13 +21,7 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     SimulationTime,
 };
-use std::collections::{HashMap, VecDeque};
-
-pub fn update_ui_scale_factor(mut egui_settings: ResMut<EguiSettings>, windows: Res<Windows>) {
-    if let Some(window) = windows.get_primary() {
-        egui_settings.scale_factor = 1.0 / window.scale_factor();
-    }
-}
+use std::collections::VecDeque;
 
 #[derive(SystemParam)]
 pub struct DebugData<'a> {
@@ -61,6 +56,7 @@ pub struct DebugUiState {
 }
 
 pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_data: DebugData) {
+    puffin::profile_function!();
     if debug_ui_state.pause {
         return;
     }
@@ -81,12 +77,30 @@ pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_dat
     debug_ui_state.jitter_millis = debug_data.connection_state.jitter_millis() as usize;
 }
 
+pub fn profiler_ui(
+    // ResMut is intentional, to avoid fighting over the Mutex from different systems.
+    egui_context: ResMut<EguiContext>,
+    debug_ui_state: Res<DebugUiState>,
+) {
+    puffin::profile_function!();
+    let ctx = egui_context.ctx();
+
+    if !debug_ui_state.show {
+        return;
+    }
+
+    egui::Window::new("Profiler")
+        .default_size([1024.0, 600.0])
+        .show(ctx, |ui| puffin_egui::profiler_ui(ui));
+}
+
 pub fn debug_ui(
     // ResMut is intentional, to avoid fighting over the Mutex from different systems.
     egui_context: ResMut<EguiContext>,
     mut debug_ui_state: ResMut<DebugUiState>,
     diagnostics: Res<Diagnostics>,
 ) {
+    puffin::profile_function!();
     let ctx = egui_context.ctx();
 
     if let Some(fps_diagnostic) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
@@ -172,6 +186,7 @@ pub fn inspect_object(
     mut mouse_entity_picker: MouseEntityPicker,
     queries: InspectObjectQueries,
 ) {
+    puffin::profile_function!();
     if !debug_ui_state.show {
         return;
     }

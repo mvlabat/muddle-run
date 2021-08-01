@@ -25,6 +25,7 @@ use crate::{
     net::network_setup,
     player::{Player, PlayerUpdates},
     registry::EntityRegistry,
+    util::profile_schedule,
 };
 use bevy::{
     app::Events,
@@ -37,9 +38,10 @@ use bevy::{
     },
     log,
     prelude::*,
+    utils::HashMap,
 };
 use bevy_networking_turbulence::{LinkConditionerConfig, NetworkingPlugin};
-use bevy_rapier3d::{
+use bevy_rapier2d::{
     physics,
     physics::{
         JointsEntityMap, ModificationTracker, NoUserData, PhysicsHooksWithQueryObject,
@@ -53,7 +55,7 @@ use bevy_rapier3d::{
     },
 };
 use messages::{EntityNetId, PlayerNetId};
-use std::{borrow::Cow, collections::HashMap, sync::Mutex};
+use std::{borrow::Cow, sync::Mutex};
 
 #[cfg(feature = "client")]
 pub mod client;
@@ -89,9 +91,18 @@ pub mod stage {
 pub const GHOST_SIZE_MULTIPLIER: f32 = 1.001;
 pub const PLAYER_SIZE: f32 = 0.5;
 pub const PLANE_SIZE: f32 = 20.0;
-pub const SIMULATIONS_PER_SECOND: u16 = 120;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
 pub const TICKS_PER_NETWORK_BROADCAST: u16 = 2;
+
+const SIMULATIONS_PER_SECOND: Option<&'static str> = std::option_env!("SIMULATIONS_PER_SECOND");
+const SIMULATIONS_PER_SECOND_DEFAULT: u16 = 120;
+
+#[inline(always)]
+pub fn simulations_per_second() -> u16 {
+    SIMULATIONS_PER_SECOND
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(SIMULATIONS_PER_SECOND_DEFAULT)
+}
 
 pub struct MuddleSharedPlugin<S: System<In = (), Out = ShouldRun>> {
     main_run_criteria: Mutex<Option<S>>,
@@ -144,7 +155,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .lock()
             .expect("Can't initialize the plugin more than once");
 
-        let simulation_schedule = Schedule::default()
+        let mut simulation_schedule = Schedule::default()
             .with_run_criteria(SimulationTickRunCriteria::default())
             .with_stage(
                 stage::SPAWN,
@@ -198,8 +209,9 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 stage::POST_GAME,
                 SystemStage::parallel().with_system(tick_simulation_frame.system()),
             );
+        profile_schedule(&mut simulation_schedule);
 
-        let main_schedule = Schedule::default()
+        let mut main_schedule = Schedule::default()
             .with_run_criteria(
                 main_run_criteria
                     .take()
@@ -228,6 +240,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                     .expect("Can't initialize the plugin more than once")
                     .with_system(physics::collect_removals.system()),
             );
+        profile_schedule(&mut main_schedule);
 
         builder.add_stage_before(
             bevy::app::CoreStage::Update,
@@ -262,6 +275,14 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         #[cfg(feature = "client")]
         builder.add_startup_system(crate::client::materials::init_object_materials.system());
 
+        builder.add_system_to_stage(
+            bevy::app::CoreStage::First,
+            (|| {
+                puffin::GlobalProfiler::lock().new_frame();
+            })
+            .system(),
+        );
+
         let resources = builder.world_mut();
         resources.get_resource_or_insert_with(GameTime::default);
         resources.get_resource_or_insert_with(SimulationTime::default);
@@ -289,7 +310,7 @@ impl Plugin for RapierResourcesPlugin {
             .insert_resource(PhysicsPipeline::new())
             .insert_resource(QueryPipeline::new())
             .insert_resource(RapierConfiguration {
-                gravity: Vector::new(0.0, 0.0, 0.0),
+                gravity: Vector::new(0.0, 0.0),
                 timestep_mode: TimestepMode::FixedTimestep,
                 ..RapierConfiguration::default()
             })
@@ -422,6 +443,7 @@ impl GameTickRunCriteria {
         mut state: Local<GameTickRunCriteriaState>,
         time: Res<GameTime>,
     ) -> ShouldRun {
+        puffin::profile_function!();
         if state.last_generation != Some(time.session) {
             state.last_generation = Some(time.session);
             state.last_tick = time.frame_number - state.ticks_per_step;
@@ -521,6 +543,7 @@ impl SimulationTickRunCriteria {
         game_time: Res<GameTime>,
         simulation_time: Res<SimulationTime>,
     ) -> ShouldRun {
+        puffin::profile_function!();
         // Checking that a game frame has changed will make us avoid panicking in case we rewind
         // simulation frame just 1 frame back.
         if state.last_game_frame != Some(game_time.frame_number) {
@@ -626,6 +649,7 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
 }
 
 pub fn tick_game_frame(mut time: ResMut<GameTime>) {
+    puffin::profile_function!();
     log::trace!("Concluding game frame tick: {}", time.frame_number.value());
     time.frame_number += FrameNumber::new(1);
 }

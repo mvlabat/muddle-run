@@ -83,4 +83,8 @@ a binary take higher priority.
 
 - `MUDDLE_SERVER_IP_ADDR` (defaults to `127.0.0.1`)
 - `MUDDLE_SERVER_PORT` (defaults to `3455`)
-
+- `SIMULATIONS_PER_SECOND` (defaults to `120`, **compile-time only**)
+  - Is expected to work with the following values: `30`, `60`, `120`. You may want to set a lower value than the
+    default one if your device can't handle 120 simulations per second.
+  - **Note** that both the server and the client
+    must be compiled with the same value.

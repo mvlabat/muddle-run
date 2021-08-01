@@ -1,11 +1,8 @@
-use bevy::{
-    ecs::system::{Res, ResMut},
-    window::Windows,
-};
+use bevy::ecs::system::ResMut;
 use bevy_egui::{egui, EguiContext};
 
-pub fn help_ui(egui_context: ResMut<EguiContext>, windows: Res<Windows>) {
-    let primary_window = windows.get_primary().unwrap();
+pub fn help_ui(egui_context: ResMut<EguiContext>) {
+    puffin::profile_function!();
     let window_width = 280.0;
     let window_height = 30.0;
 
@@ -13,10 +10,7 @@ pub fn help_ui(egui_context: ResMut<EguiContext>, windows: Res<Windows>) {
         .title_bar(false)
         .collapsible(false)
         .resizable(false)
-        .fixed_pos(egui::Pos2::new(
-            (primary_window.physical_width() as f32 - window_width) / 2.0,
-            primary_window.physical_height() as f32 - window_height - 40.0,
-        ))
+        .anchor(egui::Align2::CENTER_BOTTOM, egui::Vec2::new(0.0, -40.0))
         .fixed_size(egui::Vec2::new(window_width, window_height))
         .show(egui_context.ctx(), |ui| {
             ui.centered_and_justified(|ui| {

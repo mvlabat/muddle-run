@@ -14,6 +14,7 @@ use-webrtc = ["bevy_networking_turbulence/use-webrtc"]
 [dependencies]
 chrono = "0.4.19"
 env_logger = "0.8.1"
+puffin = "0.6.0"
 
 [dependencies.bevy]
 version = "0.5"

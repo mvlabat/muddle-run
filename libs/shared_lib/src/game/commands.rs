@@ -4,9 +4,8 @@ use crate::{
     messages::{EntityNetId, PlayerNetId},
     player::PlayerRole,
 };
-use bevy::math::Vec2;
+use bevy::{math::Vec2, utils::HashMap};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 pub struct DeferredQueue<T> {
     commands: Vec<T>,
@@ -73,7 +72,7 @@ pub struct DeferredPlayerQueues<T> {
 impl<T> Default for DeferredPlayerQueues<T> {
     fn default() -> Self {
         Self {
-            updates: HashMap::new(),
+            updates: HashMap::default(),
         }
     }
 }

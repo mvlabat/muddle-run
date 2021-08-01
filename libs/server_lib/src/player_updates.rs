@@ -2,6 +2,7 @@ use crate::net::PlayerConnections;
 use bevy::{
     ecs::system::{Res, ResMut},
     log,
+    utils::HashMap,
 };
 use mr_shared_lib::{
     framebuffer::FrameNumber,
@@ -16,10 +17,10 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     registry::IncrementId,
+    simulations_per_second,
     util::dedup_by_key_unsorted,
-    GameTime, SimulationTime, SIMULATIONS_PER_SECOND,
+    GameTime, SimulationTime,
 };
-use std::collections::HashMap;
 
 pub const SERVER_UPDATES_LIMIT: u16 = 64;
 pub const MAX_LAG_COMPENSATION_MILLIS: u16 = 200;
@@ -32,8 +33,9 @@ pub fn process_player_input_updates(
     mut updates: ResMut<PlayerUpdates>,
     mut deferred_updates: ResMut<DeferredPlayerQueues<RunnerInput>>,
 ) {
+    puffin::profile_function!();
     let lag_compensated_frames =
-        (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / SIMULATIONS_PER_SECOND as f32)) as u16;
+        (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / simulations_per_second() as f32)) as u16;
     let min_frame_number = time.frame_number - FrameNumber::new(lag_compensated_frames);
 
     let deferred_updates = deferred_updates.drain();
@@ -46,6 +48,12 @@ pub fn process_player_input_updates(
             // A player has just connected, and it's got only the initial empty update, so it's fine.
             .unwrap_or(time.frame_number);
 
+        // A client might be able to send several messages with the same unacknowledged updates
+        // between runs of this system.
+        dedup_by_key_unsorted(&mut player_updates, |update| update.frame_number);
+        // We want to sort after deduping, to prevent users from re-ordering inputs.
+        player_updates.sort_by_key(|update| update.frame_number);
+
         let player_update = player_updates
             .first()
             .expect("Expected at least one update for a player hash map entry");
@@ -55,30 +63,29 @@ pub fn process_player_input_updates(
             SERVER_UPDATES_LIMIT,
         );
 
-        // A client might be able to send several messages with the same unacknowledged updates
-        // between runs of this system.
-        dedup_by_key_unsorted(&mut player_updates, |update| update.frame_number);
-        // We want to sort after deduping, to prevent users from re-ordering inputs.
-        player_updates.sort_by_key(|update| update.frame_number);
-
         let mut updates_iter = player_updates.iter().peekable();
         while let Some(player_update) = updates_iter.next() {
             let next_player_update = updates_iter.peek();
-            log::trace!(
-                "Player ({}) update for frame {}",
-                player_net_id.0,
-                player_update.frame_number.value()
-            );
 
             let duplicate_updates_from =
                 std::cmp::max(player_update.frame_number, min_frame_number);
-            let duplicate_updates_to =
-                next_player_update.map_or(player_frame_number, |update| update.frame_number);
+            let duplicate_updates_to = next_player_update.map_or_else(
+                || player_frame_number + FrameNumber::new(1),
+                |update| update.frame_number,
+            );
 
             let update_to_insert = Some(PlayerDirectionUpdate {
                 direction: player_update.direction,
                 is_processed_client_input: None,
             });
+
+            log::trace!(
+                "Player ({}) update for frame {} (fill from {} up to {})",
+                player_net_id.0,
+                player_update.frame_number.value(),
+                duplicate_updates_from,
+                duplicate_updates_to,
+            );
 
             // We fill the buffer of player direction commands with the updates that come from
             // clients. We populate each frame until a command changes or we've reached the last
@@ -114,6 +121,7 @@ pub fn process_switch_role_requests(
     mut switch_role_requests: ResMut<DeferredPlayerQueues<PlayerRole>>,
     mut switch_role_commands: ResMut<DeferredQueue<SwitchPlayerRole>>,
 ) {
+    puffin::profile_function!();
     for (player_net_id, player_role_requests) in switch_role_requests.drain().into_iter() {
         for player_role in player_role_requests.into_iter() {
             switch_role_commands.push(SwitchPlayerRole {
@@ -137,6 +145,7 @@ pub fn process_spawn_level_object_requests(
     mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut spawn_level_object_messages: ResMut<DeferredMessagesQueue<messages::SpawnLevelObject>>,
 ) {
+    puffin::profile_function!();
     'player_requests: for (player_net_id, spawn_level_object_requests) in
         spawn_level_object_requests.drain()
     {
@@ -204,6 +213,7 @@ pub fn process_update_level_object_requests(
     mut spawn_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut update_level_object_messages: ResMut<DeferredMessagesQueue<UpdateLevelObject>>,
 ) {
+    puffin::profile_function!();
     'player_requests: for (player_net_id, update_level_object_requests) in
         update_level_object_requests.drain()
     {
@@ -258,6 +268,7 @@ pub fn process_despawn_level_object_requests(
     mut despawn_level_object_commands: ResMut<DeferredQueue<DespawnLevelObject>>,
     mut despawn_level_object_messages: ResMut<DeferredMessagesQueue<DespawnLevelObject>>,
 ) {
+    puffin::profile_function!();
     'player_requests: for (player_net_id, despawn_level_object_requests) in
         despawn_level_object_requests.drain()
     {
