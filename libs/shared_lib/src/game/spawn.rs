@@ -488,7 +488,7 @@ pub fn despawn_level_objects(
     mut despawn_level_object_commands: ResMut<DeferredQueue<DespawnLevelObject>>,
     object_entities: Res<EntityRegistry<EntityNetId>>,
     mut level_state: ResMut<LevelState>,
-    mut level_objects: Query<(&mut Spawned, &LevelObjectStaticGhostParent), With<LevelObjectTag>>,
+    mut level_objects: Query<(&mut Spawned, Option<&LevelObjectStaticGhostParent>), With<LevelObjectTag>>,
 ) {
     puffin::profile_function!();
     for command in despawn_level_object_commands.drain() {
@@ -503,8 +503,8 @@ pub fn despawn_level_objects(
                 continue;
             }
         };
-        let (mut spawned, ghost_entity) = match level_objects.get_mut(entity) {
-            Ok((spawned, LevelObjectStaticGhostParent(ghost_entity))) => (spawned, ghost_entity),
+        let (mut spawned, ghost_parent) = match level_objects.get_mut(entity) {
+            Ok(r) => r,
             Err(err) => {
                 log::error!("A despawned level object entity doesn't exist: {:?}", err);
                 continue;
@@ -535,30 +535,36 @@ pub fn despawn_level_objects(
                     &mut commands.entity(entity),
                     &mut pbr_client_params,
                 );
-                PlaneClientFactory::remove_components(
-                    &mut commands.entity(*ghost_entity),
-                    &mut pbr_client_params,
-                );
+                if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost_parent {
+                    PlaneClientFactory::remove_components(
+                        &mut commands.entity(*ghost_entity),
+                        &mut pbr_client_params,
+                    );
+                }
             }
             LevelObjectDesc::Cube(_) => {
                 CubeClientFactory::remove_components(
                     &mut commands.entity(entity),
                     &mut pbr_client_params,
                 );
-                CubeClientFactory::remove_components(
-                    &mut commands.entity(*ghost_entity),
-                    &mut pbr_client_params,
-                );
+                if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost_parent {
+                    CubeClientFactory::remove_components(
+                        &mut commands.entity(*ghost_entity),
+                        &mut pbr_client_params,
+                    );
+                }
             }
             LevelObjectDesc::RoutePoint(_) => {
                 RoutePointClientFactory::remove_components(
                     &mut commands.entity(entity),
                     &mut pbr_client_params,
                 );
-                RoutePointClientFactory::remove_components(
-                    &mut commands.entity(*ghost_entity),
-                    &mut pbr_client_params,
-                );
+                if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost_parent {
+                    RoutePointClientFactory::remove_components(
+                        &mut commands.entity(*ghost_entity),
+                        &mut pbr_client_params,
+                    );
+                }
             }
         }
         spawned.push_command(command.frame_number, SpawnCommand::Despawn);
