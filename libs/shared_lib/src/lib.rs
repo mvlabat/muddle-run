@@ -18,6 +18,7 @@ use crate::{
         spawn::{
             despawn_level_objects, despawn_players, poll_calculating_shapes,
             process_spawned_entities, spawn_players, update_level_objects,
+            ColliderShapePromiseResult,
         },
         switch_player_role,
     },
@@ -301,6 +302,11 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         resources.get_resource_or_insert_with(HashMap::<PlayerNetId, Player>::default);
         // Is used only on the server side.
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<SwitchRole>::default);
+
+        let (shape_sender, shape_receiver) =
+            crossbeam_channel::unbounded::<ColliderShapePromiseResult>();
+        resources.insert_resource(shape_sender);
+        resources.insert_resource(shape_receiver);
     }
 }
 

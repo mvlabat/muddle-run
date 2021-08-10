@@ -1,6 +1,9 @@
 use crate::{
     framebuffer::FrameNumber,
-    game::{client_factories::ROUTE_POINT_BASE_EDGE_HALF_LEN, level_objects::*},
+    game::{
+        client_factories::ROUTE_POINT_BASE_EDGE_HALF_LEN, level_objects::*,
+        spawn::ColliderShapeSender,
+    },
     messages::EntityNetId,
     registry::EntityRegistry,
 };
@@ -10,7 +13,7 @@ use bevy::{
         system::{Res, SystemParam},
     },
     math::Vec2,
-    tasks::{AsyncComputeTaskPool, Task},
+    tasks::AsyncComputeTaskPool,
     utils::HashMap,
 };
 use bevy_rapier2d::{
@@ -80,7 +83,7 @@ pub enum LevelObjectDesc {
 
 pub enum ColliderShapeResponse {
     Immediate(ColliderShape),
-    Async(Task<Option<ColliderShape>>),
+    Promise,
 }
 
 impl LevelObjectDesc {
@@ -113,7 +116,12 @@ impl LevelObjectDesc {
         }
     }
 
-    pub fn collider_shape(&self, task_pool: &AsyncComputeTaskPool) -> ColliderShapeResponse {
+    pub fn calculate_collider_shape(
+        &self,
+        task_pool: &AsyncComputeTaskPool,
+        entity: Entity,
+        collider_shape_sender: ColliderShapeSender,
+    ) -> ColliderShapeResponse {
         ColliderShapeResponse::Immediate(match self {
             Self::Plane(plane) => match &plane.form_desc {
                 PlaneFormDesc::Circle { radius } => ColliderShape::ball(*radius),
@@ -138,20 +146,24 @@ impl LevelObjectDesc {
                         .map(|i| [i as u32, i as u32 + 1])
                         .collect::<Vec<_>>();
                     indices.push([indices.last().unwrap()[1], 0]);
-                    return ColliderShapeResponse::Async(task_pool.spawn(async move {
-                        std::panic::catch_unwind(|| {
-                            ColliderShape::convex_decomposition_with_params(
-                                &vertices,
-                                &indices,
-                                &VHACDParameters {
-                                    concavity: 0.01,
-                                    resolution: 64,
-                                    ..Default::default()
-                                },
-                            )
+                    task_pool
+                        .spawn(async move {
+                            let r = std::panic::catch_unwind(|| {
+                                ColliderShape::convex_decomposition_with_params(
+                                    &vertices,
+                                    &indices,
+                                    &VHACDParameters {
+                                        concavity: 0.01,
+                                        resolution: 64,
+                                        ..Default::default()
+                                    },
+                                )
+                            })
+                            .ok();
+                            collider_shape_sender.send((entity, r)).unwrap();
                         })
-                        .ok()
-                    }));
+                        .detach();
+                    return ColliderShapeResponse::Promise;
                 }
             },
             Self::Cube(cube) => ColliderShape::cuboid(cube.size, cube.size),

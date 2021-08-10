@@ -35,6 +35,10 @@ use bevy_rapier2d::{
     },
 };
 
+pub type ColliderShapePromiseResult = (Entity, Option<ColliderShape>);
+pub type ColliderShapeSender = crossbeam_channel::Sender<ColliderShapePromiseResult>;
+pub type ColliderShapeReceiver = crossbeam_channel::Receiver<ColliderShapePromiseResult>;
+
 pub fn spawn_players(
     mut commands: Commands,
     time: Res<SimulationTime>,
@@ -202,6 +206,7 @@ pub fn update_level_objects(
     mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut level_object_params: LevelObjectsParams,
     task_pool: Res<AsyncComputeTaskPool>,
+    shape_sender: Res<ColliderShapeSender>,
 ) {
     puffin::profile_function!();
     // There may be several updates of the same entity per frame. We need to dedup them,
@@ -247,12 +252,13 @@ pub fn update_level_objects(
             .objects
             .insert(command.object.net_id, command.object.clone());
         let mut entity_commands = commands.spawn();
-        let shape = match command.object.desc.collider_shape(&task_pool) {
+        let shape = match command.object.desc.calculate_collider_shape(
+            &task_pool,
+            entity_commands.id(),
+            shape_sender.clone(),
+        ) {
             ColliderShapeResponse::Immediate(shape) => Some(shape),
-            ColliderShapeResponse::Async(task) => {
-                entity_commands.insert(task);
-                None
-            }
+            ColliderShapeResponse::Promise => None,
         };
         entity_commands.insert(Transform::from_translation(
             command
@@ -351,30 +357,23 @@ pub fn update_level_objects(
     }
 }
 
-type PollPendingTasksQuery<'a> = Query<
-    'a,
-    (
-        Entity,
-        &'static EntityNetId,
-        &'static Spawned,
-        Option<&'static LevelObjectStaticGhostParent>,
-        &'static mut Task<Option<ColliderShape>>,
-    ),
->;
-
 pub fn poll_calculating_shapes(
     mut commands: Commands,
     time: Res<SimulationTime>,
     level_state: Res<LevelState>,
     mut pbr_client_params: PbrClientParams,
-    mut pending_tasks: PollPendingTasksQuery,
+    level_objects_query: Query<(
+        &EntityNetId,
+        &Spawned,
+        Option<&LevelObjectStaticGhostParent>,
+    )>,
+    collider_shape_receiver: Res<ColliderShapeReceiver>,
 ) {
-    for (entity, entity_net_id, spawned, ghost_parent, mut task) in pending_tasks.iter_mut() {
-        let result =
-            match futures_lite::future::block_on(futures_lite::future::poll_once(&mut *task)) {
-                Some(result) => result,
-                None => continue,
-            };
+    while let Ok((entity, shape_result)) = collider_shape_receiver.try_recv() {
+        let (entity_net_id, spawned, ghost_parent) = match level_objects_query.get(entity) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
         let mut entity_commands = commands.entity(entity);
         entity_commands.remove::<Task<Option<ColliderShape>>>();
 
@@ -382,7 +381,7 @@ pub fn poll_calculating_shapes(
             continue;
         }
 
-        let shape = match result {
+        let shape = match shape_result {
             Some(shape) => {
                 log::debug!(
                     "Calculating shape for {:?} has finished (frame: {})",

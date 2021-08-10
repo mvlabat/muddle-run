@@ -3012,6 +3012,7 @@ dependencies = [
  "bevy_rapier2d",
  "bincode",
  "chrono",
+ "crossbeam-channel",
  "futures-lite",
  "names",
  "num",

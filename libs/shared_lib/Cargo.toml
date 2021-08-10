@@ -17,6 +17,7 @@ bevy_networking_turbulence = { version = "0.3.3", default-features = false }
 bevy_rapier2d = { version = "0.10.2", features = ["wasm-bindgen", "serde-serialize"] }
 bincode = "1.3.1"
 chrono = "0.4.19"
+crossbeam-channel = "0.5.1"
 futures-lite = "1.12.0"
 names = { version = "0.11.0", default-features = false }
 num = "0.3.1"
