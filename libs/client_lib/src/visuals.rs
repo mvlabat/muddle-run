@@ -16,7 +16,7 @@ use bevy::{
     pbr::PbrBundle,
     prelude::{StandardMaterial, Without},
     render::draw::Visible,
-    transform::components::{Parent, Transform},
+    transform::components::{Children, Parent, Transform},
 };
 use mr_shared_lib::{
     client::{assets::MuddleAssets, components::LevelObjectControlPoints},
@@ -125,6 +125,7 @@ pub fn spawn_control_points(
                 if !points.is_empty() {
                     commands
                         .entity(*edited_level_object_entity)
+                        .insert(Children::with(&points))
                         .insert(LevelObjectControlPoints { points });
                 }
             }

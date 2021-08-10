@@ -25,7 +25,7 @@ use bevy::{
     ecs::system::{EntityCommands, SystemParam},
     log,
     prelude::*,
-    tasks::{AsyncComputeTaskPool, Task},
+    tasks::AsyncComputeTaskPool,
 };
 use bevy_rapier2d::{
     physics::{ColliderBundle, ColliderPositionSync, RigidBodyBundle},
@@ -374,12 +374,14 @@ pub fn poll_calculating_shapes(
             Ok(r) => r,
             Err(_) => continue,
         };
-        let mut entity_commands = commands.entity(entity);
-        entity_commands.remove::<Task<Option<ColliderShape>>>();
 
         if !spawned.is_spawned(time.player_frame) {
             continue;
         }
+
+        let level_object = level_state.objects.get(entity_net_id).unwrap();
+
+        let mut entity_commands = commands.entity(entity);
 
         let shape = match shape_result {
             Some(shape) => {
@@ -396,11 +398,20 @@ pub fn poll_calculating_shapes(
                     entity,
                     time.player_frame
                 );
+                // Even if we don't render an object, we still want nested transforms to work.
+                if let Some(position) = level_object.desc.position() {
+                    entity_commands.insert(GlobalTransform::from_translation(position.extend(0.0)));
+                    entity_commands.insert(Transform::from_translation(position.extend(0.0)));
+                    if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost_parent {
+                        let mut entity_commands = commands.entity(*ghost_entity);
+                        entity_commands
+                            .insert(GlobalTransform::from_translation(position.extend(0.0)));
+                        entity_commands.insert(Transform::from_translation(position.extend(0.0)));
+                    }
+                }
                 continue;
             }
         };
-
-        let level_object = level_state.objects.get(entity_net_id).unwrap();
 
         let (rigid_body, collider) = level_object.desc.physics_body(shape.clone(), false);
         insert_client_components(
