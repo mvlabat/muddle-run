@@ -488,7 +488,10 @@ pub fn despawn_level_objects(
     mut despawn_level_object_commands: ResMut<DeferredQueue<DespawnLevelObject>>,
     object_entities: Res<EntityRegistry<EntityNetId>>,
     mut level_state: ResMut<LevelState>,
-    mut level_objects: Query<(&mut Spawned, Option<&LevelObjectStaticGhostParent>), With<LevelObjectTag>>,
+    mut level_objects: Query<
+        (&mut Spawned, Option<&LevelObjectStaticGhostParent>),
+        With<LevelObjectTag>,
+    >,
 ) {
     puffin::profile_function!();
     for command in despawn_level_object_commands.drain() {
