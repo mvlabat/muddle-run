@@ -183,7 +183,7 @@ pub fn inspect_object(
     // ResMut is intentional, to avoid fighting over the Mutex from different systems.
     debug_ui_state: Res<DebugUiState>,
     egui_context: ResMut<EguiContext>,
-    mut mouse_entity_picker: MouseEntityPicker,
+    mut mouse_entity_picker: MouseEntityPicker<(), ()>,
     queries: InspectObjectQueries,
 ) {
     puffin::profile_function!();
@@ -193,7 +193,7 @@ pub fn inspect_object(
 
     let ctx = egui_context.ctx();
     if !ctx.is_pointer_over_area() {
-        mouse_entity_picker.pick_entity();
+        mouse_entity_picker.process_input(&mut None);
     }
 
     if let Some(mut entity) = mouse_entity_picker.picked_entity() {

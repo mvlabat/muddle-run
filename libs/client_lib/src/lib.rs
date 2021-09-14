@@ -3,7 +3,10 @@ use crate::{
     components::{CameraPivotDirection, CameraPivotTag},
     input::{LevelObjectRequestsQueue, MouseRay, MouseWorldPosition, PlayerRequestsQueue},
     net::{maintain_connection, process_network_events, send_network_updates, send_requests},
-    ui::{builder_ui::EditedLevelObject, debug_ui::update_debug_ui_state},
+    ui::{
+        builder_ui::{EditedLevelObject, EditedObjectUpdate},
+        debug_ui::update_debug_ui_state,
+    },
     visuals::{control_builder_visibility, process_control_points_input, spawn_control_points},
 };
 use bevy::{
@@ -94,6 +97,7 @@ impl Plugin for MuddleClientPlugin {
             .add_plugin(WorldInspectorPlugin::new())
             .init_resource::<WindowInnerSize>()
             .init_resource::<input::MouseScreenPosition>()
+            .add_event::<EditedObjectUpdate>()
             // Startup systems.
             .add_startup_system(init_state.system())
             .add_startup_system(basic_scene.system())

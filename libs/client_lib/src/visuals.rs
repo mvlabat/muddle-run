@@ -191,26 +191,19 @@ pub fn spawn_control_points(
     }
 }
 
-#[derive(Default)]
-pub struct ControlPointsState {
-    is_being_dragged: bool,
-    start_position: Option<Vec2>,
-    prev_hovered_point: Option<Entity>,
-    prev_edited_level_object: Option<Entity>,
-}
+pub type ControlEntitiesQueryMutComponents = (
+    &'static mut Transform,
+    &'static mut Handle<StandardMaterial>,
+    &'static mut Handle<Mesh>,
+);
 
-pub type ControlEntitiesQueryMut<'a> = Query<
-    'a,
-    (
-        &'static mut Transform,
-        &'static mut Handle<StandardMaterial>,
-        &'static mut Handle<Mesh>,
-    ),
-    Or<(
-        With<LevelObjectControlPoint>,
-        With<LevelObjectControlBorder>,
-    )>,
->;
+pub type ControlEntitiesQueryMutFilter = Or<(
+    With<LevelObjectControlPoint>,
+    With<LevelObjectControlBorder>,
+)>;
+
+pub type ControlEntitiesQueryMut<'a> =
+    Query<'a, ControlEntitiesQueryMutComponents, ControlEntitiesQueryMutFilter>;
 
 #[derive(SystemParam)]
 pub struct ControlPointsQueries<'a> {
@@ -234,14 +227,14 @@ pub struct ControlPointsQueries<'a> {
 }
 
 pub fn process_control_points_input(
-    mouse_input: MouseInput,
+    mut mouse_input: MouseInput<ControlEntitiesQueryMutComponents, ControlEntitiesQueryMutFilter>,
     mut edited_level_object: ResMut<EditedLevelObject>,
     muddle_assets: MuddleAssets,
     mut meshes: ResMut<Assets<Mesh>>,
     mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
     mut control_points_queries: ControlPointsQueries,
     // Screen coordinates at where the dragging started.
-    mut control_points_state: Local<ControlPointsState>,
+    mut prev_edited_level_object: Local<Option<Entity>>,
 ) {
     let EditedLevelObject {
         object,
@@ -253,36 +246,43 @@ pub fn process_control_points_input(
         None => return,
     };
 
-    if Some(*edited_object) != control_points_state.prev_edited_level_object {
-        control_points_state.prev_edited_level_object = Some(*edited_object);
-        control_points_state.is_being_dragged = false;
-        control_points_state.start_position = None;
-        control_points_state.prev_hovered_point = None;
+    if Some(*edited_object) != *prev_edited_level_object {
+        *prev_edited_level_object = Some(*edited_object);
         *dragged_control_point_index_state = None;
+        mouse_input.mouse_entity_picker.reset();
         // Newly spawned control points will be available next run.
         return;
     }
 
-    if control_points_state.start_position.is_none() {
-        let new_hovered_entity = mouse_input.mouse_entity_picker.hovered_entity();
-        if new_hovered_entity != control_points_state.prev_hovered_point {
-            if let Some(prev_hovered_point) = control_points_state.prev_hovered_point {
-                if let Ok(mut point_material) = control_points_queries
-                    .control_entities_query
-                    .get_component_mut::<Handle<StandardMaterial>>(prev_hovered_point)
-                {
-                    *point_material = muddle_assets.materials.control_point_normal.clone();
-                }
+    mouse_input.mouse_entity_picker.process_input(&mut Some(
+        &mut control_points_queries.control_entities_query,
+    ));
+
+    let prev_hovered_entity = mouse_input
+        .mouse_entity_picker
+        .prev_state()
+        .picked_entity
+        .or_else(|| mouse_input.mouse_entity_picker.prev_state().hovered_entity);
+    let hovered_entity = mouse_input
+        .mouse_entity_picker
+        .state()
+        .picked_entity
+        .or_else(|| mouse_input.mouse_entity_picker.state().hovered_entity);
+    if prev_hovered_entity != hovered_entity {
+        if let Some(prev_hovered_point) = prev_hovered_entity {
+            if let Ok(mut point_material) = control_points_queries
+                .control_entities_query
+                .get_component_mut::<Handle<StandardMaterial>>(prev_hovered_point)
+            {
+                *point_material = muddle_assets.materials.control_point_normal.clone();
             }
-            control_points_state.prev_hovered_point = None;
-            if let Some(new_hovered_entity) = new_hovered_entity {
-                if let Ok(mut point_material) = control_points_queries
-                    .control_entities_query
-                    .get_component_mut::<Handle<StandardMaterial>>(new_hovered_entity)
-                {
-                    *point_material = muddle_assets.materials.control_point_hovered.clone();
-                    control_points_state.prev_hovered_point = Some(new_hovered_entity);
-                }
+        }
+        if let Some(new_hovered_entity) = hovered_entity {
+            if let Ok(mut point_material) = control_points_queries
+                .control_entities_query
+                .get_component_mut::<Handle<StandardMaterial>>(new_hovered_entity)
+            {
+                *point_material = muddle_assets.materials.control_point_hovered.clone();
             }
         }
     }
@@ -291,16 +291,24 @@ pub fn process_control_points_input(
         .mouse_button_input
         .just_pressed(MouseButton::Left)
     {
-        if let Some(hovered_point) = control_points_state.prev_hovered_point {
+        if let Some(hovered_point) = prev_hovered_entity {
             let LevelObjectControlPoints { points } = control_points_queries
                 .control_point_parent_query
                 .get_component::<LevelObjectControlPoints>(*edited_object)
                 .unwrap();
             if let Some(index) = points.iter().position(|point| *point == hovered_point) {
                 *dragged_control_point_index_state = Some(index);
-                control_points_state.start_position = Some(mouse_input.mouse_screen_position.0);
             }
         }
+    }
+
+    if !mouse_input.mouse_entity_picker.state().is_dragged
+        && mouse_input.mouse_entity_picker.prev_state().is_dragged
+    {
+        level_object_requests
+            .update_requests
+            .push(level_object.clone());
+        *dragged_control_point_index_state = None;
     }
 
     let dragged_control_point_index = match dragged_control_point_index_state {
@@ -308,129 +316,106 @@ pub fn process_control_points_input(
         None => return,
     };
 
-    let dragging_threshold_squared = 100.0;
-    if control_points_state
-        .start_position
-        .unwrap()
-        .distance_squared(mouse_input.mouse_screen_position.0)
-        > dragging_threshold_squared
+    let LevelObjectStaticGhostParent(ghost_entity) = control_points_queries
+        .control_point_parent_query
+        .get_component::<LevelObjectStaticGhostParent>(*edited_object)
+        .unwrap();
+    let ghost_transform = control_points_queries
+        .control_point_parent_ghost_query
+        .get(*ghost_entity)
+        .unwrap();
+    let new_translation =
+        mouse_input.mouse_world_position.0.extend(0.0) - ghost_transform.translation;
+    if let Ok(mut point_transform) = control_points_queries
+        .control_entities_query
+        .get_component_mut::<Transform>(hovered_entity.unwrap())
     {
-        control_points_state.is_being_dragged = true;
+        point_transform.translation = new_translation;
     }
+    let new_point_pos = new_translation.xy();
+    level_object
+        .desc
+        .set_control_point(*dragged_control_point_index, new_translation.xy());
 
-    if mouse_input.mouse_button_input.pressed(MouseButton::Left) {
-        if control_points_state.is_being_dragged {
-            let LevelObjectStaticGhostParent(ghost_entity) = control_points_queries
-                .control_point_parent_query
-                .get_component::<LevelObjectStaticGhostParent>(*edited_object)
-                .unwrap();
-            let ghost_transform = control_points_queries
-                .control_point_parent_ghost_query
-                .get(*ghost_entity)
-                .unwrap();
-            let new_translation =
-                mouse_input.mouse_world_position.0.extend(0.0) - ghost_transform.translation;
-            if let Ok(mut point_transform) = control_points_queries
+    let LevelObjectControlPoints { points } = control_points_queries
+        .control_point_parent_query
+        .get_component::<LevelObjectControlPoints>(*edited_object)
+        .unwrap();
+    let connected_to = points
+        .iter()
+        .enumerate()
+        .find(|(i, _)| *i == (*dragged_control_point_index + 1) % points.len());
+    let connected_from = points.iter().enumerate().find(|(i, _)| {
+        if *dragged_control_point_index == 0 {
+            *i == points.len() - 1
+        } else {
+            *i == *dragged_control_point_index - 1
+        }
+    });
+    let LevelObjectControlBorders { lines } = control_points_queries
+        .control_point_parent_query
+        .get_component::<LevelObjectControlBorders>(*edited_object)
+        .unwrap();
+
+    // TODO: dedup.
+    if let Some((point_index, connected_to)) = connected_to {
+        let line_index = if point_index == 0 {
+            lines.len() - 1
+        } else {
+            point_index - 1
+        };
+        let connected_to_pos = control_points_queries
+            .control_entities_query
+            .get_component::<Transform>(*connected_to)
+            .unwrap()
+            .translation
+            .xy();
+        let border_line = connected_to_pos - new_point_pos;
+        let length = border_line.length();
+        if length > f32::EPSILON {
+            let mut transform = control_points_queries
                 .control_entities_query
-                .get_component_mut::<Transform>(control_points_state.prev_hovered_point.unwrap())
-            {
-                point_transform.translation = new_translation;
-            }
-            let new_point_pos = new_translation.xy();
-            level_object
-                .desc
-                .set_control_point(*dragged_control_point_index, new_translation.xy());
-
-            let LevelObjectControlPoints { points } = control_points_queries
-                .control_point_parent_query
-                .get_component::<LevelObjectControlPoints>(*edited_object)
+                .get_component_mut::<Transform>(lines[line_index].1)
                 .unwrap();
-            let connected_to = points
-                .iter()
-                .enumerate()
-                .find(|(i, _)| *i == (*dragged_control_point_index + 1) % points.len());
-            let connected_from = points.iter().enumerate().find(|(i, _)| {
-                if *dragged_control_point_index == 0 {
-                    *i == points.len() - 1
-                } else {
-                    *i == *dragged_control_point_index - 1
-                }
-            });
-            let LevelObjectControlBorders { lines } = control_points_queries
-                .control_point_parent_query
-                .get_component::<LevelObjectControlBorders>(*edited_object)
+            transform.translation = (new_point_pos + border_line / 2.0).extend(0.01);
+            transform.rotation =
+                Quat::from_rotation_arc(Vec3::X, border_line.normalize().extend(0.0));
+            let mut mesh = control_points_queries
+                .control_entities_query
+                .get_component_mut::<Handle<Mesh>>(lines[line_index].1)
                 .unwrap();
-
-            // TODO: dedup.
-            if let Some((point_index, connected_to)) = connected_to {
-                let line_index = if point_index == 0 {
-                    lines.len() - 1
-                } else {
-                    point_index - 1
-                };
-                let connected_to_pos = control_points_queries
-                    .control_entities_query
-                    .get_component::<Transform>(*connected_to)
-                    .unwrap()
-                    .translation
-                    .xy();
-                let border_line = connected_to_pos - new_point_pos;
-                let length = border_line.length();
-                if length > f32::EPSILON {
-                    let mut transform = control_points_queries
-                        .control_entities_query
-                        .get_component_mut::<Transform>(lines[line_index].1)
-                        .unwrap();
-                    transform.translation = (new_point_pos + border_line / 2.0).extend(0.01);
-                    transform.rotation =
-                        Quat::from_rotation_arc(Vec3::X, border_line.normalize().extend(0.0));
-                    let mut mesh = control_points_queries
-                        .control_entities_query
-                        .get_component_mut::<Handle<Mesh>>(lines[line_index].1)
-                        .unwrap();
-                    meshes.remove(mesh.clone_weak());
-                    *mesh = meshes.add(Mesh::from(XyPlane {
-                        size: Vec2::new(length, 0.04),
-                    }));
-                }
-            }
-            if let Some((point_index, connected_from)) = connected_from {
-                let line_index = point_index;
-                let connected_from_pos = control_points_queries
-                    .control_entities_query
-                    .get_component::<Transform>(*connected_from)
-                    .unwrap()
-                    .translation
-                    .xy();
-                let border_line = new_point_pos - connected_from_pos;
-                let length = border_line.length();
-                if length > f32::EPSILON {
-                    let mut transform = control_points_queries
-                        .control_entities_query
-                        .get_component_mut::<Transform>(lines[line_index].1)
-                        .unwrap();
-                    transform.translation = (connected_from_pos + border_line / 2.0).extend(0.01);
-                    transform.rotation =
-                        Quat::from_rotation_arc(Vec3::X, border_line.normalize().extend(0.0));
-                    let mut mesh = control_points_queries
-                        .control_entities_query
-                        .get_component_mut::<Handle<Mesh>>(lines[line_index].1)
-                        .unwrap();
-                    meshes.remove(mesh.clone_weak());
-                    *mesh = meshes.add(Mesh::from(XyPlane {
-                        size: Vec2::new(length, 0.04),
-                    }));
-                }
-            }
+            meshes.remove(mesh.clone_weak());
+            *mesh = meshes.add(Mesh::from(XyPlane {
+                size: Vec2::new(length, 0.04),
+            }));
         }
-    } else {
-        if control_points_state.is_being_dragged {
-            level_object_requests
-                .update_requests
-                .push(level_object.clone());
+    }
+    if let Some((point_index, connected_from)) = connected_from {
+        let line_index = point_index;
+        let connected_from_pos = control_points_queries
+            .control_entities_query
+            .get_component::<Transform>(*connected_from)
+            .unwrap()
+            .translation
+            .xy();
+        let border_line = new_point_pos - connected_from_pos;
+        let length = border_line.length();
+        if length > f32::EPSILON {
+            let mut transform = control_points_queries
+                .control_entities_query
+                .get_component_mut::<Transform>(lines[line_index].1)
+                .unwrap();
+            transform.translation = (connected_from_pos + border_line / 2.0).extend(0.01);
+            transform.rotation =
+                Quat::from_rotation_arc(Vec3::X, border_line.normalize().extend(0.0));
+            let mut mesh = control_points_queries
+                .control_entities_query
+                .get_component_mut::<Handle<Mesh>>(lines[line_index].1)
+                .unwrap();
+            meshes.remove(mesh.clone_weak());
+            *mesh = meshes.add(Mesh::from(XyPlane {
+                size: Vec2::new(length, 0.04),
+            }));
         }
-        *dragged_control_point_index_state = None;
-        control_points_state.start_position = None;
-        control_points_state.is_being_dragged = false;
     }
 }
