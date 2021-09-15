@@ -1,4 +1,5 @@
 use crate::{
+    collider_flags::level_object_interaction_groups,
     framebuffer::FrameNumber,
     game::{
         client_factories::ROUTE_POINT_BASE_EDGE_HALF_LEN, level_objects::*,
@@ -21,7 +22,7 @@ use bevy_rapier2d::{
     physics::{ColliderBundle, RigidBodyBundle},
     rapier::{
         dynamics::RigidBodyType,
-        geometry::{ColliderShape, ColliderType},
+        geometry::{ColliderFlags, ColliderShape, ColliderType},
         parry::transformation::vhacd::VHACDParameters,
     },
 };
@@ -188,6 +189,11 @@ impl LevelObjectDesc {
                 },
                 ColliderBundle {
                     collider_type: ColliderType::Sensor,
+                    flags: ColliderFlags {
+                        collision_groups: level_object_interaction_groups(),
+                        solver_groups: level_object_interaction_groups(),
+                        ..ColliderFlags::default()
+                    },
                     shape,
                     ..ColliderBundle::default()
                 },
@@ -204,6 +210,11 @@ impl LevelObjectDesc {
                     } else {
                         ColliderType::Solid
                     },
+                    flags: ColliderFlags {
+                        collision_groups: level_object_interaction_groups(),
+                        solver_groups: level_object_interaction_groups(),
+                        ..ColliderFlags::default()
+                    },
                     shape,
                     ..ColliderBundle::default()
                 },
@@ -216,6 +227,11 @@ impl LevelObjectDesc {
                 },
                 ColliderBundle {
                     collider_type: ColliderType::Sensor,
+                    flags: ColliderFlags {
+                        collision_groups: level_object_interaction_groups(),
+                        solver_groups: level_object_interaction_groups(),
+                        ..ColliderFlags::default()
+                    },
                     shape,
                     ..ColliderBundle::default()
                 },

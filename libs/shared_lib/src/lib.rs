@@ -60,6 +60,7 @@ use std::{borrow::Cow, sync::Mutex};
 
 #[cfg(feature = "client")]
 pub mod client;
+pub mod collider_flags;
 pub mod framebuffer;
 pub mod game;
 pub mod messages;

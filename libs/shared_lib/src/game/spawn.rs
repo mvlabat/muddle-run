@@ -1,6 +1,7 @@
 #[cfg(feature = "client")]
 use crate::game::components::PlayerFrameSimulated;
 use crate::{
+    collider_flags::player_interaction_groups,
     framebuffer::FrameNumber,
     game::{
         client_factories::{
@@ -31,7 +32,7 @@ use bevy_rapier2d::{
     physics::{ColliderBundle, ColliderPositionSync, RigidBodyBundle},
     rapier::{
         dynamics::{RigidBodyMassProps, RigidBodyMassPropsFlags, RigidBodyPosition},
-        geometry::ColliderShape,
+        geometry::{ColliderFlags, ColliderShape},
     },
 };
 
@@ -108,6 +109,11 @@ pub fn spawn_players(
             })
             .insert_bundle(ColliderBundle {
                 shape: ColliderShape::cuboid(PLAYER_SIZE, PLAYER_SIZE),
+                flags: ColliderFlags {
+                    collision_groups: player_interaction_groups(),
+                    solver_groups: player_interaction_groups(),
+                    ..ColliderFlags::default()
+                },
                 ..ColliderBundle::default()
             })
             .insert(Position::new(
