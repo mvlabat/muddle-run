@@ -16,8 +16,9 @@ use crate::{
         movement::{load_object_positions, player_movement, read_movement_updates, sync_position},
         remove_disconnected_players, restart_game,
         spawn::{
-            despawn_level_objects, despawn_players, process_spawned_entities, spawn_players,
-            update_level_objects,
+            despawn_level_objects, despawn_players, poll_calculating_shapes,
+            process_spawned_entities, spawn_players, update_level_objects,
+            ColliderShapePromiseResult,
         },
         switch_player_role,
     },
@@ -59,6 +60,7 @@ use std::{borrow::Cow, sync::Mutex};
 
 #[cfg(feature = "client")]
 pub mod client;
+pub mod collider_flags;
 pub mod framebuffer;
 pub mod game;
 pub mod messages;
@@ -173,7 +175,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                     // updated with replacement. Running it before `despawn_level_objects` might
                     // result into an edge-case where changes to the `Spawned` component are not
                     // propagated.
-                    .with_system(update_level_objects.system().after("despawn_objects")),
+                    .with_system(update_level_objects.system().after("despawn_objects"))
+                    .with_system(poll_calculating_shapes.system().after("despawn_objects")),
             )
             .with_stage(
                 stage::PRE_GAME,
@@ -273,14 +276,15 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         builder.add_startup_system(network_setup.system());
 
         #[cfg(feature = "client")]
-        builder.add_startup_system(crate::client::materials::init_object_materials.system());
+        builder.add_startup_system(crate::client::assets::init_muddle_assets.system());
 
         builder.add_system_to_stage(
             bevy::app::CoreStage::First,
             (|| {
                 puffin::GlobalProfiler::lock().new_frame();
             })
-            .system(),
+            .exclusive_system()
+            .at_start(),
         );
 
         let resources = builder.world_mut();
@@ -299,6 +303,11 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         resources.get_resource_or_insert_with(HashMap::<PlayerNetId, Player>::default);
         // Is used only on the server side.
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<SwitchRole>::default);
+
+        let (shape_sender, shape_receiver) =
+            crossbeam_channel::unbounded::<ColliderShapePromiseResult>();
+        resources.insert_resource(shape_sender);
+        resources.insert_resource(shape_receiver);
     }
 }
 

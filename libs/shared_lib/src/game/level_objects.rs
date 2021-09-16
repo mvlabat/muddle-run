@@ -24,8 +24,25 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct PlaneDesc {
-    pub size: f32,
     pub position: Vec2,
+    pub form_desc: PlaneFormDesc,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum PlaneFormDesc {
+    Circle { radius: f32 },
+    Rectangle { size: Vec2 },
+    Concave { points: Vec<Vec2> },
+}
+
+impl std::fmt::Display for PlaneFormDesc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlaneFormDesc::Circle { .. } => write!(f, "Circle"),
+            PlaneFormDesc::Rectangle { .. } => write!(f, "Rectangle"),
+            PlaneFormDesc::Concave { .. } => write!(f, "Concave"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -375,7 +392,7 @@ fn closest_start_frame_to_time(
         return frame_number;
     }
 
-    assert!(start_frame_offset.value() < period.value()); // TODO! make sure we don't allow that in the UI.
+    assert!(start_frame_offset.value() < period.value());
     if generation == 0 && frame_number.value() < start_frame_offset.value() {
         return start_frame_offset;
     }

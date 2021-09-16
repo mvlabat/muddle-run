@@ -5,6 +5,7 @@ use crate::{
     LevelObjectCorrelations,
 };
 use bevy::{
+    app::{EventReader, EventWriter},
     ecs::{
         entity::Entity,
         schedule::{ParallelSystemDescriptorCoercion, ShouldRun, SystemSet},
@@ -16,7 +17,10 @@ use bevy::{
     transform::components::Transform,
     utils::HashMap,
 };
-use bevy_egui::{egui, egui::Ui, EguiContext};
+use bevy_egui::{
+    egui::{self, Ui, Widget},
+    EguiContext,
+};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -24,7 +28,7 @@ use mr_shared_lib::{
             LevelObjectLabel, LevelObjectStaticGhost, LevelObjectStaticGhostParent, Spawned,
         },
         level::{LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc},
-        level_objects::{CubeDesc, PlaneDesc, RoutePointDesc},
+        level_objects::{CubeDesc, PlaneDesc, PlaneFormDesc, RoutePointDesc},
     },
     messages::{EntityNetId, SpawnLevelObjectRequest, SpawnLevelObjectRequestBody},
     net::MessageId,
@@ -33,6 +37,16 @@ use mr_shared_lib::{
     simulations_per_second, GameTime,
 };
 
+pub const DEFAULT_PLANE_CIRCLE_RADIUS: f32 = 10.0;
+pub const DEFAULT_PLANE_RECTANGLE_SIZE: [f32; 2] = [10.0, 10.0];
+pub const DEFAULT_PLANE_CONCAVE_POINTS: &[[f32; 2]] = &[
+    [-8.0, -5.0],
+    [8.0, -5.0],
+    [10.0, 5.0],
+    [0.0, 3.50],
+    [-10.0, 5.0],
+];
+
 pub fn default_period() -> FrameNumber {
     FrameNumber::new(simulations_per_second() * 10)
 }
@@ -40,15 +54,17 @@ pub fn default_period() -> FrameNumber {
 #[derive(Default, Clone)]
 pub struct EditedLevelObject {
     pub object: Option<(Entity, LevelObject)>,
+    pub dragged_control_point_index: Option<usize>,
     pub is_being_placed: bool,
-    pub is_being_dragged: bool,
+    pub is_draggable: bool,
 }
 
 impl EditedLevelObject {
     pub fn deselect(&mut self) {
         self.object = None;
-        self.is_being_dragged = false;
+        self.dragged_control_point_index = None;
         self.is_being_placed = false;
+        self.is_draggable = false;
     }
 }
 
@@ -68,6 +84,7 @@ pub struct LevelObjects<'a> {
     time: Res<'a, GameTime>,
     pending_correlation: Local<'a, Option<MessageId>>,
     edited_level_object: ResMut<'a, EditedLevelObject>,
+    requests_queue: ResMut<'a, LevelObjectRequestsQueue>,
     level_state: Res<'a, LevelState>,
     entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
     query: LevelObjectsQuery<'a>,
@@ -75,17 +92,22 @@ pub struct LevelObjects<'a> {
 }
 
 #[derive(SystemParam)]
-pub struct MouseInput<'a> {
-    mouse_screen_position: Res<'a, MouseScreenPosition>,
-    mouse_world_position: Res<'a, MouseWorldPosition>,
-    mouse_entity_picker: MouseEntityPicker<'a>,
-    mouse_button_input: Res<'a, Input<MouseButton>>,
+pub struct MouseInput<'a, Q: Send + Sync + 'static, F: Send + Sync + 'static> {
+    pub mouse_screen_position: Res<'a, MouseScreenPosition>,
+    pub mouse_world_position: Res<'a, MouseWorldPosition>,
+    pub mouse_entity_picker: MouseEntityPicker<'a, Q, F>,
+    pub mouse_button_input: Res<'a, Input<MouseButton>>,
 }
 
 #[derive(Default)]
 pub struct BuilderUiState {
     select_edited_level_object_filter: String,
     route_point_filter: String,
+}
+
+pub struct EditedObjectUpdate {
+    pub old: Entity,
+    pub new: Entity,
 }
 
 pub fn builder_system_set() -> SystemSet {
@@ -114,142 +136,26 @@ pub fn builder_run_criteria(
     ShouldRun::Yes
 }
 
-pub fn process_builder_mouse_input(
-    egui_context: ResMut<EguiContext>,
-    mut mouse_input: MouseInput,
-    mut level_objects: LevelObjects,
-    mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
-    // Screen coordinates at where the dragging started.
-    mut dragging_start: Local<Option<Vec2>>,
-) {
-    puffin::profile_function!();
-    // If we have a newly placed object, move it with a cursor, until left mouse button is clicked.
-    if let EditedLevelObject {
-        object: Some((_, level_object)),
-        is_being_placed,
-        is_being_dragged,
-    } = &mut *level_objects.edited_level_object
-    {
-        if *is_being_placed || *is_being_dragged {
-            let object_position = level_object
-                .desc
-                .position_mut()
-                .expect("Objects without positions aren't supported yet");
-            if (*object_position - mouse_input.mouse_world_position.0).length_squared()
-                > f32::EPSILON
-            {
-                *object_position = mouse_input.mouse_world_position.0;
-                level_object_requests.update_requests.push(LevelObject {
-                    net_id: level_object.net_id,
-                    label: level_object.label.clone(),
-                    desc: level_object.desc.clone(),
-                    route: level_object.route.clone(),
-                });
-            }
-        }
-
-        if *is_being_placed
-            && mouse_input
-                .mouse_button_input
-                .just_pressed(MouseButton::Left)
-            && !egui_context.ctx().is_pointer_over_area()
-        {
-            *is_being_placed = false;
-        }
-    }
-
-    if level_objects.edited_level_object.object.is_none()
-        || !level_objects.edited_level_object.is_being_placed
-            && !level_objects.edited_level_object.is_being_dragged
-    {
-        // Picking a level object with a mouse.
-        if !egui_context.ctx().is_pointer_over_area() {
-            mouse_input.mouse_entity_picker.pick_entity();
-        }
-        let mut is_ghost = false;
-        if let Some((entity, _, edited_level_object)) = mouse_input
-            .mouse_entity_picker
-            .take_picked_entity()
-            .and_then(|entity| {
-                // Checking whether we've clicked a ghost.
-                if let Ok(LevelObjectStaticGhost(ghost_parent)) =
-                    level_objects
-                        .ghosts_query
-                        .get_component::<LevelObjectStaticGhost>(entity)
-                {
-                    is_ghost = true;
-                    return Some((
-                        *ghost_parent,
-                        level_objects.entity_registry.get_id(*ghost_parent).unwrap(),
-                    ));
-                }
-                // Checking normal objects.
-                level_objects
-                    .entity_registry
-                    .get_id(entity)
-                    .map(|entity_net_id| (entity, entity_net_id))
-            })
-            .and_then(|(entity, entity_net_id)| {
-                level_objects
-                    .level_state
-                    .objects
-                    .get(&entity_net_id)
-                    .map(|level_object| (entity, entity_net_id, level_object.clone()))
-            })
-        {
-            let is_static = {
-                let (_, _, transform, LevelObjectStaticGhostParent(ghost_entity), _) =
-                    level_objects.query.get(entity).unwrap();
-                let ghost_transform = level_objects
-                    .ghosts_query
-                    .get_component::<Transform>(*ghost_entity)
-                    .unwrap();
-                (transform.translation.x - ghost_transform.translation.x).abs() < f32::EPSILON
-                    && (transform.translation.y - ghost_transform.translation.y).abs()
-                        < f32::EPSILON
-            };
-            let is_draggable = edited_level_object.desc.is_movable_with_mouse()
-                && (edited_level_object.route.is_none() || is_ghost || is_static);
-            if is_draggable {
-                *dragging_start = Some(mouse_input.mouse_screen_position.0);
-            }
-            // We don't reset edited state if the clicked object is the same.
-            if !matches!(level_objects.edited_level_object.object, Some((picked_entity, _)) if picked_entity == entity)
-            {
-                level_objects.edited_level_object.object = Some((entity, edited_level_object));
-                *level_objects.pending_correlation = None;
-            }
-        }
-    }
-
-    if let Some(dragging_start_position) = *dragging_start {
-        if mouse_input.mouse_button_input.pressed(MouseButton::Left) {
-            let dragging_threshold_squared = 100.0;
-            if (mouse_input.mouse_screen_position.0 - dragging_start_position).length_squared()
-                > dragging_threshold_squared
-            {
-                level_objects.edited_level_object.is_being_dragged = true;
-            }
-        } else {
-            *dragging_start = None;
-            level_objects.edited_level_object.is_being_dragged = false;
-        }
-    }
-}
-
 pub fn builder_ui(
     egui_context: ResMut<EguiContext>,
     mut builder_ui_state: Local<BuilderUiState>,
-    mouse_input: MouseInput,
+    mouse_input: MouseInput<(), ()>,
     mut level_object_correlations: ResMut<LevelObjectCorrelations>,
-    mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
     mut level_objects: LevelObjects,
+    mut object_update: EventWriter<EditedObjectUpdate>,
 ) {
     puffin::profile_function!();
+    let ctx = egui_context.ctx();
+
     // Picking a level object if we received a confirmation from the server about an object created
     // by us.
     if let Some(correlation_id) = *level_objects.pending_correlation {
         if let Some(entity_net_id) = level_object_correlations.query(correlation_id) {
+            let old_entity = level_objects
+                .edited_level_object
+                .object
+                .as_ref()
+                .map(|(entity, _)| *entity);
             level_objects.edited_level_object.object =
                 level_objects.entity_registry.get_entity(entity_net_id).zip(
                     level_objects
@@ -258,7 +164,15 @@ pub fn builder_ui(
                         .get(&entity_net_id)
                         .cloned(),
                 );
-            if let Some((_, edited_level_object)) = &level_objects.edited_level_object.object {
+            if let Some((new_entity, edited_level_object)) =
+                &level_objects.edited_level_object.object
+            {
+                if let Some(old_entity) = old_entity {
+                    object_update.send(EditedObjectUpdate {
+                        old: old_entity,
+                        new: *new_entity,
+                    });
+                }
                 if edited_level_object.desc.is_movable_with_mouse() {
                     level_objects.edited_level_object.is_being_placed = true;
                 }
@@ -272,22 +186,36 @@ pub fn builder_ui(
     if level_objects.edited_level_object.object.is_some() {
         // When an object is updated, it may get re-spawned as a new entity. We need to update
         // the picked entity in such a case. Despawns may happen as well.
-        if let Some(level_object_entity) = level_objects.entity_registry.get_entity(
-            level_objects
-                .edited_level_object
-                .object
-                .as_ref()
-                .unwrap()
-                .1
-                .net_id,
-        ) {
+        let edited_object_net_id = level_objects
+            .edited_level_object
+            .object
+            .as_ref()
+            .unwrap()
+            .1
+            .net_id;
+        if let Some(level_object_entity) = level_objects
+            .entity_registry
+            .get_entity(edited_object_net_id)
+        {
             if level_objects
                 .query
                 .get_component::<Spawned>(level_object_entity)
                 .unwrap()
                 .is_spawned(level_objects.time.frame_number)
             {
-                level_objects.edited_level_object.object.as_mut().unwrap().0 = level_object_entity;
+                let (entity, level_object) =
+                    level_objects.edited_level_object.object.as_mut().unwrap();
+                if *entity != level_object_entity {
+                    *entity = level_object_entity;
+                    if !ctx.is_using_pointer() {
+                        *level_object = level_objects
+                            .level_state
+                            .objects
+                            .get(&edited_object_net_id)
+                            .cloned()
+                            .unwrap();
+                    }
+                }
             } else {
                 level_objects.edited_level_object.deselect();
             }
@@ -302,27 +230,30 @@ pub fn builder_ui(
         }
     }
 
-    let ctx = egui_context.ctx();
     egui::Window::new("Builder menu").show(ctx, |ui| {
         ui.label("Create new object:");
         ui.horizontal_wrapped(|ui| {
             if ui.button("Plane").clicked() {
                 let correlation_id = level_object_correlations.next_correlation_id();
                 *level_objects.pending_correlation = Some(correlation_id);
-                level_object_requests
+                level_objects
+                    .requests_queue
                     .spawn_requests
                     .push(SpawnLevelObjectRequest {
                         correlation_id,
                         body: SpawnLevelObjectRequestBody::New(LevelObjectDesc::Plane(PlaneDesc {
                             position: mouse_input.mouse_world_position.0,
-                            size: 50.0,
+                            form_desc: PlaneFormDesc::Rectangle {
+                                size: DEFAULT_PLANE_RECTANGLE_SIZE.into(),
+                            },
                         })),
                     });
             }
             if ui.button("Cube").clicked() {
                 let correlation_id = level_object_correlations.next_correlation_id();
                 *level_objects.pending_correlation = Some(correlation_id);
-                level_object_requests
+                level_objects
+                    .requests_queue
                     .spawn_requests
                     .push(SpawnLevelObjectRequest {
                         correlation_id,
@@ -335,7 +266,8 @@ pub fn builder_ui(
             if ui.button("Route point").clicked() {
                 let correlation_id = level_object_correlations.next_correlation_id();
                 *level_objects.pending_correlation = Some(correlation_id);
-                level_object_requests
+                level_objects
+                    .requests_queue
                     .spawn_requests
                     .push(SpawnLevelObjectRequest {
                         correlation_id,
@@ -370,7 +302,7 @@ pub fn builder_ui(
         if let Some((_, level_object)) = level_objects.edited_level_object.object.clone() {
             let mut dirty_level_object = level_object.clone();
             level_object_ui(
-                &mut level_object_requests,
+                &mut level_objects.requests_queue,
                 ui,
                 &level_object,
                 &mut dirty_level_object,
@@ -387,12 +319,15 @@ pub fn builder_ui(
 
             if level_object != dirty_level_object {
                 assert_eq!(level_object.net_id, dirty_level_object.net_id);
-                level_object_requests.update_requests.push(LevelObject {
-                    net_id: level_object.net_id,
-                    label: dirty_level_object.label.clone(),
-                    desc: dirty_level_object.desc.clone(),
-                    route: dirty_level_object.route.clone(),
-                });
+                level_objects
+                    .requests_queue
+                    .update_requests
+                    .push(LevelObject {
+                        net_id: level_object.net_id,
+                        label: dirty_level_object.label.clone(),
+                        desc: dirty_level_object.desc.clone(),
+                        route: dirty_level_object.route.clone(),
+                    });
 
                 let (_, edited_level_object) =
                     level_objects.edited_level_object.object.as_mut().unwrap();
@@ -400,6 +335,133 @@ pub fn builder_ui(
             }
         }
     });
+}
+
+pub fn process_builder_mouse_input(
+    egui_context: ResMut<EguiContext>,
+    mut mouse_input: MouseInput<(), ()>,
+    mut level_objects: LevelObjects,
+    mut object_update: EventReader<EditedObjectUpdate>,
+) {
+    puffin::profile_function!();
+
+    if let Some(update) = object_update.iter().last() {
+        mouse_input.mouse_entity_picker.update_entities(|entity| {
+            if entity == update.old {
+                Some(update.new)
+            } else {
+                None
+            }
+        });
+    }
+
+    // Picking a level object with a mouse.
+    if !egui_context.ctx().is_pointer_over_area() {
+        mouse_input.mouse_entity_picker.process_input(&mut None);
+    }
+
+    let mut is_being_dragged = false;
+    // If we have a newly placed object, move it with a cursor, until left mouse button is clicked.
+    if let EditedLevelObject {
+        object: Some((_, level_object)),
+        is_being_placed,
+        is_draggable,
+        ..
+    } = &mut *level_objects.edited_level_object
+    {
+        is_being_dragged = *is_draggable && mouse_input.mouse_entity_picker.state().is_dragged;
+        if *is_being_placed || is_being_dragged {
+            let object_position = level_object
+                .desc
+                .position_mut()
+                .expect("Objects without positions aren't supported yet");
+            if (*object_position - mouse_input.mouse_world_position.0).length_squared()
+                > f32::EPSILON
+            {
+                *object_position = mouse_input.mouse_world_position.0;
+                level_objects
+                    .requests_queue
+                    .update_requests
+                    .push(LevelObject {
+                        net_id: level_object.net_id,
+                        label: level_object.label.clone(),
+                        desc: level_object.desc.clone(),
+                        route: level_object.route.clone(),
+                    });
+            }
+        }
+
+        if *is_being_placed
+            && mouse_input
+                .mouse_button_input
+                .just_pressed(MouseButton::Left)
+            && !egui_context.ctx().is_pointer_over_area()
+        {
+            *is_being_placed = false;
+        }
+    }
+
+    if level_objects.edited_level_object.object.is_none()
+        || !level_objects.edited_level_object.is_being_placed
+            && !is_being_dragged
+            && level_objects
+                .edited_level_object
+                .dragged_control_point_index
+                .is_none()
+    {
+        let mut is_ghost = false;
+        if let Some((entity, _, edited_level_object)) = mouse_input
+            .mouse_entity_picker
+            .picked_entity()
+            .and_then(|entity| {
+                // Checking whether we've clicked a ghost.
+                if let Ok(LevelObjectStaticGhost(ghost_parent)) =
+                    level_objects
+                        .ghosts_query
+                        .get_component::<LevelObjectStaticGhost>(entity)
+                {
+                    is_ghost = true;
+                    return Some((
+                        *ghost_parent,
+                        level_objects.entity_registry.get_id(*ghost_parent).unwrap(),
+                    ));
+                }
+                // Checking normal objects.
+                level_objects
+                    .entity_registry
+                    .get_id(entity)
+                    .map(|entity_net_id| (entity, entity_net_id))
+            })
+            .and_then(|(entity, entity_net_id)| {
+                level_objects
+                    .level_state
+                    .objects
+                    .get(&entity_net_id)
+                    .map(|level_object| (entity, entity_net_id, level_object.clone()))
+            })
+        {
+            let matches_ghost_position = {
+                let (_, _, transform, LevelObjectStaticGhostParent(ghost_entity), _) =
+                    level_objects.query.get(entity).unwrap();
+                let ghost_transform = level_objects
+                    .ghosts_query
+                    .get_component::<Transform>(*ghost_entity)
+                    .unwrap();
+                (transform.translation.x - ghost_transform.translation.x).abs() < f32::EPSILON
+                    && (transform.translation.y - ghost_transform.translation.y).abs()
+                        < f32::EPSILON
+            };
+            level_objects.edited_level_object.is_draggable =
+                edited_level_object.desc.is_movable_with_mouse()
+                    && (edited_level_object.route.is_none() || is_ghost || matches_ghost_position);
+            // We don't reset edited state if the clicked object is the same.
+            if !matches!(level_objects.edited_level_object.object, Some((picked_entity, _)) if picked_entity == entity)
+            {
+                level_objects.edited_level_object.object = Some((entity, edited_level_object));
+                *level_objects.pending_correlation = None;
+            }
+        }
+    }
 }
 
 fn level_object_ui(
@@ -426,11 +488,13 @@ fn level_object_ui(
             }
 
             match &mut dirty_level_object.desc {
-                LevelObjectDesc::Cube(CubeDesc { size, .. })
-                | LevelObjectDesc::Plane(PlaneDesc { size, .. }) => {
+                LevelObjectDesc::Cube(CubeDesc { size, .. }) => {
                     ui.label("Size");
                     ui.add(egui::widgets::DragValue::new(size).speed(0.01));
                     ui.end_row();
+                }
+                LevelObjectDesc::Plane(PlaneDesc { form_desc, .. }) => {
+                    plane_form(ui, form_desc);
                 }
                 LevelObjectDesc::RoutePoint(_) => {}
             }
@@ -499,6 +563,141 @@ fn level_object_ui(
                 }
             }
         });
+}
+
+fn plane_form(ui: &mut egui::Ui, dirty_plane_form_desc: &mut PlaneFormDesc) {
+    ui.label("Form type");
+    plane_form_type(ui, dirty_plane_form_desc);
+    ui.end_row();
+
+    match dirty_plane_form_desc {
+        PlaneFormDesc::Circle { radius } => {
+            ui.label("Radius");
+            ui.add(
+                egui::widgets::DragValue::new(radius)
+                    .speed(0.01)
+                    .clamp_range(1.0..=f32::MAX),
+            );
+            ui.end_row();
+        }
+        PlaneFormDesc::Rectangle { size } => {
+            ui.label("Size");
+            ui.horizontal(|ui| {
+                ui.label("Width:");
+                ui.add(
+                    egui::widgets::DragValue::new(&mut size.x)
+                        .speed(0.01)
+                        .clamp_range(1.0..=f32::MAX),
+                );
+                ui.label("Height:");
+                ui.add(
+                    egui::widgets::DragValue::new(&mut size.y)
+                        .speed(0.01)
+                        .clamp_range(1.0..=f32::MAX),
+                );
+            });
+            ui.end_row();
+        }
+        PlaneFormDesc::Concave { points } => {
+            ui.label("Points");
+            ui.vertical(|ui| {
+                ui.group(|ui| {
+                    egui::ScrollArea::from_max_height(200.0).show(ui, |ui| {
+                        let removing_enabled = points.len() > 3;
+                        let mut point_to_remove = None;
+                        for (i, point) in points.iter_mut().enumerate() {
+                            ui.horizontal(|ui| {
+                                ui.label("X:");
+                                ui.add(egui::widgets::DragValue::new(&mut point.x).speed(0.1));
+                                ui.label("Y:");
+                                ui.add(egui::widgets::DragValue::new(&mut point.y).speed(0.1));
+                                if egui::Button::new("❌")
+                                    .enabled(removing_enabled)
+                                    .ui(ui)
+                                    .clicked()
+                                {
+                                    point_to_remove = Some(i);
+                                }
+                            });
+                        }
+                        if let Some(point_to_remove) = point_to_remove {
+                            points.remove(point_to_remove);
+                        }
+                    });
+                    if ui.button("Add").clicked() {
+                        points.push(Vec2::new(1.0, 1.0));
+                    }
+                });
+            });
+            ui.end_row();
+        }
+    }
+}
+
+fn plane_form_type(ui: &mut egui::Ui, dirty_plane_form_desc: &mut PlaneFormDesc) {
+    #[derive(Copy, Clone, PartialEq, Debug)]
+    enum Type {
+        Circle,
+        Rectangle,
+        Concave,
+    }
+
+    impl std::fmt::Display for Type {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Type::Circle => write!(f, "Circle"),
+                Type::Rectangle => write!(f, "Rectangle"),
+                Type::Concave => write!(f, "Concave"),
+            }
+        }
+    }
+
+    let plane_form_type = match dirty_plane_form_desc {
+        PlaneFormDesc::Circle { .. } => Type::Circle,
+        PlaneFormDesc::Rectangle { .. } => Type::Rectangle,
+        PlaneFormDesc::Concave { .. } => Type::Concave,
+    };
+    let mut dirty_plane_form_type = plane_form_type;
+
+    egui::containers::ComboBox::from_id_source("plane_form")
+        .width(200.0)
+        .selected_text(plane_form_type.to_string())
+        .show_ui(ui, |ui| {
+            ui.selectable_value(
+                &mut dirty_plane_form_type,
+                Type::Circle,
+                Type::Circle.to_string(),
+            );
+            ui.selectable_value(
+                &mut dirty_plane_form_type,
+                Type::Rectangle,
+                Type::Rectangle.to_string(),
+            );
+            ui.selectable_value(
+                &mut dirty_plane_form_type,
+                Type::Concave,
+                Type::Concave.to_string(),
+            );
+        });
+
+    if plane_form_type == dirty_plane_form_type {
+        return;
+    }
+
+    *dirty_plane_form_desc = match dirty_plane_form_type {
+        Type::Circle => PlaneFormDesc::Circle {
+            radius: DEFAULT_PLANE_CIRCLE_RADIUS,
+        },
+        Type::Rectangle => PlaneFormDesc::Rectangle {
+            size: DEFAULT_PLANE_RECTANGLE_SIZE.into(),
+        },
+        Type::Concave => PlaneFormDesc::Concave {
+            points: DEFAULT_PLANE_CONCAVE_POINTS
+                .iter()
+                .map(|line| (*line).into())
+                .collect(),
+        },
+    };
 }
 
 fn route_settings(
@@ -659,7 +858,7 @@ fn route_type(ui: &mut egui::Ui, dirty_level_object: &mut LevelObject) {
     };
     let mut dirty_route_type = route_type;
 
-    egui::containers::ComboBox::from_label("")
+    egui::containers::ComboBox::from_id_source("route_type")
         .width(200.0)
         .selected_text(route_type.to_string())
         .show_ui(ui, |ui| {

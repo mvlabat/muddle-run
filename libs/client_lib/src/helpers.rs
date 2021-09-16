@@ -1,15 +1,25 @@
-use crate::{input::MouseRay, CurrentPlayerNetId, MainCameraEntity};
+use crate::{
+    input::{MouseRay, MouseScreenPosition},
+    CurrentPlayerNetId, MainCameraEntity,
+};
 use bevy::{
+    core::Time,
     ecs::{
         entity::Entity,
+        query::{FilterFetch, WorldQuery},
         system::{Local, Query, Res, SystemParam},
     },
     input::{mouse::MouseButton, Input},
     math::{Mat4, Vec2, Vec4},
-    utils::HashMap,
+    utils::{HashMap, Instant},
     window::Window,
 };
 use mr_shared_lib::{messages::PlayerNetId, player::Player};
+use std::time::Duration;
+
+/// Radius in screen coordinates.
+const DRAGGING_THRESHOLD: f32 = 10.0;
+const DOUBLE_CLICK_MAX_DELAY_SECS: f64 = 0.3;
 
 #[derive(SystemParam)]
 pub struct PlayerParams<'a> {
@@ -25,32 +35,187 @@ impl<'a> PlayerParams<'a> {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct Previous;
+#[derive(Clone, Default)]
+pub struct Current;
+
 #[derive(SystemParam)]
-pub struct MouseEntityPicker<'a> {
-    picked_entity: Local<'a, Option<Entity>>,
-    mouse_input: Res<'a, Input<MouseButton>>,
+pub struct MouseEntityPicker<'a, Q: Send + Sync + 'static, F: Send + Sync + 'static> {
+    prev_state: Local<'a, MouseEntityPickerData<Previous>>,
+    state: Local<'a, MouseEntityPickerData<Current>>,
+    button_input: Res<'a, Input<MouseButton>>,
+    mouse_screen_position: Res<'a, MouseScreenPosition>,
     camera_query: Query<'a, &'static bevy_mod_picking::PickingCamera>,
     camera_entity: Res<'a, MainCameraEntity>,
+    time: Res<'a, Time>,
+    #[system_param(ignore)]
+    _q: std::marker::PhantomData<(Q, F)>,
 }
 
-impl<'a> MouseEntityPicker<'a> {
-    pub fn hovered_entity(&self) -> Option<Entity> {
+#[derive(Clone, Default)]
+pub struct MouseEntityPickerData<T> {
+    /// Hovered entity will never equal picked entity, to make it possible to highlight an object
+    /// underneath, for instance, while dragging another one (not currently used though).
+    pub hovered_entity: Option<Entity>,
+    pub picked_entity: Option<Entity>,
+    pub dragging_start_position: Vec2,
+    pub is_dragged: bool,
+    pub is_just_picked: bool,
+    pub is_just_clicked: bool,
+    pub is_just_double_clicked: bool,
+    pub hovered_at: Duration,
+    pub picked_at: Duration,
+    pub clicked_at: Duration,
+    _t: std::marker::PhantomData<T>,
+}
+
+impl From<MouseEntityPickerData<Current>> for MouseEntityPickerData<Previous> {
+    fn from(data: MouseEntityPickerData<Current>) -> Self {
+        MouseEntityPickerData {
+            hovered_entity: data.hovered_entity,
+            picked_entity: data.picked_entity,
+            dragging_start_position: data.dragging_start_position,
+            is_dragged: data.is_dragged,
+            is_just_picked: data.is_just_picked,
+            is_just_clicked: data.is_just_clicked,
+            is_just_double_clicked: data.is_just_double_clicked,
+            hovered_at: data.hovered_at,
+            picked_at: data.picked_at,
+            clicked_at: data.clicked_at,
+            _t: Default::default(),
+        }
+    }
+}
+
+impl<'a, Q, F> MouseEntityPicker<'a, Q, F>
+where
+    Q: WorldQuery + Send + Sync + 'static,
+    F: WorldQuery + Send + Sync + 'static,
+    F::Fetch: FilterFetch,
+{
+    pub fn hovered_entity(&self, filter_query: &mut Option<&mut Query<Q, F>>) -> Option<Entity> {
         let picking_camera = self.camera_query.get(self.camera_entity.0).unwrap();
-        picking_camera.intersect_top().map(|(entity, _)| entity)
+        picking_camera.intersect_list().and_then(|list| {
+            list.iter()
+                .map(|(entity, _)| entity)
+                .cloned()
+                .filter(|entity| {
+                    filter_query
+                        .as_mut()
+                        .map_or(true, |query| query.get_mut(*entity).is_ok())
+                })
+                .find(|entity| Some(*entity) != self.state.picked_entity)
+        })
     }
 
-    pub fn pick_entity(&mut self) {
-        if self.mouse_input.just_pressed(MouseButton::Left) {
-            *self.picked_entity = self.hovered_entity();
+    /// If an entity can be changed due to re-creating it because of a network update, this function
+    /// needs to be called before `process_input`.
+    pub fn update_entities(&mut self, f: impl Fn(Entity) -> Option<Entity>) {
+        if let Some(hovered_entity) = self.state.hovered_entity {
+            self.state.hovered_entity = f(hovered_entity);
+        }
+        if let Some(picked_entity) = self.state.picked_entity {
+            self.state.picked_entity = f(picked_entity);
+        }
+    }
+
+    pub fn process_input(&mut self, filter_query: &mut Option<&mut Query<Q, F>>) {
+        *self.prev_state = (*self.state).clone().into();
+        let now = self
+            .time
+            .last_update()
+            .map_or_else(Instant::now, |last_update| last_update + self.time.delta())
+            .duration_since(self.time.startup());
+
+        // Updating "hovered" state.
+        self.state.hovered_entity = self.hovered_entity(filter_query);
+        if self.state.hovered_entity.is_some()
+            && self.state.hovered_entity != self.prev_state.hovered_entity
+        {
+            self.state.hovered_at = now;
+        }
+
+        // Updating "clicked" and "picked" state.
+        if self.prev_state.is_just_picked
+            && now - self.prev_state.picked_at
+                > Duration::from_secs_f64(DOUBLE_CLICK_MAX_DELAY_SECS)
+        {
+            self.state.is_just_picked = false;
+        }
+        if self.prev_state.is_just_clicked
+            && now - self.prev_state.clicked_at
+                > Duration::from_secs_f64(DOUBLE_CLICK_MAX_DELAY_SECS)
+        {
+            self.state.is_just_clicked = false;
+        }
+        if self.button_input.just_pressed(MouseButton::Left) {
+            // We reset picked entity to allow `hovered_entity` to pick it up once more.
+            self.state.picked_entity = None;
+            self.state.picked_entity = self.hovered_entity(filter_query);
+            if self.state.picked_entity.is_some() {
+                self.state.dragging_start_position = self.mouse_screen_position.0;
+                self.state.is_just_clicked = true;
+                self.state.clicked_at = now;
+            }
+
+            if self.prev_state.is_just_clicked {
+                self.state.is_just_double_clicked = true;
+            }
+        }
+
+        if self.state.picked_entity != self.prev_state.picked_entity {
+            // This is the point when prev_state can become totally different from the current one.
+            *self.state = MouseEntityPickerData {
+                // Hovered entity should never be equal to picked entity.
+                // (See documentation for `hovered_entity`.)
+                hovered_entity: if self.state.hovered_entity == self.state.picked_entity {
+                    None
+                } else {
+                    self.state.hovered_entity
+                },
+                picked_entity: self.state.picked_entity,
+                dragging_start_position: self.state.dragging_start_position,
+                is_dragged: false,
+                is_just_picked: self.state.picked_entity.is_some(),
+                is_just_clicked: self.state.picked_entity.is_some(),
+                is_just_double_clicked: false,
+                hovered_at: self.state.hovered_at,
+                picked_at: now,
+                clicked_at: now,
+                _t: Default::default(),
+            };
+        }
+
+        // Process dragging.
+        if self.button_input.pressed(MouseButton::Left) {
+            if self.state.picked_entity.is_some() && !self.state.is_dragged {
+                self.state.is_dragged = self
+                    .state
+                    .dragging_start_position
+                    .distance_squared(self.mouse_screen_position.0)
+                    > DRAGGING_THRESHOLD * DRAGGING_THRESHOLD;
+            }
+        } else {
+            self.state.is_dragged = false;
         }
     }
 
     pub fn picked_entity(&self) -> Option<Entity> {
-        *self.picked_entity
+        self.state.picked_entity
     }
 
-    pub fn take_picked_entity(&mut self) -> Option<Entity> {
-        self.picked_entity.take()
+    pub fn prev_state(&self) -> &MouseEntityPickerData<Previous> {
+        &self.prev_state
+    }
+
+    pub fn state(&self) -> &MouseEntityPickerData<Current> {
+        &self.state
+    }
+
+    pub fn reset(&mut self) {
+        *self.state = Default::default();
+        *self.prev_state = Default::default();
     }
 }
 
