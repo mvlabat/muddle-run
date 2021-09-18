@@ -27,7 +27,9 @@ use mr_shared_lib::{
         components::{
             LevelObjectLabel, LevelObjectStaticGhost, LevelObjectStaticGhostParent, Spawned,
         },
-        level::{LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc},
+        level::{
+            CollisionLogic, LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc,
+        },
         level_objects::{CubeDesc, PlaneDesc, PlaneFormDesc, RoutePointDesc},
     },
     messages::{EntityNetId, SpawnLevelObjectRequest, SpawnLevelObjectRequestBody},
@@ -246,6 +248,7 @@ pub fn builder_ui(
                             form_desc: PlaneFormDesc::Rectangle {
                                 size: DEFAULT_PLANE_RECTANGLE_SIZE.into(),
                             },
+                            is_spawn_area: false,
                         })),
                     });
             }
@@ -327,6 +330,7 @@ pub fn builder_ui(
                         label: dirty_level_object.label.clone(),
                         desc: dirty_level_object.desc.clone(),
                         route: dirty_level_object.route.clone(),
+                        collision_logic: CollisionLogic::None,
                     });
 
                 let (_, edited_level_object) =
@@ -387,6 +391,7 @@ pub fn process_builder_mouse_input(
                         label: level_object.label.clone(),
                         desc: level_object.desc.clone(),
                         route: level_object.route.clone(),
+                        collision_logic: level_object.collision_logic,
                     });
             }
         }

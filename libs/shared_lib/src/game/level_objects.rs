@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 pub struct PlaneDesc {
     pub position: Vec2,
     pub form_desc: PlaneFormDesc,
+    pub is_spawn_area: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

@@ -56,8 +56,9 @@ pub struct EntityRegistry<K: Copy + Hash + Eq> {
     id_by_entity: HashMap<Entity, K>,
 }
 
-impl<K: Copy + Hash + Eq> EntityRegistry<K> {
+impl<K: Copy + Hash + Eq + std::fmt::Debug> EntityRegistry<K> {
     pub fn register(&mut self, id: K, entity: Entity) {
+        bevy::log::debug!("{:?} {:?}", id, entity);
         self.entity_by_id.insert(id, entity);
         self.id_by_entity.insert(entity, id);
     }

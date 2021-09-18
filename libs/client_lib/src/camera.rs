@@ -16,7 +16,7 @@ use mr_shared_lib::{
     game::components::{PlayerTag, Position, Spawned},
     messages::PlayerNetId,
     registry::EntityRegistry,
-    GameTime, PLAYER_SIZE,
+    GameTime, PLAYER_RADIUS,
 };
 
 const CAMERA_MOVEMENT_SPEED: f32 = 4.0;
@@ -59,7 +59,7 @@ pub fn reattach_camera(
                     log::trace!("Attaching camera pivot to a player");
                     main_camera_pivot_commands
                         .insert(Parent(player_entity))
-                        .insert(Transform::from_xyz(0.0, 0.0, -PLAYER_SIZE));
+                        .insert(Transform::from_xyz(0.0, 0.0, -PLAYER_RADIUS));
                 }
                 (false, true) => {
                     log::trace!("Freeing camera pivot");

@@ -14,7 +14,7 @@ use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
         commands::{DeferredPlayerQueues, DeferredQueue, DespawnLevelObject, UpdateLevelObject},
-        level::{LevelObject, LevelObjectDesc},
+        level::{CollisionLogic, LevelObject, LevelObjectDesc},
         level_objects::{PlaneDesc, PlaneFormDesc},
     },
     messages::{
@@ -106,8 +106,10 @@ pub fn init_level(
                         Vec2::new(-10.0, 5.0),
                     ],
                 },
+                is_spawn_area: true,
             }),
             route: None,
+            collision_logic: CollisionLogic::None,
         },
     });
 }

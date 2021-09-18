@@ -58,6 +58,7 @@ pub struct LevelObject {
     pub desc: LevelObjectDesc,
     /// Absence of this field means that an object is stationary.
     pub route: Option<ObjectRoute>,
+    pub collision_logic: CollisionLogic,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -80,6 +81,13 @@ pub enum LevelObjectDesc {
     Plane(PlaneDesc),
     Cube(CubeDesc),
     RoutePoint(RoutePointDesc),
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub enum CollisionLogic {
+    Finish,
+    Death,
+    None,
 }
 
 pub enum ColliderShapeResponse {
@@ -258,6 +266,15 @@ impl LevelObjectDesc {
                 points[index] = point;
             }
             _ => unimplemented!(),
+        }
+    }
+
+    pub fn possible_collision_logic(&self) -> Vec<CollisionLogic> {
+        // `CollisionLogic::None` is implied by default.
+        match self {
+            Self::Plane(_) => vec![CollisionLogic::Death, CollisionLogic::Finish],
+            Self::Cube(_) => vec![CollisionLogic::Death],
+            Self::RoutePoint(_) => vec![],
         }
     }
 }

@@ -4,7 +4,7 @@ use crate::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
             SwitchPlayerRole, UpdateLevelObject,
         },
-        components::LevelObjectStaticGhost,
+        components::{LevelObjectStaticGhost, PlayerSensor},
     },
     messages::{DeferredMessagesQueue, EntityNetId, PlayerNetId, SwitchRole},
     player::{Player, PlayerRole, PlayerUpdates},
@@ -23,8 +23,10 @@ use bevy::{
 };
 
 pub mod client_factories;
+pub mod collisions;
 pub mod commands;
 pub mod components;
+pub mod events;
 pub mod level;
 pub mod level_objects;
 pub mod movement;
@@ -96,6 +98,13 @@ pub fn restart_game(world: &mut World) {
         .iter(world)
     {
         entities_to_despawn.push(ghost_entity);
+    }
+
+    for player_sensor_entity in world
+        .query_filtered::<Entity, With<PlayerSensor>>()
+        .iter(world)
+    {
+        entities_to_despawn.push(player_sensor_entity);
     }
 
     for entity in entities_to_despawn {

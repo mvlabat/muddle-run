@@ -1,9 +1,9 @@
 use crate::game::level_objects::*;
 #[cfg(feature = "client")]
 use crate::{
-    client::{assets::MuddleMaterials, *},
+    client::{assets::MuddleAssets, components::DebugUiVisibility, *},
     game::components::PredictedPosition,
-    GHOST_SIZE_MULTIPLIER, PLAYER_SIZE,
+    GHOST_SIZE_MULTIPLIER, PLAYER_RADIUS,
 };
 use bevy::{
     ecs::system::{EntityCommands, SystemParam},
@@ -42,11 +42,11 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
         position: Self::Input,
     ) {
         commands.insert_bundle(PbrBundle {
-            mesh: deps.meshes.add(Mesh::from(shape::Cube {
-                size: PLAYER_SIZE * 2.0,
+            mesh: deps.meshes.add(Mesh::from(XyCircle {
+                radius: PLAYER_RADIUS,
             })),
-            material: deps.materials.player.clone(),
-            transform: Transform::from_translation(position.extend(PLAYER_SIZE)),
+            material: deps.assets.materials.player.clone(),
+            transform: Transform::from_translation(position.extend(0.01)),
             ..Default::default()
         });
         commands.insert(PredictedPosition { value: position });
@@ -59,6 +59,39 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
         commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
         let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
+    }
+}
+
+pub struct PlayerSensorClientFactory;
+
+impl<'a> ClientFactory<'a> for PlayerSensorClientFactory {
+    type Dependencies = PbrClientParams<'a>;
+    type Input = ();
+
+    #[cfg(feature = "client")]
+    fn insert_components(
+        commands: &mut EntityCommands,
+        deps: &mut Self::Dependencies,
+        (): Self::Input,
+    ) {
+        commands
+            .insert_bundle(PbrBundle {
+                mesh: deps.assets.meshes.player_sensor.clone(),
+                material: deps.assets.materials.player_sensor_normal.clone(),
+                visible: Visible {
+                    is_visible: deps.visibility_settings.debug,
+                    is_transparent: false,
+                },
+                ..Default::default()
+            })
+            .insert(DebugUiVisibility);
+    }
+
+    #[cfg(feature = "client")]
+    fn remove_components(commands: &mut EntityCommands, _deps: &mut Self::Dependencies) {
+        commands
+            .remove_bundle::<PbrBundle>()
+            .remove::<DebugUiVisibility>();
     }
 }
 
@@ -174,9 +207,9 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
             },
             mesh: deps.meshes.add(mesh),
             material: if input.is_ghost {
-                deps.materials.ghost.plane.clone()
+                deps.assets.materials.ghost.plane.clone()
             } else {
-                deps.materials.normal.plane.clone()
+                deps.assets.materials.normal.plane.clone()
             },
             transform: Transform::from_translation(input.desc.position.extend(0.0)),
             ..Default::default()
@@ -223,9 +256,9 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
                 size: input.desc.size * 2.0 * ghost_size_multiplier,
             })),
             material: if input.is_ghost {
-                deps.materials.ghost.cube.clone()
+                deps.assets.materials.ghost.cube.clone()
             } else {
-                deps.materials.normal.cube.clone()
+                deps.assets.materials.normal.cube.clone()
             },
             transform: Transform::from_translation(input.desc.position.extend(input.desc.size)),
             ..Default::default()
@@ -276,9 +309,9 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
                 base_edge_half_len: ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_size_multiplier,
             })),
             material: if input.is_ghost {
-                deps.materials.ghost.route_point.clone()
+                deps.assets.materials.ghost.route_point.clone()
             } else {
-                deps.materials.normal.route_point.clone()
+                deps.assets.materials.normal.route_point.clone()
             },
             ..Default::default()
         });
@@ -297,6 +330,7 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
 #[cfg(feature = "client")]
 #[derive(Default)]
 pub struct VisibilitySettings {
+    pub debug: bool,
     pub route_points: bool,
     pub ghosts: bool,
 }
@@ -305,7 +339,7 @@ pub struct VisibilitySettings {
 #[derive(SystemParam)]
 pub struct PbrClientParams<'a> {
     meshes: ResMut<'a, Assets<Mesh>>,
-    materials: Res<'a, MuddleMaterials>,
+    assets: MuddleAssets<'a>,
     visibility_settings: Res<'a, VisibilitySettings>,
     mesh_query: Query<'a, &'static Handle<Mesh>>,
 }

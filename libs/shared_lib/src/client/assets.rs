@@ -1,3 +1,4 @@
+use crate::PLAYER_SENSOR_RADIUS;
 use bevy::{
     asset::{Assets, Handle},
     ecs::system::{Commands, Res, ResMut, SystemParam},
@@ -16,6 +17,8 @@ pub struct MuddleAssets<'a> {
 
 pub struct MuddleMaterials {
     pub player: Handle<StandardMaterial>,
+    pub player_sensor_death: Handle<StandardMaterial>,
+    pub player_sensor_normal: Handle<StandardMaterial>,
     pub normal: ObjectMaterials,
     pub ghost: ObjectMaterials,
     pub control_point_normal: Handle<StandardMaterial>,
@@ -23,6 +26,7 @@ pub struct MuddleMaterials {
 }
 
 pub struct MuddleMeshes {
+    pub player_sensor: Handle<Mesh>,
     pub control_point: Handle<Mesh>,
 }
 
@@ -34,6 +38,18 @@ pub fn init_muddle_assets(
     let a = 0.5;
     commands.insert_resource(MuddleMaterials {
         player: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
+        player_sensor_death: {
+            let mut material: StandardMaterial = Color::rgb(1.0, 0.2, 0.25).into();
+            material.reflectance = 0.0;
+            material.metallic = 0.0;
+            materials.add(material)
+        },
+        player_sensor_normal: {
+            let mut material: StandardMaterial = Color::rgb(0.4, 0.4, 0.7).into();
+            material.reflectance = 0.0;
+            material.metallic = 0.0;
+            materials.add(material)
+        },
         normal: ObjectMaterials {
             plane: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
             cube: materials.add(Color::rgb(0.4, 0.4, 0.4).into()),
@@ -58,6 +74,10 @@ pub fn init_muddle_assets(
         control_point_hovered: materials.add(Color::rgb(0.5, 0.492, 0.816).into()),
     });
     commands.insert_resource(MuddleMeshes {
+        player_sensor: meshes.add(Mesh::from(Icosphere {
+            radius: PLAYER_SENSOR_RADIUS,
+            subdivisions: 16,
+        })),
         control_point: meshes.add(Mesh::from(Icosphere {
             radius: 0.15,
             subdivisions: 32,

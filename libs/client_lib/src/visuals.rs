@@ -22,13 +22,20 @@ use bevy::{
     transform::components::{Children, Parent, Transform},
 };
 use mr_shared_lib::{
-    client::{assets::MuddleAssets, XyPlane},
+    client::{
+        assets::{MuddleAssets, MuddleMaterials},
+        XyPlane,
+    },
     game::{
         client_factories::VisibilitySettings,
-        components::{LevelObjectStaticGhost, LevelObjectStaticGhostParent, LevelObjectTag},
-        level::{LevelObjectDesc, LevelParams},
+        components::{
+            LevelObjectStaticGhost, LevelObjectStaticGhostParent, LevelObjectTag, PlayerSensor,
+            PlayerSensors, Spawned,
+        },
+        level::{CollisionLogic, LevelObjectDesc, LevelParams},
     },
     player::PlayerRole,
+    GameTime,
 };
 
 pub fn control_builder_visibility(
@@ -416,6 +423,33 @@ pub fn process_control_points_input(
             *mesh = meshes.add(Mesh::from(XyPlane {
                 size: Vec2::new(length, 0.04),
             }));
+        }
+    }
+}
+
+pub fn update_player_sensor_materials(
+    time: Res<GameTime>,
+    players: Query<(&PlayerSensors, &Spawned)>,
+    mut player_sensor_materials: Query<&mut Handle<StandardMaterial>, With<PlayerSensor>>,
+    visibility_settings: Res<VisibilitySettings>,
+    muddle_materials: Res<MuddleMaterials>,
+) {
+    if !visibility_settings.debug {
+        return;
+    }
+
+    for (player_sensors, spawned) in players.iter() {
+        if !spawned.is_spawned(time.frame_number) {
+            continue;
+        }
+
+        for (sensor_entity, sensor_state) in &player_sensors.sensors {
+            let mut material = player_sensor_materials.get_mut(*sensor_entity).unwrap();
+            if sensor_state.contacting.is_empty() || sensor_state.has(CollisionLogic::Death) {
+                *material = muddle_materials.player_sensor_death.clone();
+            } else {
+                *material = muddle_materials.player_sensor_normal.clone();
+            }
         }
     }
 }

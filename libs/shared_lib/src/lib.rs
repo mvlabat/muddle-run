@@ -1,4 +1,5 @@
 #![feature(const_fn_trait_bound)]
+#![feature(drain_filter)]
 #![feature(hash_drain_filter)]
 #![feature(step_trait)]
 #![feature(trait_alias)]
@@ -6,11 +7,13 @@
 use crate::{
     framebuffer::FrameNumber,
     game::{
+        collisions::{process_collision_events, process_players_with_new_collisions},
         commands::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
             SwitchPlayerRole, UpdateLevelObject,
         },
         components::PlayerFrameSimulated,
+        events::CollisionLogicChanged,
         level::LevelState,
         level_objects::{process_objects_route_graph, update_level_object_movement_route_settings},
         movement::{load_object_positions, player_movement, read_movement_updates, sync_position},
@@ -91,7 +94,8 @@ pub mod stage {
     pub const POST_GAME: &str = "mr_shared_post_game";
 }
 pub const GHOST_SIZE_MULTIPLIER: f32 = 1.001;
-pub const PLAYER_SIZE: f32 = 0.5;
+pub const PLAYER_RADIUS: f32 = 0.35;
+pub const PLAYER_SENSOR_RADIUS: f32 = 0.05;
 pub const PLANE_SIZE: f32 = 20.0;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
 pub const TICKS_PER_NETWORK_BROADCAST: u16 = 2;
@@ -162,6 +166,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::SPAWN,
                 SystemStage::parallel()
+                    .with_system(Events::<IntersectionEvent>::update_system.system())
+                    .with_system(Events::<ContactEvent>::update_system.system())
                     .with_system(switch_player_role.system().label("player_role"))
                     .with_system(
                         despawn_players
@@ -205,6 +211,11 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::POST_PHYSICS,
                 SystemStage::parallel()
+                    .with_system(
+                        process_collision_events
+                            .system()
+                            .chain(process_players_with_new_collisions.system()),
+                    )
                     .with_system(physics::sync_transforms.system().label("sync_transforms"))
                     .with_system(sync_position.system().after("sync_transforms")),
             )
@@ -301,6 +312,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         resources.get_resource_or_insert_with(EntityRegistry::<PlayerNetId>::default);
         resources.get_resource_or_insert_with(EntityRegistry::<EntityNetId>::default);
         resources.get_resource_or_insert_with(HashMap::<PlayerNetId, Player>::default);
+        resources.get_resource_or_insert_with(Events::<CollisionLogicChanged>::default);
         // Is used only on the server side.
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<SwitchRole>::default);
 

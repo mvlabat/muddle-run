@@ -10,8 +10,10 @@ use bevy::{
 };
 use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::{
+    client::components::DebugUiVisibility,
     framebuffer::FrameNumber,
     game::{
+        client_factories::VisibilitySettings,
         components::{LevelObjectMovement, LevelObjectStaticGhost, PlayerDirection, Position},
         level::LevelState,
     },
@@ -53,6 +55,21 @@ pub struct DebugUiState {
     pub rtt_millis: usize,
     pub packet_loss: f32,
     pub jitter_millis: usize,
+}
+
+pub fn update_debug_visibility(
+    mut debug_ui_was_shown: Local<bool>,
+    debug_ui_state: Res<DebugUiState>,
+    mut visibility_settings: ResMut<VisibilitySettings>,
+    mut debug_ui_visible: Query<&mut Visible, With<DebugUiVisibility>>,
+) {
+    visibility_settings.debug = debug_ui_state.show;
+    if *debug_ui_was_shown != debug_ui_state.show {
+        for mut visible in debug_ui_visible.iter_mut() {
+            visible.is_visible = debug_ui_state.show;
+        }
+    }
+    *debug_ui_was_shown = debug_ui_state.show;
 }
 
 pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_data: DebugData) {
