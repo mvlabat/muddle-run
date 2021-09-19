@@ -14,6 +14,7 @@ pub struct PlayerTag;
 #[derive(Clone)]
 pub struct PlayerSensor(pub Entity);
 
+#[derive(Debug)]
 pub struct PlayerSensors {
     pub main: PlayerSensorState,
     pub sensors: Vec<(Entity, PlayerSensorState)>,
@@ -25,7 +26,9 @@ impl PlayerSensors {
             .sensors
             .iter()
             .any(|(_, sensor)| sensor.contacting.is_empty() || sensor.has(CollisionLogic::Death));
-        self.main.has(CollisionLogic::Death) || sensors_contact_death_or_nothing
+        self.main.has(CollisionLogic::Death)
+            || self.main.contacting.is_empty()
+            || sensors_contact_death_or_nothing
     }
 
     pub fn player_has_finished(&self) -> bool {
@@ -37,7 +40,7 @@ impl PlayerSensors {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PlayerSensorState {
     /// Includes both contact and intersection events.
     pub contacting: Vec<(Entity, CollisionLogic)>,

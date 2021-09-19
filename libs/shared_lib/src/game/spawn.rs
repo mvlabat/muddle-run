@@ -179,6 +179,7 @@ pub fn spawn_players(
                 flags: ColliderFlags {
                     collision_groups: player_interaction_groups(),
                     solver_groups: player_interaction_groups(),
+                    active_events: ActiveEvents::all(),
                     ..ColliderFlags::default()
                 },
                 ..ColliderBundle::default()
@@ -257,9 +258,7 @@ pub fn despawn_players(
         let mut entity_commands = commands.entity(entity);
         collider_flags.collision_groups.memberships = 0;
         PlayerClientFactory::remove_components(&mut entity_commands, &mut pbr_client_params);
-        sensors.main.contacting = Vec::new();
-        for (player_sensor_entity, state) in &mut sensors.sensors {
-            state.contacting = Vec::new();
+        for (player_sensor_entity, _state) in &mut sensors.sensors {
             let mut collider_flags = player_sensors.get_mut(*player_sensor_entity).unwrap();
             collider_flags.collision_groups.memberships = 0;
             PlayerSensorClientFactory::remove_components(

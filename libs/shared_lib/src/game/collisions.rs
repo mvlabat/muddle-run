@@ -103,6 +103,11 @@ pub fn process_collision_events(
                     .drain_filter(|(entity, _)| *entity == level_object_entity);
             }
             changed_players.insert(player_entity);
+        } else {
+            log::error!(
+                "Contact event for neither a player, nor a player sensor: {:?}",
+                other_entity
+            );
         }
     }
 
