@@ -3003,10 +3003,12 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_networking_turbulence",
+ "bevy_rapier2d",
  "chrono",
  "env_logger 0.8.4",
  "mr_shared_lib",
  "puffin",
+ "rand 0.8.4",
 ]
 
 [[package]]
@@ -3025,6 +3027,7 @@ dependencies = [
  "names",
  "num",
  "puffin",
+ "rand 0.8.4",
  "serde",
  "serde_json",
  "thiserror",

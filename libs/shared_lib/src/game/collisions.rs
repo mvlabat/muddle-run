@@ -1,13 +1,19 @@
-use crate::game::{
-    components::{LevelObjectTag, PlayerSensor, PlayerSensorState, PlayerSensors},
-    events::CollisionLogicChanged,
-    level::LevelParams,
+use crate::{
+    game::{
+        components::{
+            LevelObjectTag, PlayerFrameSimulated, PlayerSensor, PlayerSensorState, PlayerSensors,
+            Position, Spawned,
+        },
+        events::{CollisionLogicChanged, PlayerDeath, PlayerFinish},
+        level::LevelParams,
+    },
+    SimulationTime,
 };
 use bevy::{
-    app::EventReader,
+    app::{EventReader, EventWriter},
     ecs::{
         entity::Entity,
-        system::{In, Query, RemovedComponents, SystemParam},
+        system::{In, Query, RemovedComponents, Res, SystemParam},
     },
     log,
     utils::HashSet,
@@ -19,12 +25,21 @@ use bevy_rapier2d::{
 
 #[derive(SystemParam)]
 pub struct CollisionQueries<'a> {
-    players: Query<'a, (Entity, &'static mut PlayerSensors)>,
+    players: Query<
+        'a,
+        (
+            Entity,
+            &'static Spawned,
+            Option<&'static PlayerFrameSimulated>,
+            &'static mut PlayerSensors,
+        ),
+    >,
     player_sensors: Query<'a, (Entity, &'static PlayerSensor)>,
 }
 
 /// The system returns player entities whose intersections were changed.
 pub fn process_collision_events(
+    time: Res<SimulationTime>,
     mut contact_events: EventReader<ContactEvent>,
     mut intersection_events: EventReader<IntersectionEvent>,
     mut collision_logic_changed_events: EventReader<CollisionLogicChanged>,
@@ -64,13 +79,19 @@ pub fn process_collision_events(
                 continue;
             }
         };
+        log::trace!(
+            "Contact event: {:?}, {:?}, {:?}",
+            contacting,
+            entity1,
+            entity2
+        );
 
         if let Ok((player_sensor_entity, PlayerSensor(player_entity))) =
             queries.player_sensors.get(other_entity)
         {
-            let mut player_sensors = queries
+            let (_, spawned, player_frame_simulated, mut player_sensors) = queries
                 .players
-                .get_component_mut::<PlayerSensors>(*player_entity)
+                .get_mut(*player_entity)
                 .expect("Expected a player for an existing sensor");
             let (_, sensor_state) = player_sensors
                 .sensors
@@ -87,8 +108,12 @@ pub fn process_collision_events(
                     .contacting
                     .drain_filter(|(entity, _)| *entity == level_object_entity);
             }
-            changed_players.insert(*player_entity);
-        } else if let Ok((_, mut player_sensors)) = queries.players.get_mut(other_entity) {
+            if spawned.is_spawned(time.entity_simulation_frame(player_frame_simulated)) {
+                changed_players.insert(*player_entity);
+            }
+        } else if let Ok((_, spawned, player_frame_simulated, mut player_sensors)) =
+            queries.players.get_mut(other_entity)
+        {
             let player_entity = other_entity;
             // Intersection with a player collider itself.
             if contacting {
@@ -102,7 +127,9 @@ pub fn process_collision_events(
                     .contacting
                     .drain_filter(|(entity, _)| *entity == level_object_entity);
             }
-            changed_players.insert(player_entity);
+            if spawned.is_spawned(time.entity_simulation_frame(player_frame_simulated)) {
+                changed_players.insert(player_entity);
+            }
         } else {
             log::error!(
                 "Contact event for neither a player, nor a player sensor: {:?}",
@@ -113,7 +140,9 @@ pub fn process_collision_events(
 
     let changed_collision_logic: Vec<_> = collision_logic_changed_events.iter().collect();
     if !changed_collision_logic.is_empty() || !removed_level_objects.is_empty() {
-        for (player_entity, mut player_sensors) in queries.players.iter_mut() {
+        for (player_entity, spawned, player_frame_simulated, mut player_sensors) in
+            queries.players.iter_mut()
+        {
             let mut update_collision_logic = |sensor_state: &mut PlayerSensorState| {
                 sensor_state
                     .contacting
@@ -127,7 +156,11 @@ pub fn process_collision_events(
                             .find(|changed| changed.level_object_entity == *contacted_entity)
                         {
                             *logic = changed.collision_logic;
-                            changed_players.insert(player_entity);
+                            if spawned
+                                .is_spawned(time.entity_simulation_frame(player_frame_simulated))
+                            {
+                                changed_players.insert(player_entity);
+                            }
                         }
                         false
                     });
@@ -145,17 +178,36 @@ pub fn process_collision_events(
 
 pub fn process_players_with_new_collisions(
     In(players_with_new_collisions): In<Vec<Entity>>,
-    players: Query<&PlayerSensors>,
+    time: Res<SimulationTime>,
+    players: Query<(&Position, Option<&PlayerFrameSimulated>, &PlayerSensors)>,
+    mut player_death_events: EventWriter<PlayerDeath>,
+    mut player_finish_events: EventWriter<PlayerFinish>,
 ) {
     for entity in players_with_new_collisions {
-        let player_sensors = players
+        let (player_position, player_frame_simulated, player_sensors) = players
             .get(entity)
             .expect("Expected an existing player for a collision event");
+        let _player_position = player_position
+            .buffer
+            .get(time.entity_simulation_frame(player_frame_simulated))
+            .unwrap();
 
         if player_sensors.player_is_dead() {
-            log::debug!("Player {:?} has died", entity);
+            #[cfg(not(feature = "client"))]
+            log::debug!(
+                "Player {:?} has died at position {:?}",
+                entity,
+                _player_position
+            );
+            player_death_events.send(PlayerDeath(entity));
         } else if player_sensors.player_has_finished() {
-            log::debug!("Player {:?} has finished", entity);
+            #[cfg(not(feature = "client"))]
+            log::debug!(
+                "Player {:?} has finished at position {:?}",
+                entity,
+                _player_position
+            );
+            player_finish_events.send(PlayerFinish(entity));
         }
     }
 }

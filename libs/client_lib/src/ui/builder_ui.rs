@@ -515,9 +515,15 @@ fn level_object_ui(
             ui.end_row();
 
             if let LevelObjectDesc::Plane(plane) = &mut dirty_level_object.desc {
-                ui.label("Is spawn area");
-                ui.checkbox(&mut plane.is_spawn_area, "");
-                ui.end_row();
+                if let PlaneFormDesc::Rectangle { .. } | PlaneFormDesc::Circle { .. } =
+                    plane.form_desc
+                {
+                    ui.label("Is spawn area");
+                    ui.checkbox(&mut plane.is_spawn_area, "");
+                    ui.end_row();
+                } else {
+                    plane.is_spawn_area = false;
+                }
             }
 
             let mut possible_collision_logic = dirty_level_object.desc.possible_collision_logic();

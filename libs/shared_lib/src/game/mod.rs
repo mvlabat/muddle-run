@@ -6,10 +6,17 @@ use crate::{
         },
         components::{LevelObjectStaticGhost, PlayerSensor},
     },
-    messages::{DeferredMessagesQueue, EntityNetId, PlayerNetId, SwitchRole},
-    player::{Player, PlayerRole, PlayerUpdates},
+    messages::{EntityNetId, PlayerNetId},
+    player::{Player, PlayerUpdates},
     registry::EntityRegistry,
     util::dedup_by_key_unsorted,
+};
+#[cfg(not(feature = "client"))]
+use crate::{
+    messages::{DeferredMessagesQueue, SwitchRole},
+    player::PlayerRole,
+    server::level_spawn_location_service::LevelSpawnLocationService,
+    SimulationTime,
 };
 use bevy::{
     ecs::{
@@ -133,9 +140,15 @@ pub fn restart_game(world: &mut World) {
 pub fn switch_player_role(
     mut switch_role_commands: ResMut<DeferredQueue<SwitchPlayerRole>>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
-    mut spawn_player_commands: ResMut<DeferredQueue<SpawnPlayer>>,
-    mut despawn_player_commands: ResMut<DeferredQueue<DespawnPlayer>>,
-    mut switch_role_messages: ResMut<DeferredMessagesQueue<SwitchRole>>,
+    #[cfg(not(feature = "client"))] time: Res<SimulationTime>,
+    #[cfg(not(feature = "client"))] mut despawn_player_commands: ResMut<
+        DeferredQueue<DespawnPlayer>,
+    >,
+    #[cfg(not(feature = "client"))] mut switch_role_messages: ResMut<
+        DeferredMessagesQueue<SwitchRole>,
+    >,
+    #[cfg(not(feature = "client"))] mut spawn_player_commands: ResMut<DeferredQueue<SpawnPlayer>>,
+    #[cfg(not(feature = "client"))] level_spawn_location_service: LevelSpawnLocationService,
 ) {
     puffin::profile_function!();
     let mut switch_role_commands = switch_role_commands.drain();
@@ -171,25 +184,26 @@ pub fn switch_player_role(
             switch_role_command.net_id.0,
             player.role
         );
-        // This will likely make a duplicate command, as we might as well spawn the player while
-        // processing delta updates, but commands get de-duped anyway.
-        match player.role {
-            PlayerRole::Runner => {
-                spawn_player_commands.push(SpawnPlayer {
-                    net_id: switch_role_command.net_id,
-                    start_position: Default::default(),
-                    is_player_frame_simulated: switch_role_command.is_player_frame_simulated,
-                });
-            }
-            PlayerRole::Builder => {
-                despawn_player_commands.push(DespawnPlayer {
-                    net_id: switch_role_command.net_id,
-                    frame_number: switch_role_command.frame_number,
-                });
-            }
-        }
 
-        if cfg!(not(feature = "client")) {
+        #[cfg(not(feature = "client"))]
+        {
+            match player.role {
+                PlayerRole::Runner => {
+                    spawn_player_commands.push(SpawnPlayer {
+                        net_id: switch_role_command.net_id,
+                        start_position: level_spawn_location_service
+                            .spawn_position(time.server_frame),
+                        is_player_frame_simulated: switch_role_command.is_player_frame_simulated,
+                    });
+                }
+                PlayerRole::Builder => {
+                    despawn_player_commands.push(DespawnPlayer {
+                        net_id: switch_role_command.net_id,
+                        frame_number: switch_role_command.frame_number,
+                    });
+                }
+            }
+
             switch_role_messages.push(SwitchRole {
                 net_id: switch_role_command.net_id,
                 role: switch_role_command.role,

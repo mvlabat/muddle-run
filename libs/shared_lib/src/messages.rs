@@ -106,6 +106,7 @@ pub enum ReliableServerMessage {
     UpdateLevelObject(commands::UpdateLevelObject),
     DespawnLevelObject(commands::DespawnLevelObject),
     SwitchRole(SwitchRole),
+    RespawnPlayer(RespawnPlayer),
     Disconnect,
 }
 
@@ -185,4 +186,19 @@ pub struct SwitchRole {
     pub net_id: PlayerNetId,
     pub role: PlayerRole,
     pub frame_number: FrameNumber,
+}
+
+/// This message isn't supposed to trigger the spawn command though. We spawn a player as soon as it
+/// appears in a DeltaUpdate message, as usual.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct RespawnPlayer {
+    pub net_id: PlayerNetId,
+    pub reason: RespawnPlayerReason,
+    pub frame_number: FrameNumber,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub enum RespawnPlayerReason {
+    Finish,
+    Death,
 }

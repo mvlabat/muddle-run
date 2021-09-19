@@ -8,6 +8,8 @@ use bevy::{
     math::Vec2,
     utils::HashMap,
 };
+use bevy_rapier2d::rapier::geometry::TypedShape;
+use rand::Rng;
 use std::cell::RefCell;
 
 pub fn player_sensor_outline() -> Vec<Vec2> {
@@ -21,6 +23,26 @@ pub fn player_sensor_outline() -> Vec<Vec2> {
             )
         })
         .collect()
+}
+
+pub fn random_point_inside_shape(shape: TypedShape, object_radius: f32) -> Vec2 {
+    let mut rng = rand::thread_rng();
+    match shape {
+        TypedShape::Ball(ball) => rotate(
+            Vec2::new(
+                rng.gen::<f32>() * (ball.radius - object_radius).max(0.0),
+                0.0,
+            ),
+            rng.gen_range(0.0..std::f32::consts::PI * 2.0),
+        ),
+        TypedShape::Cuboid(cuboid) => {
+            Vec2::new(
+                rng.gen::<f32>() * (cuboid.half_extents.x * 2.0 - object_radius).max(0.0),
+                rng.gen::<f32>() * (cuboid.half_extents.y * 2.0 - object_radius).max(0.0),
+            ) - cuboid.half_extents.into()
+        }
+        _ => unimplemented!(),
+    }
 }
 
 pub fn dedup_by_key_unsorted<T, F, K>(vec: &mut Vec<T>, mut key: F)

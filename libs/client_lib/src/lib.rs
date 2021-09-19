@@ -109,6 +109,7 @@ impl Plugin for MuddleClientPlugin {
             .add_plugin(MuddleSharedPlugin::new(
                 NetAdaptiveTimestemp::default(),
                 input_stage,
+                SystemStage::parallel(),
                 broadcast_updates_stage,
                 post_tick_stage,
                 None,

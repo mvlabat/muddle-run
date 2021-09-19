@@ -2,6 +2,7 @@
 #![feature(hash_drain_filter)]
 
 use crate::{
+    game_events::{process_player_events, process_scheduled_spawns},
     net::{process_network_events, send_network_updates, startup, PlayerConnections},
     player_updates::{
         process_despawn_level_object_requests, process_player_input_updates,
@@ -18,8 +19,8 @@ use mr_shared_lib::{
         level_objects::{PlaneDesc, PlaneFormDesc},
     },
     messages::{
-        self, DeferredMessagesQueue, EntityNetId, PlayerNetId, RunnerInput, SpawnLevelObject,
-        SpawnLevelObjectRequest,
+        self, DeferredMessagesQueue, EntityNetId, PlayerNetId, RespawnPlayer, RunnerInput,
+        SpawnLevelObject, SpawnLevelObjectRequest,
     },
     net::ConnectionState,
     player::PlayerRole,
@@ -27,6 +28,7 @@ use mr_shared_lib::{
     simulations_per_second, MuddleSharedPlugin,
 };
 
+mod game_events;
 mod net;
 mod player_updates;
 
@@ -45,6 +47,7 @@ impl Plugin for MuddleServerPlugin {
         builder.add_startup_system(startup.system());
 
         let input_stage = SystemStage::parallel()
+            .with_system(process_scheduled_spawns.system())
             .with_system(process_network_events.system().label("net"))
             .with_system(process_player_input_updates.system().after("net"))
             .with_system(process_switch_role_requests.system().after("net"))
@@ -53,6 +56,7 @@ impl Plugin for MuddleServerPlugin {
             .with_system(process_spawn_level_object_requests.system().after("net"))
             .with_system(process_update_level_object_requests.system().after("net"))
             .with_system(process_despawn_level_object_requests.system().after("net"));
+        let post_game_stage = SystemStage::parallel().with_system(process_player_events.system());
         let broadcast_updates_stage =
             SystemStage::parallel().with_system(send_network_updates.system());
 
@@ -60,6 +64,7 @@ impl Plugin for MuddleServerPlugin {
         builder.add_plugin(MuddleSharedPlugin::new(
             FixedTimestep::steps_per_second(simulations_per_second() as f64),
             input_stage,
+            post_game_stage,
             broadcast_updates_stage,
             SystemStage::parallel(),
             None,
@@ -80,6 +85,7 @@ impl Plugin for MuddleServerPlugin {
             .get_resource_or_insert_with(DeferredPlayerQueues::<SpawnLevelObjectRequest>::default);
         resources.get_resource_or_insert_with(DeferredPlayerQueues::<LevelObject>::default);
         resources.get_resource_or_insert_with(DeferredPlayerQueues::<EntityNetId>::default);
+        resources.get_resource_or_insert_with(DeferredMessagesQueue::<RespawnPlayer>::default);
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<SpawnLevelObject>::default);
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<UpdateLevelObject>::default);
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<DespawnLevelObject>::default);
@@ -106,7 +112,7 @@ pub fn init_level(
                         Vec2::new(-10.0, 5.0),
                     ],
                 },
-                is_spawn_area: true,
+                is_spawn_area: false,
             }),
             route: None,
             collision_logic: CollisionLogic::None,

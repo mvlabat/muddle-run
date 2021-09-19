@@ -13,8 +13,8 @@ use crate::{
             SwitchPlayerRole, UpdateLevelObject,
         },
         components::PlayerFrameSimulated,
-        events::CollisionLogicChanged,
-        level::LevelState,
+        events::{CollisionLogicChanged, PlayerDeath, PlayerFinish},
+        level::{maintain_available_spawn_areas, LevelState},
         level_objects::{process_objects_route_graph, update_level_object_movement_route_settings},
         movement::{load_object_positions, player_movement, read_movement_updates, sync_position},
         remove_disconnected_players, restart_game,
@@ -70,6 +70,8 @@ pub mod messages;
 pub mod net;
 pub mod player;
 pub mod registry;
+#[cfg(not(feature = "client"))]
+pub mod server;
 pub mod util;
 pub mod wrapped_counter;
 
@@ -92,6 +94,7 @@ pub mod stage {
     pub const PHYSICS: &str = "mr_shared_physics";
     pub const POST_PHYSICS: &str = "mr_shared_post_physics";
     pub const POST_GAME: &str = "mr_shared_post_game";
+    pub const SIMULATION_FINAL: &str = "mr_shared_simulation_final";
 }
 pub const GHOST_SIZE_MULTIPLIER: f32 = 1.001;
 pub const PLAYER_RADIUS: f32 = 0.35;
@@ -113,6 +116,7 @@ pub fn simulations_per_second() -> u16 {
 pub struct MuddleSharedPlugin<S: System<In = (), Out = ShouldRun>> {
     main_run_criteria: Mutex<Option<S>>,
     input_stage: Mutex<Option<SystemStage>>,
+    post_game_stage: Mutex<Option<SystemStage>>,
     broadcast_updates_stage: Mutex<Option<SystemStage>>,
     post_tick_stage: Mutex<Option<SystemStage>>,
     link_conditioner: Option<LinkConditionerConfig>,
@@ -122,6 +126,7 @@ impl<S: System<In = (), Out = ShouldRun>> MuddleSharedPlugin<S> {
     pub fn new(
         main_run_criteria: S,
         input_stage: SystemStage,
+        post_game_stage: SystemStage,
         broadcast_updates_stage: SystemStage,
         post_tick_stage: SystemStage,
         link_conditioner: Option<LinkConditionerConfig>,
@@ -129,6 +134,7 @@ impl<S: System<In = (), Out = ShouldRun>> MuddleSharedPlugin<S> {
         Self {
             main_run_criteria: Mutex::new(Some(main_run_criteria)),
             input_stage: Mutex::new(Some(input_stage)),
+            post_game_stage: Mutex::new(Some(post_game_stage)),
             broadcast_updates_stage: Mutex::new(Some(broadcast_updates_stage)),
             post_tick_stage: Mutex::new(Some(post_tick_stage)),
             link_conditioner,
@@ -152,6 +158,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .input_stage
             .lock()
             .expect("Can't initialize the plugin more than once");
+        let mut post_game_stage = self
+            .post_game_stage
+            .lock()
+            .expect("Can't initialize the plugin more than once");
         let mut broadcast_updates_stage = self
             .broadcast_updates_stage
             .lock()
@@ -168,6 +178,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 SystemStage::parallel()
                     .with_system(Events::<IntersectionEvent>::update_system.system())
                     .with_system(Events::<ContactEvent>::update_system.system())
+                    .with_system(Events::<PlayerFinish>::update_system.system())
+                    .with_system(Events::<PlayerDeath>::update_system.system())
                     .with_system(switch_player_role.system().label("player_role"))
                     .with_system(
                         despawn_players
@@ -175,14 +187,38 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                             .label("despawn_players")
                             .after("player_role"),
                     )
-                    .with_system(spawn_players.system().after("despawn_players"))
-                    .with_system(despawn_level_objects.system().label("despawn_objects"))
+                    .with_system(
+                        despawn_level_objects
+                            .system()
+                            .label("despawn_level_objects"),
+                    )
                     // Updating level objects might despawn entities completely if they are
                     // updated with replacement. Running it before `despawn_level_objects` might
                     // result into an edge-case where changes to the `Spawned` component are not
                     // propagated.
-                    .with_system(update_level_objects.system().after("despawn_objects"))
-                    .with_system(poll_calculating_shapes.system().after("despawn_objects")),
+                    .with_system(
+                        update_level_objects
+                            .system()
+                            .label("update_level_objects")
+                            .after("despawn_level_objects"),
+                    )
+                    .with_system(
+                        poll_calculating_shapes
+                            .system()
+                            .after("update_level_objects"),
+                    )
+                    .with_system(
+                        maintain_available_spawn_areas
+                            .system()
+                            .label("maintain_available_spawn_areas")
+                            .after("update_level_objects"),
+                    )
+                    .with_system(
+                        spawn_players
+                            .system()
+                            .after("despawn_players")
+                            .after("maintain_available_spawn_areas"),
+                    ),
             )
             .with_stage(
                 stage::PRE_GAME,
@@ -221,6 +257,12 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::POST_GAME,
+                post_game_stage
+                    .take()
+                    .expect("Can't initialize the plugin more than once"),
+            )
+            .with_stage(
+                stage::SIMULATION_FINAL,
                 SystemStage::parallel().with_system(tick_simulation_frame.system()),
             );
         profile_schedule(&mut simulation_schedule);
@@ -313,6 +355,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         resources.get_resource_or_insert_with(EntityRegistry::<EntityNetId>::default);
         resources.get_resource_or_insert_with(HashMap::<PlayerNetId, Player>::default);
         resources.get_resource_or_insert_with(Events::<CollisionLogicChanged>::default);
+        resources.get_resource_or_insert_with(Events::<PlayerDeath>::default);
+        resources.get_resource_or_insert_with(Events::<PlayerFinish>::default);
         // Is used only on the server side.
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<SwitchRole>::default);
 
