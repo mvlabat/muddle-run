@@ -3691,8 +3691,7 @@ dependencies = [
 [[package]]
 name = "parry2d"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e03714e76fd6708c1fa3fc4f58a66dabd723bb87865548657a037beaf9a8eea"
+source = "git+https://github.com/dimforge/parry?branch=reversed_2d_decomposition#2c23044684b3ed5588f370f2529144812fd0dfa9"
 dependencies = [
  "approx",
  "arrayvec 0.7.1",

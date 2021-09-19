@@ -149,9 +149,9 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
                                     for i in 1..convex.points().len() - 1 {
                                         let i = convex.points().len() - i - 1;
                                         let points = vec![
-                                            isometry * convex.points()[convex.points().len() - 1],
-                                            isometry * convex.points()[i],
                                             isometry * convex.points()[i - 1],
+                                            isometry * convex.points()[i],
+                                            isometry * convex.points()[convex.points().len() - 1],
                                         ];
                                         for point in points {
                                             let position = [
