@@ -273,7 +273,7 @@ impl LevelObjectDesc {
     pub fn possible_collision_logic(&self) -> Vec<CollisionLogic> {
         // `CollisionLogic::None` is implied by default.
         match self {
-            Self::Plane(_) => vec![CollisionLogic::Death, CollisionLogic::Finish],
+            Self::Plane(_) => vec![CollisionLogic::Finish, CollisionLogic::Death],
             Self::Cube(_) => vec![CollisionLogic::Death],
             Self::RoutePoint(_) => vec![],
         }
