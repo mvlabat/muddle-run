@@ -370,22 +370,24 @@ checksum = "0d5f2f58f0aec3c50a20799792c3705e80dd7df327e79791cacec197e84e5e61"
 
 [[package]]
 name = "bevy-inspector-egui"
-version = "0.6.0"
-source = "git+https://github.com/jakobhellermann/bevy-inspector-egui.git?rev=2a7a0c1#2a7a0c1f64fd311955d14b8384a42738d38debb8"
+version = "0.6.1"
+source = "git+https://github.com/mvlabat/bevy-inspector-egui.git?branch=rapier-0.11#20a1ca0a5704428e47a4da8553c52f5e4e5e5be8"
 dependencies = [
  "bevy",
  "bevy-inspector-egui-derive",
  "bevy_egui",
+ "bevy_rapier2d",
  "emath",
  "image",
+ "nalgebra",
  "pretty-type-name",
  "rand 0.8.4",
 ]
 
 [[package]]
 name = "bevy-inspector-egui-derive"
-version = "0.6.0"
-source = "git+https://github.com/jakobhellermann/bevy-inspector-egui.git?rev=2a7a0c1#2a7a0c1f64fd311955d14b8384a42738d38debb8"
+version = "0.6.1"
+source = "git+https://github.com/mvlabat/bevy-inspector-egui.git?branch=rapier-0.11#20a1ca0a5704428e47a4da8553c52f5e4e5e5be8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -530,9 +532,9 @@ dependencies = [
 
 [[package]]
 name = "bevy_egui"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb6d7ab5bd9077a6d2608e5fbc23f60688ba1e026c3cfe81656381863b29e7a7"
+checksum = "d75b0b49b2598a3639b408fb58039b3db7038a158cf6375ce07d4ad1015ead18"
 dependencies = [
  "bevy",
  "clipboard",
@@ -1625,9 +1627,9 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
 name = "egui"
-version = "0.13.1"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77f9b394ccacc0cccb30f6de7371038a116931aa3186acd908b9ec61f405f15c"
+checksum = "b403f29d592b5c2267279bfdf2cd3fe3ba0e7a8738d03203a6f1536e8e9d26bd"
 dependencies = [
  "epaint",
 ]
@@ -1640,9 +1642,9 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
 name = "emath"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80eea7508c08a7b4e2a041adcdca6f400d8606622c6bb980ecbbdc5f1aff9a4c"
+checksum = "cca5179aa9d15128cebb79bb56dda73a79cc66b402056ff19a992e54b365e15c"
 
 [[package]]
 name = "encoding_rs"
@@ -1678,9 +1680,9 @@ dependencies = [
 
 [[package]]
 name = "epaint"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "132e30d483d9fa252fe06aa112de777d068503c379fa51bc5834204ee3258fce"
+checksum = "136e7d88da926182bcfdb8217137dd347dfe5dc03b8988eaba3ef8becf83394a"
 dependencies = [
  "ab_glyph",
  "ahash 0.7.4",
@@ -3858,9 +3860,9 @@ dependencies = [
 
 [[package]]
 name = "puffin"
-version = "0.6.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bcce085db63f3cdad58de588b983b3c5f6d9699d8d0f8a9a97bbcc72c79529c"
+checksum = "d49b5051dce6e3407e2c4f8a7dfa8a5e71c70cf6548eb84c8ce65422152d6dbe"
 dependencies = [
  "byteorder",
  "once_cell",
@@ -3868,9 +3870,9 @@ dependencies = [
 
 [[package]]
 name = "puffin_egui"
-version = "0.4.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b03a5381948a650869a4d1dd634bb6c2d8d166359ce2ee55e6caf90bee724871"
+checksum = "e072403b12bb4fe12498a68cab84a6b02446134b4172ba329b65a84bb0d6a148"
 dependencies = [
  "egui",
  "natord",
