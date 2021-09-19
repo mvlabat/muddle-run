@@ -22,7 +22,7 @@ use bevy_rapier2d::{
     physics::{ColliderBundle, RigidBodyBundle},
     rapier::{
         dynamics::RigidBodyType,
-        geometry::{ColliderFlags, ColliderShape, ColliderType},
+        geometry::{ColliderFlags, ColliderShape, ColliderType, InteractionGroups},
         parry::transformation::vhacd::VHACDParameters,
     },
 };
@@ -188,6 +188,19 @@ impl LevelObjectDesc {
         shape: ColliderShape,
         is_ghost: bool,
     ) -> (RigidBodyBundle, ColliderBundle) {
+        let flags = if is_ghost {
+            ColliderFlags {
+                collision_groups: InteractionGroups::none(),
+                solver_groups: InteractionGroups::none(),
+                ..ColliderFlags::default()
+            }
+        } else {
+            ColliderFlags {
+                collision_groups: level_object_interaction_groups(),
+                solver_groups: level_object_interaction_groups(),
+                ..ColliderFlags::default()
+            }
+        };
         match self {
             Self::Plane(_) => (
                 RigidBodyBundle {
@@ -197,11 +210,7 @@ impl LevelObjectDesc {
                 },
                 ColliderBundle {
                     collider_type: ColliderType::Sensor,
-                    flags: ColliderFlags {
-                        collision_groups: level_object_interaction_groups(),
-                        solver_groups: level_object_interaction_groups(),
-                        ..ColliderFlags::default()
-                    },
+                    flags,
                     shape,
                     ..ColliderBundle::default()
                 },
@@ -218,11 +227,7 @@ impl LevelObjectDesc {
                     } else {
                         ColliderType::Solid
                     },
-                    flags: ColliderFlags {
-                        collision_groups: level_object_interaction_groups(),
-                        solver_groups: level_object_interaction_groups(),
-                        ..ColliderFlags::default()
-                    },
+                    flags,
                     shape,
                     ..ColliderBundle::default()
                 },
@@ -235,11 +240,7 @@ impl LevelObjectDesc {
                 },
                 ColliderBundle {
                     collider_type: ColliderType::Sensor,
-                    flags: ColliderFlags {
-                        collision_groups: level_object_interaction_groups(),
-                        solver_groups: level_object_interaction_groups(),
-                        ..ColliderFlags::default()
-                    },
+                    flags,
                     shape,
                     ..ColliderBundle::default()
                 },
