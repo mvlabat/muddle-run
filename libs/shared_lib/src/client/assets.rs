@@ -52,7 +52,10 @@ pub fn init_muddle_assets(
         },
         normal: ObjectMaterials {
             plane: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
+            plane_death: materials.add(Color::rgb(0.55, 0.15, 0.2).into()),
+            plane_finish: materials.add(Color::rgb(0.2, 0.25, 0.75).into()),
             cube: materials.add(Color::rgb(0.4, 0.4, 0.4).into()),
+            cube_death: materials.add(Color::rgb(0.8, 0.35, 0.35).into()),
             route_point: {
                 let mut material: StandardMaterial = Color::rgb(0.4, 0.4, 0.7).into();
                 material.reflectance = 0.0;
@@ -62,7 +65,10 @@ pub fn init_muddle_assets(
         },
         ghost: ObjectMaterials {
             plane: materials.add(Color::rgba(0.3, 0.5, 0.3, a).into()),
+            plane_death: materials.add(Color::rgba(0.55, 0.15, 0.2, a).into()),
+            plane_finish: materials.add(Color::rgba(0.2, 0.25, 0.75, a).into()),
             cube: materials.add(Color::rgba(0.4, 0.4, 0.4, a).into()),
+            cube_death: materials.add(Color::rgba(0.8, 0.35, 0.35, a).into()),
             route_point: {
                 let mut material: StandardMaterial = Color::rgba(0.4, 0.4, 0.7, a).into();
                 material.reflectance = 0.0;
@@ -87,6 +93,9 @@ pub fn init_muddle_assets(
 
 pub struct ObjectMaterials {
     pub plane: Handle<StandardMaterial>,
+    pub plane_death: Handle<StandardMaterial>,
+    pub plane_finish: Handle<StandardMaterial>,
     pub cube: Handle<StandardMaterial>,
+    pub cube_death: Handle<StandardMaterial>,
     pub route_point: Handle<StandardMaterial>,
 }

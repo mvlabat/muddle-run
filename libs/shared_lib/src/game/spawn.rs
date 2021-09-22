@@ -17,7 +17,7 @@ use crate::{
             PlayerDirection, PlayerSensor, PlayerSensorState, PlayerSensors, PlayerTag, Position,
             SpawnCommand, Spawned,
         },
-        level::{ColliderShapeResponse, LevelObjectDesc, LevelState},
+        level::{ColliderShapeResponse, LevelObject, LevelObjectDesc, LevelState},
     },
     messages::{EntityNetId, PlayerNetId},
     registry::EntityRegistry,
@@ -364,7 +364,7 @@ pub fn update_level_objects(
             let (rigid_body, collider) = command.object.desc.physics_body(shape.clone(), false);
             insert_client_components(
                 &mut entity_commands,
-                &command.object.desc,
+                &command.object,
                 false,
                 &collider.shape,
                 &mut pbr_client_params,
@@ -398,7 +398,7 @@ pub fn update_level_objects(
         entity_commands
             .insert(command.object.net_id)
             .insert(LevelObjectTag)
-            .insert(LevelObjectLabel(command.object.label))
+            .insert(LevelObjectLabel(command.object.label.clone()))
             .insert(RigidBodyPosition::from(
                 command.object.desc.position().unwrap(),
             ))
@@ -434,7 +434,7 @@ pub fn update_level_objects(
                 let (rigid_body, collider) = command.object.desc.physics_body(shape, true);
                 insert_client_components(
                     &mut ghost_commands,
-                    &command.object.desc,
+                    &command.object,
                     true,
                     &collider.shape,
                     &mut pbr_client_params,
@@ -508,7 +508,7 @@ pub fn poll_calculating_shapes(
         let (rigid_body, collider) = level_object.desc.physics_body(shape.clone(), false);
         insert_client_components(
             &mut entity_commands,
-            &level_object.desc,
+            level_object,
             false,
             &collider.shape,
             &mut pbr_client_params,
@@ -523,7 +523,7 @@ pub fn poll_calculating_shapes(
             let (rigid_body, collider) = level_object.desc.physics_body(shape, true);
             insert_client_components(
                 &mut entity_commands,
-                &level_object.desc,
+                level_object,
                 true,
                 &collider.shape,
                 &mut pbr_client_params,
@@ -538,18 +538,19 @@ pub fn poll_calculating_shapes(
 
 fn insert_client_components(
     entity_commands: &mut EntityCommands,
-    level_object_desc: &LevelObjectDesc,
+    level_object: &LevelObject,
     is_ghost: bool,
     collider_shape: &ColliderShape,
     pbr_client_params: &mut PbrClientParams,
 ) {
-    match level_object_desc {
+    match &level_object.desc {
         LevelObjectDesc::Plane(plane) => PlaneClientFactory::insert_components(
             entity_commands,
             pbr_client_params,
             (
                 LevelObjectInput {
                     desc: plane.clone(),
+                    collision_logic: level_object.collision_logic,
                     is_ghost,
                 },
                 Some(collider_shape.clone()),
@@ -560,6 +561,7 @@ fn insert_client_components(
             pbr_client_params,
             LevelObjectInput {
                 desc: cube.clone(),
+                collision_logic: level_object.collision_logic,
                 is_ghost,
             },
         ),
@@ -568,6 +570,7 @@ fn insert_client_components(
             pbr_client_params,
             LevelObjectInput {
                 desc: route_point.clone(),
+                collision_logic: level_object.collision_logic,
                 is_ghost,
             },
         ),

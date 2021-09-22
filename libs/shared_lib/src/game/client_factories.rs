@@ -1,4 +1,4 @@
-use crate::game::level_objects::*;
+use crate::game::{level::CollisionLogic, level_objects::*};
 #[cfg(feature = "client")]
 use crate::{
     client::{assets::MuddleAssets, components::DebugUiVisibility, *},
@@ -14,6 +14,14 @@ use bevy::{
     prelude::*,
     render::{mesh::Indices, pipeline::PrimitiveTopology},
 };
+
+pub fn object_height(collision_logic: CollisionLogic) -> f32 {
+    match collision_logic {
+        CollisionLogic::None => 0.0,
+        CollisionLogic::Finish => 0.001,
+        CollisionLogic::Death => 0.002,
+    }
+}
 
 pub trait ClientFactory<'a> {
     type Dependencies;
@@ -100,6 +108,7 @@ pub struct PlaneClientFactory;
 #[derive(Clone)]
 pub struct LevelObjectInput<T: Clone> {
     pub desc: T,
+    pub collision_logic: CollisionLogic,
     pub is_ghost: bool,
 }
 
@@ -206,12 +215,24 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
                 is_transparent: input.is_ghost,
             },
             mesh: deps.meshes.add(mesh),
-            material: if input.is_ghost {
-                deps.assets.materials.ghost.plane.clone()
-            } else {
-                deps.assets.materials.normal.plane.clone()
+            material: {
+                let materials = if input.is_ghost {
+                    &deps.assets.materials.ghost
+                } else {
+                    &deps.assets.materials.normal
+                };
+                match input.collision_logic {
+                    CollisionLogic::Finish => materials.plane_finish.clone(),
+                    CollisionLogic::Death => materials.plane_death.clone(),
+                    CollisionLogic::None => materials.plane.clone(),
+                }
             },
-            transform: Transform::from_translation(input.desc.position.extend(0.0)),
+            transform: Transform::from_translation(
+                input
+                    .desc
+                    .position
+                    .extend(object_height(input.collision_logic)),
+            ),
             ..Default::default()
         });
         commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
@@ -255,12 +276,25 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
             mesh: deps.meshes.add(Mesh::from(shape::Cube {
                 size: input.desc.size * 2.0 * ghost_size_multiplier,
             })),
-            material: if input.is_ghost {
-                deps.assets.materials.ghost.cube.clone()
-            } else {
-                deps.assets.materials.normal.cube.clone()
+            material: {
+                let materials = if input.is_ghost {
+                    &deps.assets.materials.ghost
+                } else {
+                    &deps.assets.materials.normal
+                };
+                match input.collision_logic {
+                    CollisionLogic::Death => materials.cube_death.clone(),
+                    CollisionLogic::None => materials.cube.clone(),
+                    // TODO: actually, reachable as we don't validate user's input yet: https://github.com/mvlabat/muddle-run/issues/36
+                    CollisionLogic::Finish => unreachable!(),
+                }
             },
-            transform: Transform::from_translation(input.desc.position.extend(input.desc.size)),
+            transform: Transform::from_translation(
+                input
+                    .desc
+                    .position
+                    .extend(input.desc.size + object_height(input.collision_logic)),
+            ),
             ..Default::default()
         });
         commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
