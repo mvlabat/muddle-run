@@ -202,10 +202,13 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                             .label("update_level_objects")
                             .after("despawn_level_objects"),
                     )
+                    // Adding components to an entity if there's a command to remove it the queue
+                    // will lead to crash. Executing this system before `update_level_objects` helps
+                    // to avoid this scenario.
                     .with_system(
                         poll_calculating_shapes
                             .system()
-                            .after("update_level_objects"),
+                            .before("update_level_objects"),
                     )
                     .with_system(
                         maintain_available_spawn_areas
