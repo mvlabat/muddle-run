@@ -11,7 +11,7 @@ use mr_shared_lib::{
             DeferredPlayerQueues, DeferredQueue, DespawnLevelObject, SwitchPlayerRole,
             UpdateLevelObject,
         },
-        level::{LevelObject, LevelState},
+        level::{CollisionLogic, LevelObject, LevelState},
     },
     messages::{self, DeferredMessagesQueue, EntityNetId, PlayerNetId, RunnerInput},
     net::ConnectionState,
@@ -193,6 +193,7 @@ pub fn process_spawn_level_object_requests(
                     label: format!("{} {}", desc.label(), net_id.0),
                     desc,
                     route: None,
+                    collision_logic: CollisionLogic::None,
                 },
                 frame_number: time.frame_number,
             };

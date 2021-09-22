@@ -1,26 +1,28 @@
 #[cfg(feature = "client")]
 use crate::game::components::PlayerFrameSimulated;
 use crate::{
-    collider_flags::player_interaction_groups,
+    collider_flags::{player_interaction_groups, player_sensor_interaction_groups},
     framebuffer::FrameNumber,
     game::{
         client_factories::{
             ClientFactory, CubeClientFactory, LevelObjectInput, PbrClientParams,
-            PlaneClientFactory, PlayerClientFactory, RoutePointClientFactory,
+            PlaneClientFactory, PlayerClientFactory, PlayerSensorClientFactory,
+            RoutePointClientFactory,
         },
         commands::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, UpdateLevelObject,
         },
         components::{
             LevelObjectLabel, LevelObjectStaticGhost, LevelObjectStaticGhostParent, LevelObjectTag,
-            PlayerDirection, PlayerTag, Position, SpawnCommand, Spawned,
+            PlayerDirection, PlayerSensor, PlayerSensorState, PlayerSensors, PlayerTag, Position,
+            SpawnCommand, Spawned,
         },
-        level::{ColliderShapeResponse, LevelObjectDesc, LevelState},
+        level::{ColliderShapeResponse, LevelObject, LevelObjectDesc, LevelState},
     },
     messages::{EntityNetId, PlayerNetId},
     registry::EntityRegistry,
-    util::dedup_by_key_unsorted,
-    GameTime, SimulationTime, PLAYER_SIZE,
+    util::{dedup_by_key_unsorted, player_sensor_outline},
+    GameTime, SimulationTime, PLAYER_RADIUS, PLAYER_SENSOR_RADIUS,
 };
 use bevy::{
     ecs::system::{EntityCommands, SystemParam},
@@ -29,10 +31,13 @@ use bevy::{
     tasks::AsyncComputeTaskPool,
 };
 use bevy_rapier2d::{
-    physics::{ColliderBundle, ColliderPositionSync, RigidBodyBundle},
+    physics::{ColliderBundle, ColliderPositionSync, IntoHandle, RigidBodyBundle},
     rapier::{
-        dynamics::{RigidBodyMassProps, RigidBodyMassPropsFlags, RigidBodyPosition},
-        geometry::{ColliderFlags, ColliderShape},
+        dynamics::{
+            RigidBodyHandle, RigidBodyMassProps, RigidBodyMassPropsFlags, RigidBodyPosition,
+        },
+        geometry::{ColliderFlags, ColliderParent, ColliderShape, ColliderType, InteractionGroups},
+        pipeline::ActiveEvents,
     },
 };
 
@@ -40,13 +45,27 @@ pub type ColliderShapePromiseResult = (Entity, Option<ColliderShape>);
 pub type ColliderShapeSender = crossbeam_channel::Sender<ColliderShapePromiseResult>;
 pub type ColliderShapeReceiver = crossbeam_channel::Receiver<ColliderShapePromiseResult>;
 
+pub type PlayersQuery<'s> = Query<
+    's,
+    (
+        Entity,
+        &'static mut Spawned,
+        &'static mut Position,
+        &'static mut PlayerDirection,
+        &'static mut ColliderFlags,
+        &'static PlayerSensors,
+    ),
+    Without<PlayerSensor>,
+>;
+
 pub fn spawn_players(
     mut commands: Commands,
     time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
     mut spawn_player_commands: ResMut<DeferredQueue<SpawnPlayer>>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
-    mut players: Query<(Entity, &mut Spawned, &mut Position, &mut PlayerDirection)>,
+    mut players: PlayersQuery,
+    mut player_sensors: Query<&mut ColliderFlags, With<PlayerSensor>>,
 ) {
     puffin::profile_function!();
     let mut spawn_player_commands = spawn_player_commands.drain();
@@ -69,8 +88,14 @@ pub fn spawn_players(
                 entity
             );
 
-            let (_, mut spawned, mut position, mut player_direction) =
-                players.get_mut(entity).unwrap();
+            let (
+                _,
+                mut spawned,
+                mut position,
+                mut player_direction,
+                mut collider_flags,
+                PlayerSensors { main: _, sensors },
+            ) = players.get_mut(entity).unwrap();
             for frame_number in time.server_frame..=time.player_frame {
                 position.buffer.insert(frame_number, command.start_position);
                 player_direction
@@ -82,6 +107,17 @@ pub fn spawn_players(
                 &mut pbr_client_params,
                 command.start_position,
             );
+            collider_flags.collision_groups = player_interaction_groups();
+            for (player_sensor_entity, _) in sensors {
+                let mut collider_flags = player_sensors.get_mut(*player_sensor_entity).unwrap();
+                collider_flags.collision_groups = player_sensor_interaction_groups();
+                PlayerSensorClientFactory::insert_components(
+                    &mut entity_commands.commands().entity(*player_sensor_entity),
+                    &mut pbr_client_params,
+                    (),
+                );
+            }
+
             #[cfg(feature = "client")]
             if command.is_player_frame_simulated {
                 entity_commands.insert(PlayerFrameSimulated);
@@ -92,6 +128,37 @@ pub fn spawn_players(
         }
 
         let mut entity_commands = commands.spawn();
+        let player_entity = entity_commands.id();
+
+        let mut sensors = Vec::new();
+        for sensor_position in player_sensor_outline() {
+            let mut sensor_commands = entity_commands.commands().spawn();
+            sensor_commands
+                .insert_bundle(ColliderBundle {
+                    shape: ColliderShape::ball(PLAYER_SENSOR_RADIUS),
+                    collider_type: ColliderType::Sensor,
+                    flags: ColliderFlags {
+                        collision_groups: player_sensor_interaction_groups(),
+                        solver_groups: InteractionGroups::none(),
+                        active_events: ActiveEvents::INTERSECTION_EVENTS,
+                        ..ColliderFlags::default()
+                    },
+                    ..ColliderBundle::default()
+                })
+                .insert(ColliderParent {
+                    handle: RigidBodyHandle(player_entity.handle()),
+                    pos_wrt_parent: sensor_position.into(),
+                })
+                .insert(ColliderPositionSync::Discrete)
+                .insert(PlayerSensor(player_entity));
+            PlayerSensorClientFactory::insert_components(
+                &mut sensor_commands,
+                &mut pbr_client_params,
+                (),
+            );
+            sensors.push((sensor_commands.id(), PlayerSensorState::default()));
+        }
+
         PlayerClientFactory::insert_components(
             &mut entity_commands,
             &mut pbr_client_params,
@@ -108,10 +175,11 @@ pub fn spawn_players(
                 ..RigidBodyBundle::default()
             })
             .insert_bundle(ColliderBundle {
-                shape: ColliderShape::cuboid(PLAYER_SIZE, PLAYER_SIZE),
+                shape: ColliderShape::ball(PLAYER_RADIUS),
                 flags: ColliderFlags {
                     collision_groups: player_interaction_groups(),
                     solver_groups: player_interaction_groups(),
+                    active_events: ActiveEvents::all(),
                     ..ColliderFlags::default()
                 },
                 ..ColliderBundle::default()
@@ -128,9 +196,13 @@ pub fn spawn_players(
                 frames_ahead + 1,
             ))
             .insert(Spawned::new(time.server_frame));
+        entity_commands.insert(PlayerSensors {
+            main: PlayerSensorState::default(),
+            sensors,
+        });
         log::info!(
             "Spawning a new player (entity: {:?}, frame {}): {}",
-            entity_commands.id(),
+            player_entity,
             time.server_frame,
             command.net_id.0
         );
@@ -143,7 +215,11 @@ pub fn despawn_players(
     mut pbr_client_params: PbrClientParams,
     mut despawn_player_commands: ResMut<DeferredQueue<DespawnPlayer>>,
     player_entities: Res<EntityRegistry<PlayerNetId>>,
-    mut players: Query<(Entity, &mut Spawned, &PlayerTag)>,
+    mut players: Query<
+        (Entity, &mut Spawned, &mut ColliderFlags, &mut PlayerSensors),
+        Without<PlayerSensor>,
+    >,
+    mut player_sensors: Query<&mut ColliderFlags, With<PlayerSensor>>,
 ) {
     puffin::profile_function!();
     for command in despawn_player_commands.drain() {
@@ -158,8 +234,8 @@ pub fn despawn_players(
                 continue;
             }
         };
-        let mut spawned = match players.get_mut(entity) {
-            Ok((_, spawned, _)) => spawned,
+        let (mut spawned, mut collider_flags, mut sensors) = match players.get_mut(entity) {
+            Ok((_, spawned, collider_flags, sensors)) => (spawned, collider_flags, sensors),
             Err(err) => {
                 log::error!("A despawned player entity doesn't exist: {:?}", err);
                 continue;
@@ -179,10 +255,17 @@ pub fn despawn_players(
             command.net_id.0,
             command.frame_number
         );
-        PlayerClientFactory::remove_components(
-            &mut commands.entity(entity),
-            &mut pbr_client_params,
-        );
+        let mut entity_commands = commands.entity(entity);
+        collider_flags.collision_groups.memberships = 0;
+        PlayerClientFactory::remove_components(&mut entity_commands, &mut pbr_client_params);
+        for (player_sensor_entity, _state) in &mut sensors.sensors {
+            let mut collider_flags = player_sensors.get_mut(*player_sensor_entity).unwrap();
+            collider_flags.collision_groups.memberships = 0;
+            PlayerSensorClientFactory::remove_components(
+                &mut commands.entity(*player_sensor_entity),
+                &mut pbr_client_params,
+            );
+        }
         spawned.push_command(command.frame_number, SpawnCommand::Despawn);
     }
 }
@@ -226,6 +309,9 @@ pub fn update_level_objects(
     for command in update_level_object_commands {
         let mut spawned_component = Spawned::new(command.frame_number);
         let mut position_component: Option<Position> = None;
+
+        // Unlike with players, here we just despawn level objects if they are updated and re-create
+        // from scratch.
         if let Some(existing_entity) = level_object_params
             .object_entities
             .get_entity(command.object.net_id)
@@ -278,7 +364,7 @@ pub fn update_level_objects(
             let (rigid_body, collider) = command.object.desc.physics_body(shape.clone(), false);
             insert_client_components(
                 &mut entity_commands,
-                &command.object.desc,
+                &command.object,
                 false,
                 &collider.shape,
                 &mut pbr_client_params,
@@ -312,7 +398,7 @@ pub fn update_level_objects(
         entity_commands
             .insert(command.object.net_id)
             .insert(LevelObjectTag)
-            .insert(LevelObjectLabel(command.object.label))
+            .insert(LevelObjectLabel(command.object.label.clone()))
             .insert(RigidBodyPosition::from(
                 command.object.desc.position().unwrap(),
             ))
@@ -348,7 +434,7 @@ pub fn update_level_objects(
                 let (rigid_body, collider) = command.object.desc.physics_body(shape, true);
                 insert_client_components(
                     &mut ghost_commands,
-                    &command.object.desc,
+                    &command.object,
                     true,
                     &collider.shape,
                     &mut pbr_client_params,
@@ -422,7 +508,7 @@ pub fn poll_calculating_shapes(
         let (rigid_body, collider) = level_object.desc.physics_body(shape.clone(), false);
         insert_client_components(
             &mut entity_commands,
-            &level_object.desc,
+            level_object,
             false,
             &collider.shape,
             &mut pbr_client_params,
@@ -437,7 +523,7 @@ pub fn poll_calculating_shapes(
             let (rigid_body, collider) = level_object.desc.physics_body(shape, true);
             insert_client_components(
                 &mut entity_commands,
-                &level_object.desc,
+                level_object,
                 true,
                 &collider.shape,
                 &mut pbr_client_params,
@@ -452,18 +538,19 @@ pub fn poll_calculating_shapes(
 
 fn insert_client_components(
     entity_commands: &mut EntityCommands,
-    level_object_desc: &LevelObjectDesc,
+    level_object: &LevelObject,
     is_ghost: bool,
     collider_shape: &ColliderShape,
     pbr_client_params: &mut PbrClientParams,
 ) {
-    match level_object_desc {
+    match &level_object.desc {
         LevelObjectDesc::Plane(plane) => PlaneClientFactory::insert_components(
             entity_commands,
             pbr_client_params,
             (
                 LevelObjectInput {
                     desc: plane.clone(),
+                    collision_logic: level_object.collision_logic,
                     is_ghost,
                 },
                 Some(collider_shape.clone()),
@@ -474,6 +561,7 @@ fn insert_client_components(
             pbr_client_params,
             LevelObjectInput {
                 desc: cube.clone(),
+                collision_logic: level_object.collision_logic,
                 is_ghost,
             },
         ),
@@ -482,6 +570,7 @@ fn insert_client_components(
             pbr_client_params,
             LevelObjectInput {
                 desc: route_point.clone(),
+                collision_logic: level_object.collision_logic,
                 is_ghost,
             },
         ),
@@ -495,7 +584,11 @@ pub fn despawn_level_objects(
     object_entities: Res<EntityRegistry<EntityNetId>>,
     mut level_state: ResMut<LevelState>,
     mut level_objects: Query<
-        (&mut Spawned, Option<&LevelObjectStaticGhostParent>),
+        (
+            &mut Spawned,
+            &mut ColliderFlags,
+            Option<&LevelObjectStaticGhostParent>,
+        ),
         With<LevelObjectTag>,
     >,
 ) {
@@ -512,7 +605,7 @@ pub fn despawn_level_objects(
                 continue;
             }
         };
-        let (mut spawned, ghost_parent) = match level_objects.get_mut(entity) {
+        let (mut spawned, mut collider_flags, ghost_parent) = match level_objects.get_mut(entity) {
             Ok(r) => r,
             Err(err) => {
                 log::error!("A despawned level object entity doesn't exist: {:?}", err);
@@ -533,6 +626,7 @@ pub fn despawn_level_objects(
             command.net_id.0,
             command.frame_number
         );
+        collider_flags.collision_groups.memberships = 0;
         match level_state
             .objects
             .remove(&command.net_id)
@@ -585,16 +679,26 @@ pub fn process_spawned_entities(
     game_time: Res<GameTime>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
-    mut spawned_entities: Query<(Entity, &mut Spawned, Option<&LevelObjectStaticGhostParent>)>,
+    mut spawned_entities: Query<(
+        Entity,
+        &mut Spawned,
+        Option<&LevelObjectStaticGhostParent>,
+        Option<&PlayerSensors>,
+    )>,
 ) {
     puffin::profile_function!();
-    for (entity, mut spawned, ghost) in spawned_entities.iter_mut() {
+    for (entity, mut spawned, ghost, player_sensors) in spawned_entities.iter_mut() {
         spawned.pop_outdated_commands(game_time.frame_number);
         if spawned.can_be_removed(game_time.frame_number) {
             log::debug!("Despawning entity {:?}", entity);
             commands.entity(entity).despawn();
             if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost {
                 commands.entity(*ghost_entity).despawn();
+            }
+            if let Some(PlayerSensors { main: _, sensors }) = player_sensors {
+                for (sensor_entity, _) in sensors {
+                    commands.entity(*sensor_entity).despawn();
+                }
             }
             player_entities.remove_by_entity(entity);
             object_entities.remove_by_entity(entity);

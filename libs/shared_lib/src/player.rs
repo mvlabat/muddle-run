@@ -1,9 +1,21 @@
 use crate::{
     framebuffer::{FrameNumber, Framebuffer},
-    messages::PlayerNetId,
+    messages::{PlayerNetId, RespawnPlayerReason},
+    registry::EntityRegistry,
 };
-use bevy::{log, math::Vec2, utils::HashMap};
+use bevy::{
+    ecs::system::{ResMut, SystemParam},
+    log,
+    math::Vec2,
+    utils::HashMap,
+};
 use serde::{Deserialize, Serialize};
+
+#[derive(SystemParam)]
+pub struct PlayerSystemParamsMut<'a> {
+    pub players: ResMut<'a, HashMap<PlayerNetId, Player>>,
+    pub player_registry: ResMut<'a, EntityRegistry<PlayerNetId>>,
+}
 
 #[derive(Debug, Default)]
 pub struct PlayerUpdates {
@@ -59,10 +71,11 @@ impl PlayerUpdates {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Player {
     pub nickname: String,
     pub role: PlayerRole,
+    pub respawning_at: Option<(FrameNumber, RespawnPlayerReason)>,
     pub is_connected: bool,
 }
 
@@ -71,6 +84,7 @@ impl Player {
         Player {
             nickname: "?".to_owned(),
             role,
+            respawning_at: None,
             is_connected: true,
         }
     }
@@ -79,6 +93,7 @@ impl Player {
         Player {
             nickname,
             role,
+            respawning_at: None,
             is_connected: true,
         }
     }

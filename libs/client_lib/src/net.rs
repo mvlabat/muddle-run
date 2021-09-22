@@ -367,6 +367,17 @@ pub fn process_network_events(
                             }),
                     });
                 }
+                ReliableServerMessage::RespawnPlayer(respawn_player) => {
+                    if let Some(player) = players.get_mut(&respawn_player.net_id) {
+                        player.respawning_at =
+                            Some((respawn_player.frame_number, respawn_player.reason));
+                    } else {
+                        log::warn!(
+                            "Received RespawnPlayer message for a player that doesn't exist: {:?}",
+                            respawn_player.net_id
+                        );
+                    }
+                }
                 ReliableServerMessage::Disconnect => {
                     network_params
                         .connection_state
@@ -744,12 +755,14 @@ fn process_delta_update_message(
         }
     }
 
+    let delta_update_frame = delta_update.frame_number;
     for player_state in delta_update.players {
-        if update_params
+        let is_spawned = update_params
             .player_entities
             .get_entity(player_state.net_id)
-            .is_none()
-        {
+            .and_then(|player_entity| update_params.spawned_query.get(player_entity).ok())
+            .map_or(false, |spawned| spawned.is_spawned(delta_update_frame));
+        if !is_spawned {
             log::info!("First update with the new player {}", player_state.net_id.0);
             update_params.spawn_player_commands.push(SpawnPlayer {
                 net_id: player_state.net_id,
@@ -842,52 +855,39 @@ fn process_start_game_message(
     players: &mut HashMap<PlayerNetId, Player>,
     update_params: &mut UpdateParams,
 ) {
+    log::trace!("Processing StartGame message: {:?}", start_game);
     let initial_rtt = update_params.initial_rtt.duration_secs().unwrap() * 1000.0;
     log::debug!("Initial rtt: {}", initial_rtt);
     connection_state
         .set_initial_rtt_millis(update_params.initial_rtt.duration_secs().unwrap() * 1000.0);
 
-    if let Some(start_position) = player_start_position(start_game.net_id, &start_game.game_state) {
-        current_player_net_id.0 = Some(start_game.net_id);
-        players.insert(
-            start_game.net_id,
-            Player::new_with_nickname(PlayerRole::Runner, start_game.nickname),
-        );
-        update_params.game_time.session += 1;
-        let rtt_frames = FrameNumber::new(
-            (simulations_per_second() as f32 * connection_state.rtt_millis() / 1000.0) as u16,
-        );
-        let half_rtt_frames = FrameNumber::new(
-            (simulations_per_second() as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
-        );
-        update_params.target_frames_ahead.frames_count = rtt_frames;
-        update_params.simulation_time.server_generation = start_game.generation;
-        update_params.simulation_time.player_generation = start_game.generation;
-        update_params.simulation_time.server_frame = start_game.game_state.frame_number;
-        let (player_frame, overflown) = start_game.game_state.frame_number.add(rtt_frames);
-        update_params.simulation_time.player_frame = player_frame;
-        if overflown {
-            update_params.simulation_time.player_generation += 1;
-        }
-
-        update_params.game_time.frame_number = update_params.simulation_time.player_frame;
-
-        update_params.estimated_server_time.frame_number =
-            start_game.game_state.frame_number + half_rtt_frames;
-        update_params.estimated_server_time.updated_at = update_params.game_time.frame_number;
-
-        log::debug!(
-            "Spawning the current player ({})",
-            current_player_net_id.0.unwrap().0
-        );
-        update_params.spawn_player_commands.push(SpawnPlayer {
-            net_id: start_game.net_id,
-            start_position,
-            is_player_frame_simulated: true,
-        });
-    } else {
-        log::error!("Player's position isn't found in the game state");
+    current_player_net_id.0 = Some(start_game.net_id);
+    players.insert(
+        start_game.net_id,
+        Player::new_with_nickname(PlayerRole::Runner, start_game.nickname),
+    );
+    update_params.game_time.session += 1;
+    let rtt_frames = FrameNumber::new(
+        (simulations_per_second() as f32 * connection_state.rtt_millis() / 1000.0) as u16,
+    );
+    let half_rtt_frames = FrameNumber::new(
+        (simulations_per_second() as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
+    );
+    update_params.target_frames_ahead.frames_count = rtt_frames;
+    update_params.simulation_time.server_generation = start_game.generation;
+    update_params.simulation_time.player_generation = start_game.generation;
+    update_params.simulation_time.server_frame = start_game.game_state.frame_number;
+    let (player_frame, overflown) = start_game.game_state.frame_number.add(rtt_frames);
+    update_params.simulation_time.player_frame = player_frame;
+    if overflown {
+        update_params.simulation_time.player_generation += 1;
     }
+
+    update_params.game_time.frame_number = update_params.simulation_time.player_frame;
+
+    update_params.estimated_server_time.frame_number =
+        start_game.game_state.frame_number + half_rtt_frames;
+    update_params.estimated_server_time.updated_at = update_params.game_time.frame_number;
 
     for player in start_game.players {
         if player.net_id == current_player_net_id.0.unwrap() {

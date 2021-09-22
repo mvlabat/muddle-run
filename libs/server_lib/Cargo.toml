@@ -12,9 +12,11 @@ use-udp = ["bevy_networking_turbulence/use-udp"]
 use-webrtc = ["bevy_networking_turbulence/use-webrtc"]
 
 [dependencies]
+bevy_rapier2d = { version = "0.11" }
 chrono = "0.4.19"
 env_logger = "0.8.1"
-puffin = "0.6.0"
+puffin = "0.8.1"
+rand = "0.8.4"
 
 [dependencies.bevy]
 version = "0.5"

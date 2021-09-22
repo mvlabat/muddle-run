@@ -1,9 +1,9 @@
-use crate::game::level_objects::*;
+use crate::game::{level::CollisionLogic, level_objects::*};
 #[cfg(feature = "client")]
 use crate::{
-    client::{assets::MuddleMaterials, *},
+    client::{assets::MuddleAssets, components::DebugUiVisibility, *},
     game::components::PredictedPosition,
-    GHOST_SIZE_MULTIPLIER, PLAYER_SIZE,
+    GHOST_SIZE_MULTIPLIER, PLAYER_RADIUS,
 };
 use bevy::{
     ecs::system::{EntityCommands, SystemParam},
@@ -14,6 +14,14 @@ use bevy::{
     prelude::*,
     render::{mesh::Indices, pipeline::PrimitiveTopology},
 };
+
+pub fn object_height(collision_logic: CollisionLogic) -> f32 {
+    match collision_logic {
+        CollisionLogic::None => 0.0,
+        CollisionLogic::Finish => 0.001,
+        CollisionLogic::Death => 0.002,
+    }
+}
 
 pub trait ClientFactory<'a> {
     type Dependencies;
@@ -42,11 +50,11 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
         position: Self::Input,
     ) {
         commands.insert_bundle(PbrBundle {
-            mesh: deps.meshes.add(Mesh::from(shape::Cube {
-                size: PLAYER_SIZE * 2.0,
+            mesh: deps.meshes.add(Mesh::from(XyCircle {
+                radius: PLAYER_RADIUS,
             })),
-            material: deps.materials.player.clone(),
-            transform: Transform::from_translation(position.extend(PLAYER_SIZE)),
+            material: deps.assets.materials.player.clone(),
+            transform: Transform::from_translation(position.extend(0.01)),
             ..Default::default()
         });
         commands.insert(PredictedPosition { value: position });
@@ -62,11 +70,45 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
     }
 }
 
+pub struct PlayerSensorClientFactory;
+
+impl<'a> ClientFactory<'a> for PlayerSensorClientFactory {
+    type Dependencies = PbrClientParams<'a>;
+    type Input = ();
+
+    #[cfg(feature = "client")]
+    fn insert_components(
+        commands: &mut EntityCommands,
+        deps: &mut Self::Dependencies,
+        (): Self::Input,
+    ) {
+        commands
+            .insert_bundle(PbrBundle {
+                mesh: deps.assets.meshes.player_sensor.clone(),
+                material: deps.assets.materials.player_sensor_normal.clone(),
+                visible: Visible {
+                    is_visible: deps.visibility_settings.debug,
+                    is_transparent: false,
+                },
+                ..Default::default()
+            })
+            .insert(DebugUiVisibility);
+    }
+
+    #[cfg(feature = "client")]
+    fn remove_components(commands: &mut EntityCommands, _deps: &mut Self::Dependencies) {
+        commands
+            .remove_bundle::<PbrBundle>()
+            .remove::<DebugUiVisibility>();
+    }
+}
+
 pub struct PlaneClientFactory;
 
 #[derive(Clone)]
 pub struct LevelObjectInput<T: Clone> {
     pub desc: T,
+    pub collision_logic: CollisionLogic,
     pub is_ghost: bool,
 }
 
@@ -116,9 +158,9 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
                                     for i in 1..convex.points().len() - 1 {
                                         let i = convex.points().len() - i - 1;
                                         let points = vec![
-                                            isometry * convex.points()[convex.points().len() - 1],
-                                            isometry * convex.points()[i],
                                             isometry * convex.points()[i - 1],
+                                            isometry * convex.points()[i],
+                                            isometry * convex.points()[convex.points().len() - 1],
                                         ];
                                         for point in points {
                                             let position = [
@@ -173,12 +215,24 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
                 is_transparent: input.is_ghost,
             },
             mesh: deps.meshes.add(mesh),
-            material: if input.is_ghost {
-                deps.materials.ghost.plane.clone()
-            } else {
-                deps.materials.normal.plane.clone()
+            material: {
+                let materials = if input.is_ghost {
+                    &deps.assets.materials.ghost
+                } else {
+                    &deps.assets.materials.normal
+                };
+                match input.collision_logic {
+                    CollisionLogic::Finish => materials.plane_finish.clone(),
+                    CollisionLogic::Death => materials.plane_death.clone(),
+                    CollisionLogic::None => materials.plane.clone(),
+                }
             },
-            transform: Transform::from_translation(input.desc.position.extend(0.0)),
+            transform: Transform::from_translation(
+                input
+                    .desc
+                    .position
+                    .extend(object_height(input.collision_logic)),
+            ),
             ..Default::default()
         });
         commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
@@ -222,12 +276,25 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
             mesh: deps.meshes.add(Mesh::from(shape::Cube {
                 size: input.desc.size * 2.0 * ghost_size_multiplier,
             })),
-            material: if input.is_ghost {
-                deps.materials.ghost.cube.clone()
-            } else {
-                deps.materials.normal.cube.clone()
+            material: {
+                let materials = if input.is_ghost {
+                    &deps.assets.materials.ghost
+                } else {
+                    &deps.assets.materials.normal
+                };
+                match input.collision_logic {
+                    CollisionLogic::Death => materials.cube_death.clone(),
+                    CollisionLogic::None => materials.cube.clone(),
+                    // TODO: actually, reachable as we don't validate user's input yet: https://github.com/mvlabat/muddle-run/issues/36
+                    CollisionLogic::Finish => unreachable!(),
+                }
             },
-            transform: Transform::from_translation(input.desc.position.extend(input.desc.size)),
+            transform: Transform::from_translation(
+                input
+                    .desc
+                    .position
+                    .extend(input.desc.size + object_height(input.collision_logic)),
+            ),
             ..Default::default()
         });
         commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
@@ -276,9 +343,9 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
                 base_edge_half_len: ROUTE_POINT_BASE_EDGE_HALF_LEN * ghost_size_multiplier,
             })),
             material: if input.is_ghost {
-                deps.materials.ghost.route_point.clone()
+                deps.assets.materials.ghost.route_point.clone()
             } else {
-                deps.materials.normal.route_point.clone()
+                deps.assets.materials.normal.route_point.clone()
             },
             ..Default::default()
         });
@@ -297,6 +364,7 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
 #[cfg(feature = "client")]
 #[derive(Default)]
 pub struct VisibilitySettings {
+    pub debug: bool,
     pub route_points: bool,
     pub ghosts: bool,
 }
@@ -305,7 +373,7 @@ pub struct VisibilitySettings {
 #[derive(SystemParam)]
 pub struct PbrClientParams<'a> {
     meshes: ResMut<'a, Assets<Mesh>>,
-    materials: Res<'a, MuddleMaterials>,
+    assets: MuddleAssets<'a>,
     visibility_settings: Res<'a, VisibilitySettings>,
     mesh_query: Query<'a, &'static Handle<Mesh>>,
 }

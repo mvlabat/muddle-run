@@ -1,5 +1,6 @@
 use crate::{
     framebuffer::{FrameNumber, Framebuffer},
+    game::level::CollisionLogic,
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use bevy::{ecs::entity::Entity, math::Vec2, utils::HashSet};
@@ -9,6 +10,49 @@ use std::collections::VecDeque;
 // in the `restart_game` system.
 
 pub struct PlayerTag;
+
+#[derive(Clone)]
+pub struct PlayerSensor(pub Entity);
+
+#[derive(Debug)]
+pub struct PlayerSensors {
+    pub main: PlayerSensorState,
+    pub sensors: Vec<(Entity, PlayerSensorState)>,
+}
+
+impl PlayerSensors {
+    pub fn player_is_dead(&self) -> bool {
+        let sensors_contact_death_or_nothing = self
+            .sensors
+            .iter()
+            .any(|(_, sensor)| sensor.contacting.is_empty() || sensor.has(CollisionLogic::Death));
+        self.main.has(CollisionLogic::Death)
+            || self.main.contacting.is_empty()
+            || sensors_contact_death_or_nothing
+    }
+
+    pub fn player_has_finished(&self) -> bool {
+        let sensors_contact_finish = self
+            .sensors
+            .iter()
+            .any(|(_, sensor)| sensor.has(CollisionLogic::Finish));
+        self.main.has(CollisionLogic::Finish) || sensors_contact_finish
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct PlayerSensorState {
+    /// Includes both contact and intersection events.
+    pub contacting: Vec<(Entity, CollisionLogic)>,
+}
+
+impl PlayerSensorState {
+    pub fn has(&self, collision_logic: CollisionLogic) -> bool {
+        self.contacting
+            .iter()
+            .any(|(_, logic)| *logic == collision_logic)
+    }
+}
 
 pub struct LevelObjectTag;
 

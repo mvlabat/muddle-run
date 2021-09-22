@@ -2,8 +2,8 @@ use crate::{
     collider_flags::level_object_interaction_groups,
     framebuffer::FrameNumber,
     game::{
-        client_factories::ROUTE_POINT_BASE_EDGE_HALF_LEN, level_objects::*,
-        spawn::ColliderShapeSender,
+        client_factories::ROUTE_POINT_BASE_EDGE_HALF_LEN, components::LevelObjectTag,
+        level_objects::*, spawn::ColliderShapeSender,
     },
     messages::EntityNetId,
     registry::EntityRegistry,
@@ -11,7 +11,8 @@ use crate::{
 use bevy::{
     ecs::{
         entity::Entity,
-        system::{Res, SystemParam},
+        query::Added,
+        system::{Query, Res, ResMut, SystemParam},
     },
     math::Vec2,
     tasks::AsyncComputeTaskPool,
@@ -22,7 +23,7 @@ use bevy_rapier2d::{
     physics::{ColliderBundle, RigidBodyBundle},
     rapier::{
         dynamics::RigidBodyType,
-        geometry::{ColliderFlags, ColliderShape, ColliderType},
+        geometry::{ColliderFlags, ColliderShape, ColliderType, InteractionGroups},
         parry::transformation::vhacd::VHACDParameters,
     },
 };
@@ -49,6 +50,7 @@ impl<'a> LevelParams<'a> {
 #[derive(Default)]
 pub struct LevelState {
     pub objects: HashMap<EntityNetId, LevelObject>,
+    pub spawn_areas: Vec<EntityNetId>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -58,6 +60,7 @@ pub struct LevelObject {
     pub desc: LevelObjectDesc,
     /// Absence of this field means that an object is stationary.
     pub route: Option<ObjectRoute>,
+    pub collision_logic: CollisionLogic,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -80,6 +83,13 @@ pub enum LevelObjectDesc {
     Plane(PlaneDesc),
     Cube(CubeDesc),
     RoutePoint(RoutePointDesc),
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub enum CollisionLogic {
+    Finish,
+    Death,
+    None,
 }
 
 pub enum ColliderShapeResponse {
@@ -180,6 +190,19 @@ impl LevelObjectDesc {
         shape: ColliderShape,
         is_ghost: bool,
     ) -> (RigidBodyBundle, ColliderBundle) {
+        let flags = if is_ghost {
+            ColliderFlags {
+                collision_groups: InteractionGroups::none(),
+                solver_groups: InteractionGroups::none(),
+                ..ColliderFlags::default()
+            }
+        } else {
+            ColliderFlags {
+                collision_groups: level_object_interaction_groups(),
+                solver_groups: level_object_interaction_groups(),
+                ..ColliderFlags::default()
+            }
+        };
         match self {
             Self::Plane(_) => (
                 RigidBodyBundle {
@@ -189,11 +212,7 @@ impl LevelObjectDesc {
                 },
                 ColliderBundle {
                     collider_type: ColliderType::Sensor,
-                    flags: ColliderFlags {
-                        collision_groups: level_object_interaction_groups(),
-                        solver_groups: level_object_interaction_groups(),
-                        ..ColliderFlags::default()
-                    },
+                    flags,
                     shape,
                     ..ColliderBundle::default()
                 },
@@ -210,11 +229,7 @@ impl LevelObjectDesc {
                     } else {
                         ColliderType::Solid
                     },
-                    flags: ColliderFlags {
-                        collision_groups: level_object_interaction_groups(),
-                        solver_groups: level_object_interaction_groups(),
-                        ..ColliderFlags::default()
-                    },
+                    flags,
                     shape,
                     ..ColliderBundle::default()
                 },
@@ -227,11 +242,7 @@ impl LevelObjectDesc {
                 },
                 ColliderBundle {
                     collider_type: ColliderType::Sensor,
-                    flags: ColliderFlags {
-                        collision_groups: level_object_interaction_groups(),
-                        solver_groups: level_object_interaction_groups(),
-                        ..ColliderFlags::default()
-                    },
+                    flags,
                     shape,
                     ..ColliderBundle::default()
                 },
@@ -258,6 +269,43 @@ impl LevelObjectDesc {
                 points[index] = point;
             }
             _ => unimplemented!(),
+        }
+    }
+
+    pub fn possible_collision_logic(&self) -> Vec<CollisionLogic> {
+        // `CollisionLogic::None` is implied by default.
+        match self {
+            Self::Plane(_) => vec![CollisionLogic::Finish, CollisionLogic::Death],
+            Self::Cube(_) => vec![CollisionLogic::Death],
+            Self::RoutePoint(_) => vec![],
+        }
+    }
+}
+
+pub fn maintain_available_spawn_areas(
+    mut level_state: ResMut<LevelState>,
+    updated_level_objects: Query<&EntityNetId, Added<LevelObjectTag>>,
+) {
+    for level_object_net_id in updated_level_objects.iter().copied() {
+        let is_spawn_area =
+            level_state
+                .objects
+                .get(&level_object_net_id)
+                .map_or(false, |level_object| match &level_object.desc {
+                    LevelObjectDesc::Plane(plane_desc) => plane_desc.is_spawn_area,
+                    _ => false,
+                });
+
+        if let Some(i) = level_state
+            .spawn_areas
+            .iter()
+            .position(|net_id| *net_id == level_object_net_id)
+        {
+            if !is_spawn_area {
+                level_state.spawn_areas.remove(i);
+            }
+        } else if is_spawn_area {
+            level_state.spawn_areas.push(level_object_net_id);
         }
     }
 }

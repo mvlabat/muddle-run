@@ -15,12 +15,14 @@ use mr_shared_lib::{
     messages::{
         ConnectedPlayer, DeferredMessagesQueue, DeltaUpdate, DisconnectedPlayer, EntityNetId,
         Message, PlayerInputs, PlayerNetId, PlayerState, ReliableClientMessage,
-        ReliableServerMessage, RunnerInput, SpawnLevelObject, SpawnLevelObjectRequest, StartGame,
-        SwitchRole, UnreliableClientMessage, UnreliableServerMessage,
+        ReliableServerMessage, RespawnPlayer, RunnerInput, SpawnLevelObject,
+        SpawnLevelObjectRequest, StartGame, SwitchRole, UnreliableClientMessage,
+        UnreliableServerMessage,
     },
     net::{ConnectionState, ConnectionStatus, SessionId, CONNECTION_TIMEOUT_MILLIS},
     player::{random_name, Player, PlayerRole},
     registry::{EntityRegistry, Registry},
+    server::level_spawn_location_service::LevelSpawnLocationService,
     GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::{
@@ -68,6 +70,7 @@ pub fn process_network_events(
     mut network_events: EventReader<NetworkEvent>,
     mut network_params: NetworkParams,
     mut update_params: UpdateParams,
+    level_spawn_location_service: LevelSpawnLocationService,
 ) {
     puffin::profile_function!();
     log::trace!("Processing network updates (frame: {})", time.frame_number);
@@ -328,7 +331,8 @@ pub fn process_network_events(
                         .spawn_player_commands
                         .push(commands::SpawnPlayer {
                             net_id: player_net_id,
-                            start_position: Vec2::ZERO,
+                            start_position: level_spawn_location_service
+                                .spawn_position(time.frame_number),
                             is_player_frame_simulated: false,
                         });
                     // Add an initial update to have something to extrapolate from.
@@ -565,6 +569,7 @@ fn disconnect_players(
 #[derive(SystemParam)]
 pub struct DeferredMessageQueues<'a> {
     switch_role_messages: ResMut<'a, DeferredMessagesQueue<SwitchRole>>,
+    respawn_player_messages: ResMut<'a, DeferredMessagesQueue<RespawnPlayer>>,
     spawn_level_object_messages: ResMut<'a, DeferredMessagesQueue<SpawnLevelObject>>,
     update_level_object_messages: ResMut<'a, DeferredMessagesQueue<commands::UpdateLevelObject>>,
     despawn_level_object_messages: ResMut<'a, DeferredMessagesQueue<commands::DespawnLevelObject>>,
@@ -635,6 +640,17 @@ pub fn send_network_updates(
             &mut network_params.net,
             &network_params.connection_states,
             ReliableServerMessage::SwitchRole(switch_role_message),
+        );
+    }
+    for respawn_player_message in deferred_message_queues
+        .respawn_player_messages
+        .drain()
+        .into_iter()
+    {
+        broadcast_reliable_game_message(
+            &mut network_params.net,
+            &network_params.connection_states,
+            ReliableServerMessage::RespawnPlayer(respawn_player_message),
         );
     }
     for spawn_level_object_message in deferred_message_queues
@@ -818,18 +834,16 @@ fn broadcast_start_game_messages(
         ));
 
         // TODO: prepare the update in another system.
-        let mut players_state: Vec<PlayerState> = players
+        let players_state: Vec<PlayerState> = players
             .iter()
             .filter_map(|(&iter_player_net_id, _player)| {
                 players_registry
                     .get_entity(iter_player_net_id)
                     .and_then(|entity| {
                         if connected_player_net_id == iter_player_net_id {
-                            Some(PlayerState {
-                                net_id: connected_player_net_id,
-                                position: Vec2::ZERO,
-                                inputs: Vec::new(),
-                            })
+                            // The player isn't spawned yet, we'll tell its position in the next
+                            // `DeltaUpdate` message.
+                            None
                         } else {
                             create_player_state(
                                 iter_player_net_id,
@@ -842,11 +856,6 @@ fn broadcast_start_game_messages(
                     })
             })
             .collect();
-        players_state.push(PlayerState {
-            net_id: connected_player_net_id,
-            position: Vec2::ZERO,
-            inputs: Vec::new(),
-        });
 
         let message = ReliableServerMessage::StartGame(StartGame {
             handshake_id: connection_state.handshake_id,

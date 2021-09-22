@@ -27,7 +27,9 @@ use mr_shared_lib::{
         components::{
             LevelObjectLabel, LevelObjectStaticGhost, LevelObjectStaticGhostParent, Spawned,
         },
-        level::{LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc},
+        level::{
+            CollisionLogic, LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc,
+        },
         level_objects::{CubeDesc, PlaneDesc, PlaneFormDesc, RoutePointDesc},
     },
     messages::{EntityNetId, SpawnLevelObjectRequest, SpawnLevelObjectRequestBody},
@@ -246,6 +248,7 @@ pub fn builder_ui(
                             form_desc: PlaneFormDesc::Rectangle {
                                 size: DEFAULT_PLANE_RECTANGLE_SIZE.into(),
                             },
+                            is_spawn_area: false,
                         })),
                     });
             }
@@ -327,6 +330,7 @@ pub fn builder_ui(
                         label: dirty_level_object.label.clone(),
                         desc: dirty_level_object.desc.clone(),
                         route: dirty_level_object.route.clone(),
+                        collision_logic: dirty_level_object.collision_logic,
                     });
 
                 let (_, edited_level_object) =
@@ -387,6 +391,7 @@ pub fn process_builder_mouse_input(
                         label: level_object.label.clone(),
                         desc: level_object.desc.clone(),
                         route: level_object.route.clone(),
+                        collision_logic: level_object.collision_logic,
                     });
             }
         }
@@ -508,6 +513,27 @@ fn level_object_ui(
                 }
             });
             ui.end_row();
+
+            if let LevelObjectDesc::Plane(plane) = &mut dirty_level_object.desc {
+                if let PlaneFormDesc::Rectangle { .. } | PlaneFormDesc::Circle { .. } =
+                    plane.form_desc
+                {
+                    ui.label("Is spawn area");
+                    ui.checkbox(&mut plane.is_spawn_area, "");
+                    ui.end_row();
+                } else {
+                    plane.is_spawn_area = false;
+                }
+            }
+
+            let mut possible_collision_logic = dirty_level_object.desc.possible_collision_logic();
+            if !possible_collision_logic.is_empty() {
+                possible_collision_logic.push(CollisionLogic::None);
+
+                ui.label("Effect on collision");
+                collision_logic(ui, &mut dirty_level_object, &possible_collision_logic);
+                ui.end_row();
+            }
 
             if dirty_level_object.desc.position().is_some() {
                 ui.label("Route type");
@@ -954,4 +980,31 @@ fn replace_route_desc(route: &mut Option<ObjectRoute>, desc: ObjectRouteDesc) {
             desc,
         });
     }
+}
+
+fn collision_logic(
+    ui: &mut egui::Ui,
+    dirty_level_object: &mut LevelObject,
+    possible_values: &[CollisionLogic],
+) {
+    fn collision_logic_name(value: CollisionLogic) -> &'static str {
+        match value {
+            CollisionLogic::Finish => "Finish",
+            CollisionLogic::Death => "Death",
+            CollisionLogic::None => "None",
+        }
+    }
+
+    egui::containers::ComboBox::from_id_source("collision_logic")
+        .width(200.0)
+        .selected_text(collision_logic_name(dirty_level_object.collision_logic))
+        .show_ui(ui, |ui| {
+            for value in possible_values {
+                ui.selectable_value(
+                    &mut dirty_level_object.collision_logic,
+                    *value,
+                    collision_logic_name(*value),
+                );
+            }
+        });
 }

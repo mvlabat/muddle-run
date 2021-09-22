@@ -1,12 +1,49 @@
+use crate::{game::components::rotate, PLAYER_RADIUS, PLAYER_SENSOR_RADIUS};
 use bevy::{
     ecs::{
         schedule::{Schedule, StageLabel, SystemStage},
         system::IntoExclusiveSystem,
         world::World,
     },
+    math::Vec2,
     utils::HashMap,
 };
+use bevy_rapier2d::rapier::geometry::TypedShape;
+use rand::Rng;
 use std::cell::RefCell;
+
+pub fn player_sensor_outline() -> Vec<Vec2> {
+    let sensors_count = 24;
+    let step = std::f32::consts::PI * 2.0 / sensors_count as f32;
+    (0..sensors_count)
+        .map(|i| {
+            rotate(
+                Vec2::new(PLAYER_RADIUS - PLAYER_SENSOR_RADIUS, 0.0),
+                step * i as f32,
+            )
+        })
+        .collect()
+}
+
+pub fn random_point_inside_shape(shape: TypedShape, object_radius: f32) -> Vec2 {
+    let mut rng = rand::thread_rng();
+    match shape {
+        TypedShape::Ball(ball) => rotate(
+            Vec2::new(
+                rng.gen::<f32>() * (ball.radius - object_radius).max(0.0),
+                0.0,
+            ),
+            rng.gen_range(0.0..std::f32::consts::PI * 2.0),
+        ),
+        TypedShape::Cuboid(cuboid) => {
+            Vec2::new(
+                rng.gen::<f32>() * (cuboid.half_extents.x * 2.0 - object_radius).max(0.0),
+                rng.gen::<f32>() * (cuboid.half_extents.y * 2.0 - object_radius).max(0.0),
+            ) - cuboid.half_extents.into()
+        }
+        _ => unimplemented!(),
+    }
+}
 
 pub fn dedup_by_key_unsorted<T, F, K>(vec: &mut Vec<T>, mut key: F)
 where

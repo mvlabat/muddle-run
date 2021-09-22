@@ -17,6 +17,7 @@ opt-level = 1
 [patch.crates-io]
 bevy = { git = "https://github.com/mvlabat/bevy//", branch = "stage-label-v0.5.0" }
 #bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "bevy-master" }
+parry2d = { git = "https://github.com/dimforge/parry", branch = "reversed_2d_decomposition" }
 #bevy_webgl2 = { path = "../bevy_webgl2" }
 #egui = { path = "../egui/egui" }
 #bevy_rapier2d = { path = "../bevy_rapier/bevy_rapier2d" }
@@ -34,7 +35,8 @@ bevy = { git = "https://github.com/mvlabat/bevy//", branch = "stage-label-v0.5.0
 #naia-client-socket = { path = "../naia-socket/client" }
 #naia-server-socket = { path = "../naia-socket/server" }
 
-#bevy-inspector-egui = { git = "https://github.com/jakobhellermann/bevy-inspector-egui.git", branch = "main" }
+bevy-inspector-egui = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "rapier-0.11" }
+#bevy-inspector-egui = { path = "../bevy-inspector-egui" }
 
 #[patch.'https://github.com/bevyengine/bevy']
 #bevy = { git = "https://github.com/bevyengine/bevy//" }

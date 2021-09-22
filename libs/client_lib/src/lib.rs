@@ -7,7 +7,10 @@ use crate::{
         builder_ui::{EditedLevelObject, EditedObjectUpdate},
         debug_ui::update_debug_ui_state,
     },
-    visuals::{control_builder_visibility, process_control_points_input, spawn_control_points},
+    visuals::{
+        control_builder_visibility, process_control_points_input, spawn_control_points,
+        update_player_sensor_materials,
+    },
 };
 use bevy::{
     app::{AppBuilder, Plugin},
@@ -79,6 +82,7 @@ impl Plugin for MuddleClientPlugin {
             .with_system(send_requests.system());
         let post_tick_stage = SystemStage::parallel()
             .with_system(control_builder_visibility.system())
+            .with_system(update_player_sensor_materials.system())
             .with_system(reattach_camera.system().label("reattach_camera"))
             .with_system(move_free_camera_pivot.system().after("reattach_camera"))
             .with_system(pause_simulation.system().label("pause_simulation"))
@@ -105,12 +109,14 @@ impl Plugin for MuddleClientPlugin {
             .add_plugin(MuddleSharedPlugin::new(
                 NetAdaptiveTimestemp::default(),
                 input_stage,
+                SystemStage::parallel(),
                 broadcast_updates_stage,
                 post_tick_stage,
                 None,
             ))
             // Egui.
             .add_system(ui::update_ui_scale_factor.system())
+            .add_system(ui::debug_ui::update_debug_visibility.system())
             .add_system(ui::debug_ui::debug_ui.system())
             .add_system(ui::debug_ui::profiler_ui.system())
             .add_system(ui::overlay_ui::connection_status_overlay.system())
