@@ -1,4 +1,7 @@
-use crate::{game::components::rotate, PLAYER_RADIUS, PLAYER_SENSOR_RADIUS};
+use crate::{
+    framebuffer::FrameNumber, game::components::rotate, simulations_per_second, PLAYER_RADIUS,
+    PLAYER_SENSOR_RADIUS,
+};
 use bevy::{
     ecs::{
         schedule::{Schedule, StageLabel, SystemStage},
@@ -11,6 +14,10 @@ use bevy::{
 use bevy_rapier2d::rapier::geometry::TypedShape;
 use rand::Rng;
 use std::cell::RefCell;
+
+pub fn player_respawn_time() -> FrameNumber {
+    FrameNumber::new(simulations_per_second() * 3)
+}
 
 pub fn player_sensor_outline() -> Vec<Vec2> {
     let sensors_count = 24;

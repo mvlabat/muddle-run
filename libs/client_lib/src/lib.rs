@@ -45,6 +45,7 @@ use mr_shared_lib::{
     GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::borrow::Cow;
+use crate::game_events::process_scheduled_spawns;
 
 mod camera;
 mod components;
@@ -53,6 +54,7 @@ mod input;
 mod net;
 mod ui;
 mod visuals;
+mod game_events;
 
 const TICKING_SPEED_FACTOR: u16 = 10;
 
@@ -114,6 +116,7 @@ impl Plugin for MuddleClientPlugin {
                 post_tick_stage,
                 None,
             ))
+            .add_system(process_scheduled_spawns.system())
             // Egui.
             .add_system(ui::update_ui_scale_factor.system())
             .add_system(ui::debug_ui::update_debug_visibility.system())

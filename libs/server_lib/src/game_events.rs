@@ -13,12 +13,9 @@ use mr_shared_lib::{
     messages::{DeferredMessagesQueue, PlayerNetId, RespawnPlayer, RespawnPlayerReason},
     player::{Player, PlayerSystemParamsMut},
     server::level_spawn_location_service::LevelSpawnLocationService,
-    simulations_per_second, SimulationTime,
+    util::player_respawn_time,
+    SimulationTime,
 };
-
-fn player_respawn_time() -> FrameNumber {
-    FrameNumber::new(simulations_per_second() * 3)
-}
 
 pub fn process_player_events(
     time: Res<SimulationTime>,
