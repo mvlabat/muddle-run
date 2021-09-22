@@ -17,8 +17,8 @@ use mr_shared_lib::{
     },
     messages::{
         ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId,
-        PlayerUpdate, ReliableClientMessage, ReliableServerMessage, RunnerInput, StartGame,
-        UnreliableClientMessage, UnreliableServerMessage,
+        PlayerUpdate, ReliableClientMessage, ReliableServerMessage, RespawnPlayerReason,
+        RunnerInput, StartGame, UnreliableClientMessage, UnreliableServerMessage,
     },
     net::{
         AcknowledgeError, ConnectionState, ConnectionStatus, MessageId, SessionId,
@@ -371,6 +371,14 @@ pub fn process_network_events(
                     if let Some(player) = players.get_mut(&respawn_player.net_id) {
                         player.respawning_at =
                             Some((respawn_player.frame_number, respawn_player.reason));
+                        match respawn_player.reason {
+                            RespawnPlayerReason::Finish => {
+                                player.finishes += 1;
+                            }
+                            RespawnPlayerReason::Death => {
+                                player.deaths += 1;
+                            }
+                        }
                     } else {
                         log::warn!(
                             "Received RespawnPlayer message for a player that doesn't exist: {:?}",

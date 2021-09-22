@@ -147,6 +147,8 @@ pub struct StartGame {
 pub struct ConnectedPlayer {
     pub net_id: PlayerNetId,
     pub nickname: String,
+    pub finishes: u32,
+    pub deaths: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

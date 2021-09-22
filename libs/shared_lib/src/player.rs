@@ -77,6 +77,8 @@ pub struct Player {
     pub role: PlayerRole,
     pub respawning_at: Option<(FrameNumber, RespawnPlayerReason)>,
     pub is_connected: bool,
+    pub finishes: u32,
+    pub deaths: u32,
 }
 
 impl Player {
@@ -86,6 +88,8 @@ impl Player {
             role,
             respawning_at: None,
             is_connected: true,
+            finishes: 0,
+            deaths: 0,
         }
     }
 
@@ -95,6 +99,8 @@ impl Player {
             role,
             respawning_at: None,
             is_connected: true,
+            finishes: 0,
+            deaths: 0,
         }
     }
 }

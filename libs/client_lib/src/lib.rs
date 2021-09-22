@@ -1,6 +1,7 @@
 use crate::{
     camera::{move_free_camera_pivot, reattach_camera},
     components::{CameraPivotDirection, CameraPivotTag},
+    game_events::process_scheduled_spawns,
     input::{LevelObjectRequestsQueue, MouseRay, MouseWorldPosition, PlayerRequestsQueue},
     net::{maintain_connection, process_network_events, send_network_updates, send_requests},
     ui::{
@@ -45,16 +46,15 @@ use mr_shared_lib::{
     GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::borrow::Cow;
-use crate::game_events::process_scheduled_spawns;
 
 mod camera;
 mod components;
+mod game_events;
 mod helpers;
 mod input;
 mod net;
 mod ui;
 mod visuals;
-mod game_events;
 
 const TICKING_SPEED_FACTOR: u16 = 10;
 
@@ -124,7 +124,8 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::profiler_ui.system())
             .add_system(ui::overlay_ui::connection_status_overlay.system())
             .add_system(ui::debug_ui::inspect_object.system())
-            .add_system(ui::help_ui::help_ui.system())
+            .add_system(ui::player_ui::stats_board.system())
+            .add_system(ui::player_ui::help_ui.system())
             // Not only Egui for builder mode.
             .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))
             // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.

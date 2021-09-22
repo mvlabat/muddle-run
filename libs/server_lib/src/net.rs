@@ -803,6 +803,8 @@ fn send_new_player_messages(
         let message = ReliableServerMessage::ConnectedPlayer(ConnectedPlayer {
             net_id: *connected_player_net_id,
             nickname: player.nickname.clone(),
+            deaths: player.deaths,
+            finishes: player.finishes,
         });
         send_reliable_game_message(net, connection_handle, connection_state, message);
     }
@@ -874,6 +876,8 @@ fn broadcast_start_game_messages(
                 .map(|(&net_id, player)| ConnectedPlayer {
                     net_id,
                     nickname: player.nickname.clone(),
+                    finishes: player.finishes,
+                    deaths: player.deaths,
                 })
                 .collect(),
             generation: time.server_generation,

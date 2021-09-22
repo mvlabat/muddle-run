@@ -50,6 +50,14 @@ pub fn process_player_events(
             .get_mut(&net_id)
             .expect("Expected a registered player for a Finish event");
         player.respawning_at = Some((respawn_at, reason));
+        match reason {
+            RespawnPlayerReason::Finish => {
+                player.finishes += 1;
+            }
+            RespawnPlayerReason::Death => {
+                player.deaths += 1;
+            }
+        }
 
         respawn_player_messages_queue.push(RespawnPlayer {
             net_id,
