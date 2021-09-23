@@ -902,23 +902,33 @@ fn process_start_game_message(
             continue;
         }
 
-        if let Some(start_position) = player_start_position(player.net_id, &start_game.game_state) {
-            log::info!("Spawning player {}: {}", player.net_id.0, player.nickname);
-            let p = players
-                .entry(player.net_id)
-                .or_insert_with(|| Player::new_with_nickname(player.role, player.nickname.clone()));
-            p.finishes += player.finishes;
-            p.deaths += player.deaths;
+        let p = players
+            .entry(player.net_id)
+            .or_insert_with(|| Player::new_with_nickname(player.role, player.nickname.clone()));
+        p.finishes += player.finishes;
+        p.deaths += player.deaths;
+        if player.role == PlayerRole::Runner {
+            if let Some(start_position) =
+                player_start_position(player.net_id, &start_game.game_state)
+            {
+                log::info!("Spawning player {}: {}", player.net_id.0, player.nickname);
 
-            update_params.spawn_player_commands.push(SpawnPlayer {
-                net_id: player.net_id,
-                start_position,
-                is_player_frame_simulated: false,
-            });
+                update_params.spawn_player_commands.push(SpawnPlayer {
+                    net_id: player.net_id,
+                    start_position,
+                    is_player_frame_simulated: false,
+                });
+            } else {
+                log::error!(
+                    "Player ({}) position isn't found in the game state",
+                    player.net_id.0
+                );
+            }
         } else {
-            log::error!(
-                "Player ({}) position isn't found in the game state",
-                player.net_id.0
+            log::info!(
+                "Adding player {} as a Builder: {}",
+                player.net_id.0,
+                player.nickname
             );
         }
     }
