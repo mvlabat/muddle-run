@@ -863,7 +863,7 @@ fn process_start_game_message(
     players: &mut HashMap<PlayerNetId, Player>,
     update_params: &mut UpdateParams,
 ) {
-    log::trace!("Processing StartGame message: {:?}", start_game);
+    log::debug!("Processing StartGame message: {:?}", start_game);
     let initial_rtt = update_params.initial_rtt.duration_secs().unwrap() * 1000.0;
     log::debug!("Initial rtt: {}", initial_rtt);
     connection_state
@@ -904,10 +904,12 @@ fn process_start_game_message(
 
         if let Some(start_position) = player_start_position(player.net_id, &start_game.game_state) {
             log::info!("Spawning player {}: {}", player.net_id.0, player.nickname);
-            players.insert(
-                player.net_id,
-                Player::new_with_nickname(PlayerRole::Runner, player.nickname),
-            );
+            let p = players
+                .entry(player.net_id)
+                .or_insert_with(|| Player::new_with_nickname(player.role, player.nickname.clone()));
+            p.finishes += player.finishes;
+            p.deaths += player.deaths;
+
             update_params.spawn_player_commands.push(SpawnPlayer {
                 net_id: player.net_id,
                 start_position,

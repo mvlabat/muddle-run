@@ -318,6 +318,11 @@ pub fn process_network_events(
                     connection_state.set_status(ConnectionStatus::Handshaking);
                     connection_state.last_message_received_at = Utc::now();
 
+                    log::trace!(
+                        "Add new player ({:?}) connection to broadcast: {}",
+                        player_net_id,
+                        handle
+                    );
                     network_params
                         .new_player_connections
                         .push((player_net_id, *handle));
@@ -686,6 +691,8 @@ pub fn send_network_updates(
             ReliableServerMessage::DespawnLevelObject(despawn_level_object_message),
         );
     }
+
+    network_params.new_player_connections.clear();
 }
 
 fn broadcast_disconnected_players(network_params: &mut NetworkParams) {
@@ -795,6 +802,13 @@ fn send_new_player_messages(
     connection_handle: u32,
     connection_state: &ConnectionState,
 ) {
+    if !new_player_connections.is_empty() {
+        log::trace!(
+            "Sending new players to {}: {:?}",
+            connection_handle,
+            players
+        );
+    }
     // Broadcasting updates about new connected players.
     for (connected_player_net_id, _connection_handle) in new_player_connections.iter() {
         let player = players
@@ -820,7 +834,7 @@ fn broadcast_start_game_messages(
 ) {
     // Broadcasting updates about new connected players.
     for (connected_player_net_id, connected_player_connection_handle) in
-        network_params.new_player_connections.drain(..)
+        &*network_params.new_player_connections
     {
         let connection_state = network_params
             .connection_states
@@ -842,7 +856,7 @@ fn broadcast_start_game_messages(
                 players_registry
                     .get_entity(iter_player_net_id)
                     .and_then(|entity| {
-                        if connected_player_net_id == iter_player_net_id {
+                        if *connected_player_net_id == iter_player_net_id {
                             // The player isn't spawned yet, we'll tell its position in the next
                             // `DeltaUpdate` message.
                             None
@@ -861,7 +875,7 @@ fn broadcast_start_game_messages(
 
         let message = ReliableServerMessage::StartGame(StartGame {
             handshake_id: connection_state.handshake_id,
-            net_id: connected_player_net_id,
+            net_id: *connected_player_net_id,
             nickname: connected_player.nickname.clone(),
             objects: level_state
                 .objects
@@ -889,7 +903,7 @@ fn broadcast_start_game_messages(
         });
 
         let result = network_params.net.send_message(
-            connected_player_connection_handle,
+            *connected_player_connection_handle,
             Message {
                 session_id: connection_state.session_id,
                 message,

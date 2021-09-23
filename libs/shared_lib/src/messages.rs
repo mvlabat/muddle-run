@@ -147,6 +147,7 @@ pub struct StartGame {
 pub struct ConnectedPlayer {
     pub net_id: PlayerNetId,
     pub nickname: String,
+    pub role: PlayerRole,
     pub finishes: u32,
     pub deaths: u32,
 }
