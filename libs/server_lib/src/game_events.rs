@@ -13,12 +13,9 @@ use mr_shared_lib::{
     messages::{DeferredMessagesQueue, PlayerNetId, RespawnPlayer, RespawnPlayerReason},
     player::{Player, PlayerSystemParamsMut},
     server::level_spawn_location_service::LevelSpawnLocationService,
-    simulations_per_second, SimulationTime,
+    util::player_respawn_time,
+    SimulationTime,
 };
-
-fn player_respawn_time() -> FrameNumber {
-    FrameNumber::new(simulations_per_second() * 3)
-}
 
 pub fn process_player_events(
     time: Res<SimulationTime>,
@@ -53,6 +50,14 @@ pub fn process_player_events(
             .get_mut(&net_id)
             .expect("Expected a registered player for a Finish event");
         player.respawning_at = Some((respawn_at, reason));
+        match reason {
+            RespawnPlayerReason::Finish => {
+                player.finishes += 1;
+            }
+            RespawnPlayerReason::Death => {
+                player.deaths += 1;
+            }
+        }
 
         respawn_player_messages_queue.push(RespawnPlayer {
             net_id,
