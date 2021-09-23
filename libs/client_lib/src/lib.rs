@@ -124,7 +124,7 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::profiler_ui.system())
             .add_system(ui::overlay_ui::connection_status_overlay.system())
             .add_system(ui::debug_ui::inspect_object.system())
-            .add_system(ui::player_ui::stats_board.system())
+            .add_system(ui::player_ui::leaderboard_ui.system())
             .add_system(ui::player_ui::help_ui.system())
             // Not only Egui for builder mode.
             .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))

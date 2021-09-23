@@ -44,18 +44,18 @@ pub fn help_ui(
         });
 }
 
-pub struct StatsBoardState {
+pub struct LeaderboardState {
     show: bool,
 }
 
-impl Default for StatsBoardState {
+impl Default for LeaderboardState {
     fn default() -> Self {
         Self { show: true }
     }
 }
 
-pub fn stats_board(
-    mut state: Local<StatsBoardState>,
+pub fn leaderboard_ui(
+    mut state: Local<LeaderboardState>,
     keyboard_input: Res<Input<KeyCode>>,
     egui_context: ResMut<EguiContext>,
     player_params: PlayerParams,
@@ -69,7 +69,7 @@ pub fn stats_board(
         return;
     }
 
-    egui::Window::new("Stats [F3]")
+    egui::Window::new("Leaderboard [F3]")
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::new(-35.0, 35.0))
@@ -77,23 +77,34 @@ pub fn stats_board(
             egui::Grid::new("stats board")
                 .min_col_width(13.0)
                 .show(ui, |ui| {
-                    let mut players = player_params.players.values().collect::<Vec<_>>();
-                    players.sort_by(|a, b| b.finishes.cmp(&a.finishes));
+                    let mut players = player_params.players.iter().collect::<Vec<_>>();
+                    players.sort_by(|(a_id, a), (b_id, b)| {
+                        b.finishes
+                            .cmp(&a.finishes)
+                            .then(a.deaths.cmp(&b.deaths))
+                            .then(a_id.0.cmp(&b_id.0))
+                    });
                     ui.label("");
                     ui.label("Nickname");
                     ui.label("Finishes");
                     ui.label("Deaths");
                     ui.label("");
                     ui.end_row();
-                    for player in player_params.players.values() {
-                        let player_status_icon = match (player.role, player.respawning_at) {
-                            (PlayerRole::Builder, _) => "🔨",
-                            (PlayerRole::Runner, Some((_, RespawnPlayerReason::Finish))) => "★",
-                            (PlayerRole::Runner, Some((_, RespawnPlayerReason::Death))) => "💀",
-                            _ => "",
-                        };
+                    for (net_id, player) in players.into_iter() {
+                        let player_status_icon =
+                            match (player.is_connected, player.role, player.respawning_at) {
+                                (false, _, _) => "🔌",
+                                (_, PlayerRole::Builder, _) => "🔨",
+                                (_, _, Some((_, RespawnPlayerReason::Finish))) => "★",
+                                (_, _, Some((_, RespawnPlayerReason::Death))) => "💀",
+                                _ => "",
+                            };
                         ui.label(player_status_icon);
-                        ui.label(&player.nickname);
+                        if player_params.current_player_net_id.0 == Some(*net_id) {
+                            ui.add(egui::Label::new(&player.nickname).strong());
+                        } else {
+                            ui.label(&player.nickname);
+                        }
                         ui.label(format!("{}", player.finishes));
                         ui.label(format!("{}", player.deaths));
                         ui.label("");

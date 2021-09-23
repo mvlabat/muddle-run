@@ -817,6 +817,7 @@ fn send_new_player_messages(
         let message = ReliableServerMessage::ConnectedPlayer(ConnectedPlayer {
             net_id: *connected_player_net_id,
             nickname: player.nickname.clone(),
+            role: player.role,
             deaths: player.deaths,
             finishes: player.finishes,
         });
@@ -838,10 +839,10 @@ fn broadcast_start_game_messages(
     {
         let connection_state = network_params
             .connection_states
-            .get_mut(&connected_player_connection_handle)
+            .get_mut(connected_player_connection_handle)
             .expect("Expected a ConnectionState for a new player");
         let connected_player = players
-            .get(&connected_player_net_id)
+            .get(connected_player_net_id)
             .expect("Expected a new Player to exist");
 
         assert!(matches!(
@@ -890,6 +891,7 @@ fn broadcast_start_game_messages(
                 .map(|(&net_id, player)| ConnectedPlayer {
                     net_id,
                     nickname: player.nickname.clone(),
+                    role: player.role,
                     finishes: player.finishes,
                     deaths: player.deaths,
                 })
