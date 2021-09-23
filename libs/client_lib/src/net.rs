@@ -16,9 +16,9 @@ use mr_shared_lib::{
         components::{PlayerDirection, Spawned},
     },
     messages::{
-        ConnectedPlayer, DeltaUpdate, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId,
-        PlayerUpdate, ReliableClientMessage, ReliableServerMessage, RespawnPlayerReason,
-        RunnerInput, StartGame, UnreliableClientMessage, UnreliableServerMessage,
+        DeltaUpdate, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId, PlayerUpdate,
+        ReliableClientMessage, ReliableServerMessage, RespawnPlayerReason, RunnerInput, StartGame,
+        UnreliableClientMessage, UnreliableServerMessage,
     },
     net::{
         AcknowledgeError, ConnectionState, ConnectionStatus, MessageId, SessionId,
@@ -317,8 +317,8 @@ pub fn process_network_events(
                         &mut update_params,
                     );
                 }
-                ReliableServerMessage::ConnectedPlayer(connected_player) => {
-                    process_connected_player_message(connected_player, &mut players);
+                ReliableServerMessage::ConnectedPlayer((net_id, connected_player)) => {
+                    process_connected_player_message(net_id, connected_player, &mut players);
                 }
                 ReliableServerMessage::DisconnectedPlayer(disconnected_player) => {
                     process_disconnected_player_message(disconnected_player, &mut players);
@@ -897,38 +897,47 @@ fn process_start_game_message(
         start_game.game_state.frame_number + half_rtt_frames;
     update_params.estimated_server_time.updated_at = update_params.game_time.frame_number;
 
-    for player in start_game.players {
-        if player.net_id == current_player_net_id.0.unwrap() {
+    for (player_net_id, connected_player) in start_game.players {
+        if player_net_id == current_player_net_id.0.unwrap() {
             continue;
         }
 
-        let p = players
-            .entry(player.net_id)
-            .or_insert_with(|| Player::new_with_nickname(player.role, player.nickname.clone()));
-        p.finishes += player.finishes;
-        p.deaths += player.deaths;
-        if player.role == PlayerRole::Runner {
+        players
+            .entry(player_net_id)
+            .and_modify(|player| {
+                let deaths = player.deaths;
+                let finishes = player.finishes;
+                *player = connected_player.clone();
+                player.deaths += deaths;
+                player.finishes += finishes;
+            })
+            .or_insert_with(|| connected_player.clone());
+        if connected_player.role == PlayerRole::Runner && connected_player.respawning_at.is_none() {
             if let Some(start_position) =
-                player_start_position(player.net_id, &start_game.game_state)
+                player_start_position(player_net_id, &start_game.game_state)
             {
-                log::info!("Spawning player {}: {}", player.net_id.0, player.nickname);
+                log::info!(
+                    "Spawning player {}: {}",
+                    player_net_id.0,
+                    connected_player.nickname
+                );
 
                 update_params.spawn_player_commands.push(SpawnPlayer {
-                    net_id: player.net_id,
+                    net_id: player_net_id,
                     start_position,
                     is_player_frame_simulated: false,
                 });
             } else {
                 log::error!(
                     "Player ({}) position isn't found in the game state",
-                    player.net_id.0
+                    player_net_id.0
                 );
             }
         } else {
             log::info!(
                 "Adding player {} as a Builder: {}",
-                player.net_id.0,
-                player.nickname
+                player_net_id.0,
+                connected_player.nickname
             );
         }
     }
@@ -940,21 +949,26 @@ fn process_start_game_message(
 }
 
 fn process_connected_player_message(
-    connected_player: ConnectedPlayer,
+    player_net_id: PlayerNetId,
+    connected_player: Player,
     players: &mut HashMap<PlayerNetId, Player>,
 ) {
     // Player is spawned when the first DeltaUpdate with it arrives, so we don't do it here.
     log::info!(
         "A new player ({}) connected: {}",
-        connected_player.net_id.0,
+        player_net_id.0,
         connected_player.nickname
     );
     players
-        .entry(connected_player.net_id)
-        .and_modify(|player| player.nickname = connected_player.nickname.clone())
-        .or_insert_with(|| {
-            Player::new_with_nickname(PlayerRole::Runner, connected_player.nickname)
-        });
+        .entry(player_net_id)
+        .and_modify(|player| {
+            let deaths = player.deaths;
+            let finishes = player.finishes;
+            *player = connected_player.clone();
+            player.deaths += deaths;
+            player.finishes += finishes;
+        })
+        .or_insert(connected_player);
 }
 
 fn process_disconnected_player_message(

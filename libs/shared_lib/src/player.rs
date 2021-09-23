@@ -71,7 +71,7 @@ impl PlayerUpdates {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Player {
     pub nickname: String,
     pub role: PlayerRole,

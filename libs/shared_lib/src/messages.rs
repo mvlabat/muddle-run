@@ -6,7 +6,7 @@ use crate::{
         level::{LevelObject, LevelObjectDesc},
     },
     net::{MessageId, SessionId},
-    player::PlayerRole,
+    player::{Player, PlayerRole},
     registry::IncrementId,
 };
 use bevy::math::Vec2;
@@ -100,7 +100,7 @@ pub enum ReliableServerMessage {
     Initialize,
     /// Is sent as a response to client's `ReliableClientMessage::Handshake`.
     StartGame(StartGame),
-    ConnectedPlayer(ConnectedPlayer),
+    ConnectedPlayer((PlayerNetId, Player)),
     DisconnectedPlayer(DisconnectedPlayer),
     SpawnLevelObject(SpawnLevelObject),
     UpdateLevelObject(commands::UpdateLevelObject),
@@ -137,19 +137,10 @@ pub struct StartGame {
     pub net_id: PlayerNetId,
     pub nickname: String,
     pub objects: Vec<commands::UpdateLevelObject>,
-    pub players: Vec<ConnectedPlayer>,
+    pub players: Vec<(PlayerNetId, Player)>,
     pub generation: u64,
     /// Full game state encoded as a DeltaUpdate.
     pub game_state: DeltaUpdate,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ConnectedPlayer {
-    pub net_id: PlayerNetId,
-    pub nickname: String,
-    pub role: PlayerRole,
-    pub finishes: u32,
-    pub deaths: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

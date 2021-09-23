@@ -13,11 +13,10 @@ use mr_shared_lib::{
         level::{LevelObject, LevelState},
     },
     messages::{
-        ConnectedPlayer, DeferredMessagesQueue, DeltaUpdate, DisconnectedPlayer, EntityNetId,
-        Message, PlayerInputs, PlayerNetId, PlayerState, ReliableClientMessage,
-        ReliableServerMessage, RespawnPlayer, RunnerInput, SpawnLevelObject,
-        SpawnLevelObjectRequest, StartGame, SwitchRole, UnreliableClientMessage,
-        UnreliableServerMessage,
+        DeferredMessagesQueue, DeltaUpdate, DisconnectedPlayer, EntityNetId, Message, PlayerInputs,
+        PlayerNetId, PlayerState, ReliableClientMessage, ReliableServerMessage, RespawnPlayer,
+        RunnerInput, SpawnLevelObject, SpawnLevelObjectRequest, StartGame, SwitchRole,
+        UnreliableClientMessage, UnreliableServerMessage,
     },
     net::{ConnectionState, ConnectionStatus, SessionId, CONNECTION_TIMEOUT_MILLIS},
     player::{random_name, Player, PlayerRole},
@@ -814,13 +813,8 @@ fn send_new_player_messages(
         let player = players
             .get(connected_player_net_id)
             .expect("Expected a registered Player");
-        let message = ReliableServerMessage::ConnectedPlayer(ConnectedPlayer {
-            net_id: *connected_player_net_id,
-            nickname: player.nickname.clone(),
-            role: player.role,
-            deaths: player.deaths,
-            finishes: player.finishes,
-        });
+        let message =
+            ReliableServerMessage::ConnectedPlayer((*connected_player_net_id, player.clone()));
         send_reliable_game_message(net, connection_handle, connection_state, message);
     }
 }
@@ -888,13 +882,7 @@ fn broadcast_start_game_messages(
                 .collect(),
             players: players
                 .iter()
-                .map(|(&net_id, player)| ConnectedPlayer {
-                    net_id,
-                    nickname: player.nickname.clone(),
-                    role: player.role,
-                    finishes: player.finishes,
-                    deaths: player.deaths,
-                })
+                .map(|(net_id, player)| (*net_id, player.clone()))
                 .collect(),
             generation: time.server_generation,
             game_state: DeltaUpdate {
