@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "libs/docker_dummy",
     "libs/client_lib",
     "libs/server_lib",
     "libs/shared_lib",
