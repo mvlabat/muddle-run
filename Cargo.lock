@@ -3698,7 +3698,7 @@ dependencies = [
 [[package]]
 name = "parry2d"
 version = "0.7.1"
-source = "git+https://github.com/dimforge/parry?branch=reversed_2d_decomposition#2c23044684b3ed5588f370f2529144812fd0dfa9"
+source = "git+https://github.com/dimforge/parry?rev=5c957b9#5c957b94e7de931cb0909f10bf91f446a70867d4"
 dependencies = [
  "approx",
  "arrayvec 0.7.1",

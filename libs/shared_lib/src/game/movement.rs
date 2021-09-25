@@ -46,6 +46,7 @@ pub fn read_movement_updates(
         Option<&PlayerFrameSimulated>,
     )>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     for (entity, mut position, mut player_direction, spawned, player_frame_simulated) in
         players.iter_mut()
@@ -133,6 +134,7 @@ type PlayersQuery<'a> = (
 );
 
 pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuery>) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     log::trace!(
         "Moving players (frame {}, {})",
@@ -209,6 +211,7 @@ pub fn load_object_positions(
     time: Res<SimulationTime>,
     mut level_objects: Query<LevelObjectsQuery, With<LevelObjectTag>>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     log::trace!(
         "Loading object positions (frame {}, {})",
@@ -255,6 +258,7 @@ pub fn sync_position(
     time: Res<SimulationTime>,
     mut simulated_entities: Query<SimulatedEntitiesQuery>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     log::trace!(
         "Syncing positions (frame {}, {})",

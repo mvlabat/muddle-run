@@ -150,6 +150,7 @@ pub fn switch_player_role(
     #[cfg(not(feature = "client"))] mut spawn_player_commands: ResMut<DeferredQueue<SpawnPlayer>>,
     #[cfg(not(feature = "client"))] level_spawn_location_service: LevelSpawnLocationService,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let mut switch_role_commands = switch_role_commands.drain();
     // We want to keep the last command instead of the first one.
@@ -221,6 +222,7 @@ pub fn remove_disconnected_players(
     player_entities: Res<EntityRegistry<PlayerNetId>>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     players.drain_filter(|player_net_id, player| {
         let remove = !player.is_connected && player_entities.get_entity(*player_net_id).is_none();

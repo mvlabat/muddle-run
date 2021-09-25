@@ -13,6 +13,7 @@ pub fn help_ui(
     egui_context: ResMut<EguiContext>,
     player_params: PlayerParams,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let window_width = 280.0;
     let window_height = 30.0;
@@ -60,6 +61,7 @@ pub fn leaderboard_ui(
     egui_context: ResMut<EguiContext>,
     player_params: PlayerParams,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     if keyboard_input.just_pressed(KeyCode::F3) {
         state.show = !state.show;

@@ -72,6 +72,7 @@ pub fn update_level_object_movement_route_settings(
         With<LevelObjectTag>,
     >,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     for (entity, movement, mut position, _) in level_objects
         .iter_mut()
@@ -237,6 +238,7 @@ pub fn process_objects_route_graph(
     time: Res<SimulationTime>,
     mut level_objects: LevelObjectsQuerySet,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let mut new_positions = HashMap::<Entity, (Vec2, Vec<LevelObjectMovementPoint>)>::default();
     let level_objects_readonly = level_objects.q1();

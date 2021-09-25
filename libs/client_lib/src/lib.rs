@@ -41,9 +41,8 @@ use mr_shared_lib::{
     game::client_factories::VisibilitySettings,
     messages::{EntityNetId, PlayerNetId},
     net::{ConnectionState, ConnectionStatus, MessageId},
-    simulations_per_second,
-    util::profile_schedule,
-    GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
+    simulations_per_second, GameState, GameTime, MuddleSharedPlugin, SimulationTime,
+    COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::borrow::Cow;
 
@@ -136,7 +135,8 @@ impl Plugin for MuddleClientPlugin {
             )
             .add_system(spawn_control_points.system().after("builder_system_set"));
 
-        profile_schedule(&mut builder.app.schedule);
+        #[cfg(feature = "profiler")]
+        mr_shared_lib::util::profile_schedule(&mut builder.app.schedule);
 
         let world = builder.world_mut();
         world
@@ -272,6 +272,7 @@ fn pause_simulation(
     game_time: Res<GameTime>,
     estimated_server_time: Res<EstimatedServerTime>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let is_connected = matches!(connection_state.status(), ConnectionStatus::Connected);
 
@@ -376,6 +377,7 @@ fn control_ticking_speed(
     mut params: ControlTickingSpeedParams,
 ) {
     use std::cmp::Ordering;
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
 
     let target_player_frame =
@@ -496,6 +498,7 @@ impl NetAdaptiveTimestemp {
         time: Res<Time>,
         game_ticks_per_second: Res<GameTicksPerSecond>,
     ) -> ShouldRun {
+        #[cfg(feature = "profiler")]
         puffin::profile_function!();
         let rate = game_ticks_per_second.rate;
         let step = 1.0 / rate as f64;

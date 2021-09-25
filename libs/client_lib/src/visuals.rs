@@ -49,6 +49,7 @@ pub fn control_builder_visibility(
         Without<LevelObjectTag>,
     >,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     if let Some(player) = player_params.current_player() {
         let is_builder = match player.role {

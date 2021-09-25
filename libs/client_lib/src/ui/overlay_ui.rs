@@ -6,6 +6,7 @@ pub fn connection_status_overlay(
     egui_context: ResMut<EguiContext>,
     connection_state: Res<ConnectionState>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     if let ConnectionStatus::Connected = connection_state.status() {
         return;

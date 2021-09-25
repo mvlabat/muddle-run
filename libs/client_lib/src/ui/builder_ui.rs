@@ -123,6 +123,7 @@ pub fn builder_run_criteria(
     player_params: PlayerParams,
     mut edited_level_object: ResMut<EditedLevelObject>,
 ) -> ShouldRun {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let player = match player_params.current_player() {
         Some(player) => player,
@@ -146,6 +147,7 @@ pub fn builder_ui(
     mut level_objects: LevelObjects,
     mut object_update: EventWriter<EditedObjectUpdate>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let ctx = egui_context.ctx();
 
@@ -347,6 +349,7 @@ pub fn process_builder_mouse_input(
     mut level_objects: LevelObjects,
     mut object_update: EventReader<EditedObjectUpdate>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
 
     if let Some(update) = object_update.iter().last() {

@@ -73,6 +73,7 @@ pub fn update_debug_visibility(
 }
 
 pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_data: DebugData) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     if debug_ui_state.pause {
         return;
@@ -99,6 +100,7 @@ pub fn profiler_ui(
     egui_context: ResMut<EguiContext>,
     debug_ui_state: Res<DebugUiState>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let ctx = egui_context.ctx();
 
@@ -108,7 +110,10 @@ pub fn profiler_ui(
 
     egui::Window::new("Profiler")
         .default_size([1024.0, 600.0])
-        .show(ctx, |ui| puffin_egui::profiler_ui(ui));
+        .show(ctx, |_ui| {
+            #[cfg(feature = "profiler")]
+            puffin_egui::profiler_ui(_ui)
+        });
 }
 
 pub fn debug_ui(
@@ -117,6 +122,7 @@ pub fn debug_ui(
     mut debug_ui_state: ResMut<DebugUiState>,
     diagnostics: Res<Diagnostics>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let ctx = egui_context.ctx();
 
@@ -203,6 +209,7 @@ pub fn inspect_object(
     mut mouse_entity_picker: MouseEntityPicker<(), ()>,
     queries: InspectObjectQueries,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     if !debug_ui_state.show {
         return;
