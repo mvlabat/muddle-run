@@ -71,6 +71,7 @@ pub fn process_network_events(
     mut update_params: UpdateParams,
     level_spawn_location_service: LevelSpawnLocationService,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     log::trace!("Processing network updates (frame: {})", time.frame_number);
 
@@ -588,6 +589,7 @@ pub fn send_network_updates(
     players_registry: Res<EntityRegistry<PlayerNetId>>,
     mut deferred_message_queues: DeferredMessageQueues,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     // We run this system after we've concluded the simulation. As we don't have updates for the
     // next frame yet, we decrement the frame number.

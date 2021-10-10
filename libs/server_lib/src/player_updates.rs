@@ -33,6 +33,7 @@ pub fn process_player_input_updates(
     mut updates: ResMut<PlayerUpdates>,
     mut deferred_updates: ResMut<DeferredPlayerQueues<RunnerInput>>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let lag_compensated_frames =
         (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / simulations_per_second() as f32)) as u16;
@@ -121,6 +122,7 @@ pub fn process_switch_role_requests(
     mut switch_role_requests: ResMut<DeferredPlayerQueues<PlayerRole>>,
     mut switch_role_commands: ResMut<DeferredQueue<SwitchPlayerRole>>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     for (player_net_id, player_role_requests) in switch_role_requests.drain().into_iter() {
         for player_role in player_role_requests.into_iter() {
@@ -145,6 +147,7 @@ pub fn process_spawn_level_object_requests(
     mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut spawn_level_object_messages: ResMut<DeferredMessagesQueue<messages::SpawnLevelObject>>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     'player_requests: for (player_net_id, spawn_level_object_requests) in
         spawn_level_object_requests.drain()
@@ -214,6 +217,7 @@ pub fn process_update_level_object_requests(
     mut spawn_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut update_level_object_messages: ResMut<DeferredMessagesQueue<UpdateLevelObject>>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     'player_requests: for (player_net_id, update_level_object_requests) in
         update_level_object_requests.drain()
@@ -269,6 +273,7 @@ pub fn process_despawn_level_object_requests(
     mut despawn_level_object_commands: ResMut<DeferredQueue<DespawnLevelObject>>,
     mut despawn_level_object_messages: ResMut<DeferredMessagesQueue<DespawnLevelObject>>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     'player_requests: for (player_net_id, despawn_level_object_requests) in
         despawn_level_object_requests.drain()

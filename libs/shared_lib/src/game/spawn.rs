@@ -67,6 +67,7 @@ pub fn spawn_players(
     mut players: PlayersQuery,
     mut player_sensors: Query<&mut ColliderFlags, With<PlayerSensor>>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let mut spawn_player_commands = spawn_player_commands.drain();
     dedup_by_key_unsorted(&mut spawn_player_commands, |command| command.net_id);
@@ -221,6 +222,7 @@ pub fn despawn_players(
     >,
     mut player_sensors: Query<&mut ColliderFlags, With<PlayerSensor>>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     for command in despawn_player_commands.drain() {
         let entity = match player_entities.get_entity(command.net_id) {
@@ -297,6 +299,7 @@ pub fn update_level_objects(
     task_pool: Res<AsyncComputeTaskPool>,
     shape_sender: Res<ColliderShapeSender>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     // There may be several updates of the same entity per frame. We need to dedup them,
     // otherwise we crash when trying to clone from the entities that haven't been created yet
@@ -592,6 +595,7 @@ pub fn despawn_level_objects(
         With<LevelObjectTag>,
     >,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     for command in despawn_level_object_commands.drain() {
         let entity = match object_entities.get_entity(command.net_id) {
@@ -686,6 +690,7 @@ pub fn process_spawned_entities(
         Option<&PlayerSensors>,
     )>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     for (entity, mut spawned, ghost, player_sensors) in spawned_entities.iter_mut() {
         spawned.pop_outdated_commands(game_time.frame_number);

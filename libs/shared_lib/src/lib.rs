@@ -29,7 +29,6 @@ use crate::{
     net::network_setup,
     player::{Player, PlayerUpdates},
     registry::EntityRegistry,
-    util::profile_schedule,
 };
 use bevy::{
     app::Events,
@@ -171,6 +170,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .lock()
             .expect("Can't initialize the plugin more than once");
 
+        #[allow(unused_mut)]
         let mut simulation_schedule = Schedule::default()
             .with_run_criteria(SimulationTickRunCriteria::default())
             .with_stage(
@@ -268,8 +268,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 stage::SIMULATION_FINAL,
                 SystemStage::parallel().with_system(tick_simulation_frame.system()),
             );
-        profile_schedule(&mut simulation_schedule);
+        #[cfg(feature = "profiler")]
+        crate::util::profile_schedule(&mut simulation_schedule);
 
+        #[allow(unused_mut)]
         let mut main_schedule = Schedule::default()
             .with_run_criteria(
                 main_run_criteria
@@ -299,7 +301,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                     .expect("Can't initialize the plugin more than once")
                     .with_system(physics::collect_removals.system()),
             );
-        profile_schedule(&mut main_schedule);
+        #[cfg(feature = "profiler")]
+        crate::util::profile_schedule(&mut main_schedule);
 
         builder.add_stage_before(
             bevy::app::CoreStage::Update,
@@ -334,6 +337,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         #[cfg(feature = "client")]
         builder.add_startup_system(crate::client::assets::init_muddle_assets.system());
 
+        #[cfg(feature = "profiler")]
         builder.add_system_to_stage(
             bevy::app::CoreStage::First,
             (|| {
@@ -511,6 +515,7 @@ impl GameTickRunCriteria {
         mut state: Local<GameTickRunCriteriaState>,
         time: Res<GameTime>,
     ) -> ShouldRun {
+        #[cfg(feature = "profiler")]
         puffin::profile_function!();
         if state.last_generation != Some(time.session) {
             state.last_generation = Some(time.session);
@@ -611,6 +616,7 @@ impl SimulationTickRunCriteria {
         game_time: Res<GameTime>,
         simulation_time: Res<SimulationTime>,
     ) -> ShouldRun {
+        #[cfg(feature = "profiler")]
         puffin::profile_function!();
         // Checking that a game frame has changed will make us avoid panicking in case we rewind
         // simulation frame just 1 frame back.
@@ -717,6 +723,7 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
 }
 
 pub fn tick_game_frame(mut time: ResMut<GameTime>) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     log::trace!("Concluding game frame tick: {}", time.frame_number.value());
     time.frame_number += FrameNumber::new(1);

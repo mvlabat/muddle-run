@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mr_client_lib = { path = "../../libs/client_lib", features = ["use-udp"] }
+mr_client_lib = { path = "../../libs/client_lib", features = ["use-udp", "profiler"] }
 
 env_logger = "0.8.1"
 sentry = "0.21.0"

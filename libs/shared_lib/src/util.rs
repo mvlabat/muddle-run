@@ -2,18 +2,9 @@ use crate::{
     framebuffer::FrameNumber, game::components::rotate, simulations_per_second, PLAYER_RADIUS,
     PLAYER_SENSOR_RADIUS,
 };
-use bevy::{
-    ecs::{
-        schedule::{Schedule, StageLabel, SystemStage},
-        system::IntoExclusiveSystem,
-        world::World,
-    },
-    math::Vec2,
-    utils::HashMap,
-};
+use bevy::math::Vec2;
 use bevy_rapier2d::rapier::geometry::TypedShape;
 use rand::Rng;
-use std::cell::RefCell;
 
 pub fn player_respawn_time() -> FrameNumber {
     FrameNumber::new(simulations_per_second() * 3)
@@ -67,9 +58,13 @@ where
     std::mem::swap(&mut new, vec);
 }
 
-thread_local!(static PUFFIN_SCOPES: RefCell<HashMap<Box<dyn StageLabel>, puffin::ProfilerScope>> = RefCell::new(HashMap::default()));
+#[cfg(feature = "profiler")]
+thread_local!(static PUFFIN_SCOPES: std::cell::RefCell<bevy::utils::HashMap<Box<dyn bevy::ecs::schedule::StageLabel>, puffin::ProfilerScope>> = std::cell::RefCell::new(bevy::utils::HashMap::default()));
 
-pub fn profile_schedule(schedule: &mut Schedule) {
+#[cfg(feature = "profiler")]
+pub fn profile_schedule(schedule: &mut bevy::ecs::schedule::Schedule) {
+    use bevy::ecs::system::IntoExclusiveSystem;
+
     let stages = schedule
         .iter_stages()
         .map(|(stage_label, _)| stage_label.dyn_clone())
@@ -86,8 +81,8 @@ pub fn profile_schedule(schedule: &mut Schedule) {
         schedule.add_stage_before(
             stage_label.dyn_clone(),
             before_stage_label,
-            SystemStage::parallel().with_system(
-                (move |_world: &mut World| {
+            bevy::ecs::schedule::SystemStage::parallel().with_system(
+                (move |_world: &mut bevy::ecs::world::World| {
                     PUFFIN_SCOPES.with(|scopes| {
                         let mut scopes = scopes.borrow_mut();
                         scopes.insert(
@@ -102,8 +97,8 @@ pub fn profile_schedule(schedule: &mut Schedule) {
         schedule.add_stage_after(
             stage_label_to_remove.dyn_clone(),
             after_stage_label,
-            SystemStage::parallel().with_system(
-                (move |_world: &mut World| {
+            bevy::ecs::schedule::SystemStage::parallel().with_system(
+                (move |_world: &mut bevy::ecs::world::World| {
                     PUFFIN_SCOPES.with(|scopes| {
                         let mut scopes = scopes.borrow_mut();
                         scopes.remove(&stage_label_to_remove);

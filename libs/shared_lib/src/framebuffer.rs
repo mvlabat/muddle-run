@@ -14,9 +14,7 @@ pub struct Framebuffer<T> {
 
 impl<T> Framebuffer<T> {
     pub fn new(start_frame: FrameNumber, limit: u16) -> Self {
-        if limit < 1 {
-            panic!("Framebuffer limit can't be lesser than 1");
-        }
+        assert!(limit >= 1, "Framebuffer limit can't be lesser than 1");
         Self {
             start_frame,
             buffer: VecDeque::with_capacity(limit as usize),
@@ -45,9 +43,7 @@ impl<T> Framebuffer<T> {
     }
 
     pub fn set_limit(&mut self, limit: u16) {
-        if limit < 1 {
-            panic!("Framebuffer limit can't be lesser than 1");
-        }
+        assert!(limit >= 1, "Framebuffer limit can't be lesser than 1");
         self.limit = FrameNumber::new(limit);
         for _ in self.limit.value() as usize..self.buffer.len() {
             self.start_frame += FrameNumber::new(1);
@@ -112,9 +108,7 @@ impl<T> Framebuffer<T> {
 impl<T: Default + std::fmt::Debug> Framebuffer<T> {
     pub fn insert(&mut self, frame_number: FrameNumber, value: T) {
         let frame_len = FrameNumber::new(self.buffer.len() as u16);
-        if !self.can_insert(frame_number) {
-            panic!("Inserting for a frame {} would remove future history (start_frame: {}, limit: {}, len: {})", frame_number, self.start_frame, self.limit, frame_len);
-        }
+        assert!(self.can_insert(frame_number), "Inserting for a frame {} would remove future history (start_frame: {}, limit: {}, len: {})", frame_number, self.start_frame, self.limit, frame_len);
 
         if frame_number < self.start_frame {
             for _ in frame_number + FrameNumber::new(1)..self.start_frame {

@@ -10,12 +10,13 @@ edition = "2018"
 default = []
 use-udp = ["bevy_networking_turbulence/use-udp"]
 use-webrtc = ["bevy_networking_turbulence/use-webrtc"]
+profiler = ["puffin", "mr_shared_lib/profiler"]
 
 [dependencies]
 bevy_rapier2d = { version = "0.11" }
 chrono = "0.4.19"
 env_logger = "0.8.1"
-puffin = "0.8.1"
+puffin = { version = "0.8.1", optional = true }
 rand = "0.8.4"
 
 [dependencies.bevy]

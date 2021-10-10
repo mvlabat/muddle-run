@@ -35,6 +35,7 @@ pub fn reattach_camera(
     despawned_player_events: RemovedComponents<PlayerTag>,
     queries: ReattachCameraQueries,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let camera_parent = queries
         .q0()
@@ -94,6 +95,7 @@ pub fn move_free_camera_pivot(
     main_camera_pivot: Res<MainCameraPivotEntity>,
     mut camera_pivot_query: Query<(&CameraPivotDirection, &mut Transform)>,
 ) {
+    #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let (direction, mut transform) = camera_pivot_query
         .get_mut(main_camera_pivot.0)
