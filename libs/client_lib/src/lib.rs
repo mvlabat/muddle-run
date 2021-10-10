@@ -453,22 +453,20 @@ fn control_ticking_speed(
 }
 
 fn faster_tick_rate() -> u16 {
-    if simulations_per_second() % TICKING_SPEED_FACTOR != 0 {
-        panic!(
-            "SIMULATIONS_PER_SECOND must a multiple of {}",
-            TICKING_SPEED_FACTOR
-        );
-    }
+    assert!(
+        simulations_per_second() % TICKING_SPEED_FACTOR == 0,
+        "SIMULATIONS_PER_SECOND must a multiple of {}",
+        TICKING_SPEED_FACTOR
+    );
     simulations_per_second() + simulations_per_second() / TICKING_SPEED_FACTOR
 }
 
 fn slower_tick_rate() -> u16 {
-    if simulations_per_second() % TICKING_SPEED_FACTOR != 0 {
-        panic!(
-            "SIMULATIONS_PER_SECOND must a multiple of {}",
-            TICKING_SPEED_FACTOR
-        );
-    }
+    assert!(
+        simulations_per_second() % TICKING_SPEED_FACTOR == 0,
+        "SIMULATIONS_PER_SECOND must a multiple of {}",
+        TICKING_SPEED_FACTOR
+    );
     simulations_per_second() - simulations_per_second() / TICKING_SPEED_FACTOR
 }
 

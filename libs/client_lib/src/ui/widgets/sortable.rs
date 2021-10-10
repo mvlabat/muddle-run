@@ -101,9 +101,10 @@ pub fn sortable_list<
     }
 
     let unique_ids = list.iter().map(|i| i.id).collect::<HashSet<_>>();
-    if unique_ids.len() != list.len() {
-        panic!("Sortable list elements must be unique");
-    }
+    assert!(
+        unique_ids.len() == list.len(),
+        "Sortable list elements must be unique"
+    );
 
     let list_id = Id::new(list_id);
     let mut memory = ui.memory();

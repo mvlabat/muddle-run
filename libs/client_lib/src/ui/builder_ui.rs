@@ -476,7 +476,7 @@ fn level_object_ui(
     level_object_requests: &mut LevelObjectRequestsQueue,
     ui: &mut Ui,
     level_object: &LevelObject,
-    mut dirty_level_object: &mut LevelObject,
+    dirty_level_object: &mut LevelObject,
 ) {
     ui.separator();
     egui::Grid::new("editing_edited_level_object.object")
@@ -534,13 +534,13 @@ fn level_object_ui(
                 possible_collision_logic.push(CollisionLogic::None);
 
                 ui.label("Effect on collision");
-                collision_logic(ui, &mut dirty_level_object, &possible_collision_logic);
+                collision_logic(ui, dirty_level_object, &possible_collision_logic);
                 ui.end_row();
             }
 
             if dirty_level_object.desc.position().is_some() {
                 ui.label("Route type");
-                route_type(ui, &mut dirty_level_object);
+                route_type(ui, dirty_level_object);
                 ui.end_row();
 
                 if let Some(route) = &mut dirty_level_object.route {
