@@ -34,6 +34,13 @@ COPY Cargo.toml .
 COPY Cargo.lock .
 COPY --from=deps-builder /usr/src/muddle-run/target/ target
 
+ARG sentry_dsn
+ARG muddle_server_ip_addr
+ARG muddle_server_port
+ENV SENTRY_DSN=${sentry_dsn}
+ENV MUDDLE_SERVER_IP_ADDR=${muddle_server_ip_addr}
+ENV MUDDLE_SERVER_PORT=${muddle_server_port}
+
 WORKDIR /usr/src/muddle-run/bins/web_client
 RUN /usr/local/cargo/bin/wasm-pack build --target web
 
