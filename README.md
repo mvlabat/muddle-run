@@ -73,16 +73,21 @@ a binary take higher priority.
 
 #### `mr_server`
 
-- `MUDDLE_PUBLIC_IP_ADDR` (mandatory)
+- `MUDDLE_PUBLIC_IP_ADDR` (mandatory if outside Agones cluster)
   - It can't equal to `0.0.0.0`, use `127.0.0.1` if you want to connect to localhost, for instance.
   - Also, note that `127.0.0.1` might not work for Firefox, you can use your local network instead, like `192.168.x.x`.
 - `MUDDLE_LISTEN_IP_ADDR` (defaults to `0.0.0.0`)
-- `MUDDLE_LISTEN_PORT` (mandatory)
+- `MUDDLE_LISTEN_PORT` (mandatory if outside Agones cluster)
+- `MUDDLE_IDLE_TIMEOUT` (defaults to 300)
+  - Specifies the time in milliseconds after which a server will be closed if there are no connected players.
 
 #### `mr_desktop_client` and `mr_web_client`
 
 - `MUDDLE_SERVER_IP_ADDR` (defaults to `127.0.0.1`)
 - `MUDDLE_SERVER_PORT` (defaults to `3455`)
+
+#### Common
+
 - `SIMULATIONS_PER_SECOND` (defaults to `120`, **compile-time only**)
   - Is expected to work with the following values: `30`, `60`, `120`. You may want to set a lower value than the
     default one if your device can't handle 120 simulations per second.
