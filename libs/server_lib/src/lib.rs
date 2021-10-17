@@ -1,5 +1,8 @@
 #![feature(bool_to_option)]
 #![feature(hash_drain_filter)]
+#![feature(once_cell)]
+
+pub use mr_shared_lib::try_parse_from_env;
 
 use crate::{
     game_events::{process_player_events, process_scheduled_spawns},
@@ -10,7 +13,7 @@ use crate::{
         process_update_level_object_requests,
     },
 };
-use bevy::{core::FixedTimestep, prelude::*, utils::HashMap};
+use bevy::{core::FixedTimestep, log, prelude::*, utils::HashMap};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -23,14 +26,38 @@ use mr_shared_lib::{
         SpawnLevelObject, SpawnLevelObjectRequest,
     },
     net::ConnectionState,
-    player::PlayerRole,
+    player::{Player, PlayerRole},
     registry::IncrementId,
     simulations_per_second, MuddleSharedPlugin,
+};
+use std::{
+    lazy::SyncLazy,
+    time::{Duration, Instant},
 };
 
 mod game_events;
 mod net;
 mod player_updates;
+
+pub struct Agones {
+    pub sdk: rymder::Sdk,
+    pub game_server: rymder::GameServer,
+}
+
+pub struct LastPlayerDisconnectedAt(pub Instant);
+
+pub struct IdleTimeout(pub Duration);
+
+pub static TOKIO: SyncLazy<tokio::runtime::Runtime> = SyncLazy::new(|| {
+    std::thread::Builder::new()
+        .name("tokio".to_string())
+        .spawn(move || TOKIO.block_on(std::future::pending::<()>()))
+        .unwrap();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Cannot start tokio runtime")
+});
 
 pub struct MuddleServerPlugin;
 
@@ -45,6 +72,7 @@ impl Plugin for MuddleServerPlugin {
 
         builder.add_startup_system(init_level.system());
         builder.add_startup_system(startup.system());
+        builder.add_system(process_idle_timeout.system());
 
         let input_stage = SystemStage::parallel()
             .with_system(process_scheduled_spawns.system())
@@ -89,13 +117,29 @@ impl Plugin for MuddleServerPlugin {
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<SpawnLevelObject>::default);
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<UpdateLevelObject>::default);
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<DespawnLevelObject>::default);
+        resources.get_resource_or_insert_with(|| LastPlayerDisconnectedAt(Instant::now()));
+        resources.get_resource_or_insert_with(|| IdleTimeout(idle_timeout()));
     }
 }
 
 pub fn init_level(
+    agones: Option<Res<Agones>>,
     mut entity_net_id_counter: ResMut<EntityNetId>,
     mut spawn_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
 ) {
+    if let Some(agones) = agones {
+        let mut sdk = agones.sdk.clone();
+        TOKIO.spawn(async move {
+            if let Err(err) = sdk.mark_ready().await {
+                log::error!(
+                    "Failed to mark the Game Server as ready, exiting: {:?}",
+                    err
+                );
+                std::process::exit(1);
+            }
+        });
+    }
+
     spawn_level_object_commands.push(UpdateLevelObject {
         frame_number: FrameNumber::new(0),
         object: LevelObject {
@@ -118,4 +162,41 @@ pub fn init_level(
             collision_logic: CollisionLogic::None,
         },
     });
+}
+
+pub fn process_idle_timeout(
+    idle_timeout: Res<IdleTimeout>,
+    last_player_disconnected_at: Res<LastPlayerDisconnectedAt>,
+    players: Res<HashMap<PlayerNetId, Player>>,
+    agones: Option<Res<Agones>>,
+) {
+    if players.is_empty()
+        && Instant::now().duration_since(last_player_disconnected_at.0) > idle_timeout.0
+    {
+        log::info!("Shutting down due to being idle...");
+        if let Some(agones) = agones {
+            let mut sdk = agones.sdk.clone();
+            TOKIO.spawn(async move {
+                if let Err(err) = sdk.shutdown().await {
+                    log::error!("Failed to request shutdown, exiting: {:?}", err);
+                    std::process::exit(0);
+                }
+            });
+        } else {
+            std::process::exit(0);
+        }
+    }
+}
+
+fn idle_timeout() -> Duration {
+    let default = 300_000;
+    try_parse_from_env!("MUDDLE_IDLE_TIMEOUT")
+        .map(Duration::from_millis)
+        .unwrap_or_else(|| {
+            log::info!(
+                "Using the default value for MUDDLE_IDLE_TIMEOUT: {}",
+                default
+            );
+            Duration::from_millis(default)
+        })
 }

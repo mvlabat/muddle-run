@@ -18,6 +18,8 @@ chrono = "0.4.19"
 env_logger = "0.8.1"
 puffin = { version = "0.8.1", optional = true }
 rand = "0.8.4"
+rymder = "0.2.2"
+tokio = "1.12.0"
 
 [dependencies.bevy]
 version = "0.5"

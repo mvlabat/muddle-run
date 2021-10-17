@@ -16,4 +16,6 @@ mr_server_lib = { path = "../../libs/server_lib" }
 
 bevy = { version = "0.5", default-features = false }
 env_logger = "0.8.1"
+rymder = "0.2.2"
 sentry = "0.21.0"
+tokio = "1.12.0"

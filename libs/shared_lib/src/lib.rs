@@ -728,3 +728,35 @@ pub fn tick_game_frame(mut time: ResMut<GameTime>) {
     log::trace!("Concluding game frame tick: {}", time.frame_number.value());
     time.frame_number += FrameNumber::new(1);
 }
+
+#[macro_export]
+macro_rules! try_parse_from_env {
+    ($var_name:expr $(,)?) => {
+        std::env::var($var_name)
+            .ok()
+            .map(|value| {
+                log::info!(
+                    "Reading {} from the environment variable: {}",
+                    $var_name,
+                    value
+                );
+                value
+            })
+            .or_else(|| {
+                std::option_env!($var_name).map(str::to_owned).map(|value| {
+                    log::info!(
+                        "Reading {} from the compile-time environment variable: {}",
+                        $var_name,
+                        value
+                    );
+                    value
+                })
+            })
+            .map(|value| {
+                value
+                    .parse()
+                    .ok()
+                    .unwrap_or_else(|| panic!("Couldn't parse {}", $var_name))
+            })
+    };
+}

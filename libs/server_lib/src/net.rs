@@ -1,3 +1,4 @@
+use crate::{Agones, LastPlayerDisconnectedAt};
 use bevy::{
     ecs::system::SystemParam,
     log,
@@ -22,17 +23,21 @@ use mr_shared_lib::{
     player::{random_name, Player, PlayerRole},
     registry::{EntityRegistry, Registry},
     server::level_spawn_location_service::LevelSpawnLocationService,
-    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
+    try_parse_from_env, GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::{
     collections::hash_map::Entry,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    time::Instant,
 };
 
-pub fn startup(mut net: ResMut<NetworkResource>) {
+pub fn startup(mut net: ResMut<NetworkResource>, agones: Option<Res<Agones>>) {
     log::info!("Starting the server");
-    let (listen, public) = listen_addr()
-        .zip(public_id_addr())
+    let agones_status = agones
+        .as_ref()
+        .and_then(|agones| agones.game_server.status.as_ref());
+    let (listen, public) = listen_addr(agones_status)
+        .zip(public_id_addr(agones_status))
         .expect("Expected MUDDLE_LISTEN_PORT and MUDDLE_PUBLIC_IP_ADDR env variables");
     net.listen(
         listen,
@@ -60,6 +65,7 @@ pub struct NetworkParams<'a> {
     connection_states: ResMut<'a, HashMap<u32, ConnectionState>>,
     player_connections: ResMut<'a, PlayerConnections>,
     new_player_connections: ResMut<'a, Vec<(PlayerNetId, u32)>>,
+    last_player_disconnected_at: ResMut<'a, LastPlayerDisconnectedAt>,
 }
 
 pub fn process_network_events(
@@ -719,6 +725,7 @@ fn broadcast_disconnected_players(network_params: &mut NetworkParams) {
             log::error!("Failed to send a message: {:?}", err);
         }
         log::debug!("Marking connection {} as Disconnected", connection_handle);
+        *network_params.last_player_disconnected_at = LastPlayerDisconnectedAt(Instant::now());
         connection_state.set_status(ConnectionStatus::Disconnected);
     }
 
@@ -1003,37 +1010,63 @@ fn send_reliable_game_message(
     }
 }
 
-fn listen_addr() -> Option<SocketAddr> {
-    let server_port = std::env::var("MUDDLE_LISTEN_PORT")
-        .ok()
-        .or_else(|| std::option_env!("MUDDLE_LISTEN_PORT").map(str::to_owned))
-        .map(|port| port.parse::<u16>().expect("invalid port"))?;
+fn listen_addr(gameserver_status: Option<&rymder::gameserver::Status>) -> Option<SocketAddr> {
+    let server_port = gameserver_status
+        .and_then(|status| {
+            status
+                .ports
+                .iter()
+                .find(|p| p.name == "MUDDLE_LISTEN_PORT-udp")
+                .map(|p| {
+                    log::info!(
+                        "Reading MUDDLE_LISTEN_PORT from the Agones config: {}",
+                        p.port
+                    );
+                    p.port
+                })
+        })
+        .or_else(|| try_parse_from_env!("MUDDLE_LISTEN_PORT"))?;
 
-    let env_ip_addr = std::env::var("MUDDLE_LISTEN_IP_ADDR")
-        .ok()
-        .or_else(|| std::option_env!("MUDDLE_LISTEN_IP_ADDR").map(str::to_owned));
-    if let Some(env_addr) = env_ip_addr {
-        return Some(SocketAddr::new(
-            env_addr.parse::<IpAddr>().expect("invalid socket address"),
-            server_port,
-        ));
+    let zero_ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
+
+    let ip_addr = gameserver_status
+        .map(|_| {
+            // If we are in the Agones environment, we want our listen address be 0.0.0.0.
+            log::info!(
+                "Being in the Agones environment, implying the following MUDDLE_LISTEN_IP_ADDR value: {}",
+                zero_ip_addr
+            );
+            zero_ip_addr
+        })
+        .or_else(|| try_parse_from_env!("MUDDLE_LISTEN_IP_ADDR"));
+
+    if let Some(ip_addr) = ip_addr {
+        return Some(SocketAddr::new(ip_addr, server_port));
     }
 
-    Some(SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-        server_port,
-    ))
+    Some(SocketAddr::new(zero_ip_addr, server_port))
 }
 
-fn public_id_addr() -> Option<IpAddr> {
-    let env_ip_addr = std::env::var("MUDDLE_PUBLIC_IP_ADDR")
-        .ok()
-        .or_else(|| std::option_env!("MUDDLE_PUBLIC_IP_ADDR").map(str::to_owned));
-    if let Some(env_addr) = env_ip_addr {
-        return Some(env_addr.parse::<IpAddr>().expect("invalid socket address"));
+fn public_id_addr(gameserver_status: Option<&rymder::gameserver::Status>) -> Option<IpAddr> {
+    let ip_addr = gameserver_status
+        .map(|status| {
+            log::info!(
+                "Reading MUDDLE_PUBLIC_IP_ADDR from the Agones config: {}",
+                status.address
+            );
+            status.address
+        })
+        .or_else(|| try_parse_from_env!("MUDDLE_PUBLIC_IP_ADDR"));
+
+    if ip_addr.is_some() {
+        return ip_addr;
     }
 
     if let Some(addr) = bevy_networking_turbulence::find_my_ip_address() {
+        log::info!(
+            "Using an automatically detected public IP address: {}",
+            addr.to_string()
+        );
         return Some(addr);
     }
 
