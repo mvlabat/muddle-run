@@ -4,7 +4,7 @@ FROM rustlang/rust:nightly AS deps-builder
 
 WORKDIR /usr/src/muddle-run
 COPY Cargo.toml .
-COPY Cargo.lock .Ё
+COPY Cargo.lock .
 # libs
 COPY libs/docker_dummy libs/docker_dummy/
 COPY libs/messages_lib/Cargo.toml libs/messages_lib/
@@ -27,8 +27,8 @@ COPY libs/docker_dummy/src/lib.rs bins/server/src/main.rs
 COPY libs/docker_dummy/src/lib.rs bins/web_client/src/lib.rs
 COPY libs/docker_dummy/src/lib.rs bins/matchmaker/src/main.rs
 
-WORKDIR /usr/src/muddle-run/bins/server
-RUN cargo build --release --features "use-webrtc"
+WORKDIR /usr/src/muddle-run/bins/matchmaker
+RUN cargo build --release
 
 FROM rustlang/rust:nightly AS builder
 # Actually build the binary we are interested in.
@@ -43,20 +43,13 @@ COPY --from=deps-builder /usr/src/muddle-run/target/ target
 
 RUN find /usr/src/muddle-run/bins -type f -exec touch {} +
 RUN find /usr/src/muddle-run/libs -type f -exec touch {} +
-WORKDIR /usr/src/muddle-run/bins/server
-RUN cargo build --release --features "use-webrtc"
+WORKDIR /usr/src/muddle-run/bins/matchmaker
+RUN cargo build --release
 
 FROM debian:stable-slim
 
-COPY --from=builder /usr/src/muddle-run/target/release/mr_server /usr/local/bin/
+COPY --from=builder /usr/src/muddle-run/target/release/mr_matchmaker /usr/local/bin/
 
-ARG muddle_public_ip_addr
-ARG muddle_listen_ip_addr
-ARG muddle_listen_port
-ENV MUDDLE_PUBLIC_IP_ADDR=${muddle_public_ip_addr}
-ENV MUDDLE_LISTEN_IP_ADDR=${muddle_listen_ip_addr}
-ENV MUDDLE_LISTEN_PORT=${muddle_listen_port}
+EXPOSE 8080
 
-EXPOSE ${muddle_listen_port}
-
-CMD ["mr_server"]
+CMD ["mr_matchmaker"]
