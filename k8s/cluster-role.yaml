@@ -1,0 +1,11 @@
+# kubectl create clusterrolebinding mr-matchmaker --clusterrole=matchmaker --serviceaccount=default:default
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: default
+  name: matchmaker
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "watch", "list"]

@@ -1,12 +1,15 @@
 [workspace]
 members = [
     "libs/docker_dummy",
+    "libs/messages_lib",
     "libs/client_lib",
     "libs/server_lib",
     "libs/shared_lib",
+    "libs/utils_lib",
     "bins/desktop_client",
     "bins/web_client",
     "bins/server",
+    "bins/matchmaker",
 ]
 
 [profile.dev.package."*"]

@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mr-matchmaker
+spec:
+  selector:
+    matchLabels:
+      app: mr-matchmaker
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: mr-matchmaker
+    spec:
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: mr-matchmaker
+          image: mvlabat/mr_matchmaker:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
