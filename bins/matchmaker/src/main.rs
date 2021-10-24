@@ -105,10 +105,11 @@ async fn watch_pods(tx: Sender<MatchmakerMessage>, servers: Servers) {
         .items
         .into_iter()
         .filter_map(|pod| server_from_resource(&pod))
-        .collect();
+        .collect::<Vec<_>>();
+    let list_len = initial_list.len();
     servers.init(initial_list).await;
 
-    log::info!("Initialized the server list");
+    log::info!("Initialized the server list ({} servers)", list_len);
 
     while let Some(status) = stream
         .try_next()

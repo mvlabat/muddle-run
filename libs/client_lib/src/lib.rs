@@ -3,7 +3,10 @@ use crate::{
     components::{CameraPivotDirection, CameraPivotTag},
     game_events::process_scheduled_spawns,
     input::{LevelObjectRequestsQueue, MouseRay, MouseWorldPosition, PlayerRequestsQueue},
-    net::{maintain_connection, process_network_events, send_network_updates, send_requests},
+    net::{
+        init_matchmaker_connection, maintain_connection, process_network_events,
+        send_network_updates, send_requests, ServerToConnect,
+    },
     ui::{
         builder_ui::{EditedLevelObject, EditedObjectUpdate},
         debug_ui::update_debug_ui_state,
@@ -54,6 +57,7 @@ mod input;
 mod net;
 mod ui;
 mod visuals;
+mod websocket;
 
 const TICKING_SPEED_FACTOR: u16 = 10;
 
@@ -104,6 +108,7 @@ impl Plugin for MuddleClientPlugin {
             .init_resource::<input::MouseScreenPosition>()
             .add_event::<EditedObjectUpdate>()
             // Startup systems.
+            .add_startup_system(init_matchmaker_connection.system())
             .add_startup_system(init_state.system())
             .add_startup_system(basic_scene.system())
             // Game.
@@ -125,6 +130,7 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::inspect_object.system())
             .add_system(ui::player_ui::leaderboard_ui.system())
             .add_system(ui::player_ui::help_ui.system())
+            .add_system(ui::matchmaker_ui::matchmaker_ui.system())
             // Not only Egui for builder mode.
             .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))
             // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.
@@ -159,6 +165,7 @@ impl Plugin for MuddleClientPlugin {
         world.get_resource_or_insert_with(MouseRay::default);
         world.get_resource_or_insert_with(MouseWorldPosition::default);
         world.get_resource_or_insert_with(VisibilitySettings::default);
+        world.get_resource_or_insert_with(Option::<ServerToConnect>::default);
     }
 }
 
