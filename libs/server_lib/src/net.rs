@@ -178,6 +178,7 @@ pub fn process_network_events(
                         log::warn!("Skipping Connect message for a connected client");
                         continue;
                     }
+                    ConnectionStatus::Initialized => unreachable!(),
                 }
 
                 connection_state.set_status(ConnectionStatus::Connecting);

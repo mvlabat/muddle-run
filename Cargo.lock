@@ -3279,17 +3279,29 @@ dependencies = [
 name = "mr_client_lib"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bevy",
  "bevy-inspector-egui",
  "bevy_egui",
  "bevy_mod_picking",
  "bevy_networking_turbulence",
  "bevy_rapier2d",
+ "bincode",
  "chrono",
  "env_logger 0.8.4",
+ "futures",
+ "js-sys",
+ "mr_messages_lib",
  "mr_shared_lib",
  "puffin",
  "puffin_egui",
+ "tokio 1.12.0",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -3319,7 +3331,6 @@ dependencies = [
  "sentry",
  "serde_json",
  "tokio 1.12.0",
- "tokio-stream",
  "tokio-tungstenite",
 ]
 
@@ -5495,7 +5506,6 @@ dependencies = [
  "futures-core",
  "pin-project-lite 0.2.7",
  "tokio 1.12.0",
- "tokio-util 0.6.8",
 ]
 
 [[package]]

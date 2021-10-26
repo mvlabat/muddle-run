@@ -1,3 +1,4 @@
+use crate::net::ServerToConnect;
 use bevy::ecs::system::{Res, ResMut};
 use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
@@ -5,10 +6,15 @@ use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
 pub fn connection_status_overlay(
     egui_context: ResMut<EguiContext>,
     connection_state: Res<ConnectionState>,
+    server_to_connect: Res<Option<ServerToConnect>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    if let ConnectionStatus::Connected = connection_state.status() {
+    if matches!(
+        connection_state.status(),
+        ConnectionStatus::Uninitialized | ConnectionStatus::Connected
+    ) && server_to_connect.is_none()
+    {
         return;
     }
 

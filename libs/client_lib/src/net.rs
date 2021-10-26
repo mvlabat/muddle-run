@@ -1,11 +1,14 @@
 use crate::{
     input::{LevelObjectRequestsQueue, PlayerRequestsQueue},
+    websocket::WebSocketStream,
     CurrentPlayerNetId, EstimatedServerTime, InitialRtt, LevelObjectCorrelations, PlayerDelay,
     TargetFramesAhead,
 };
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashMap};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
+use futures::{select, FutureExt, StreamExt, TryStreamExt};
+use mr_messages_lib::{MatchmakerMessage, Server};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -26,12 +29,21 @@ use mr_shared_lib::{
     },
     player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     registry::EntityRegistry,
-    simulations_per_second, GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
+    simulations_per_second, try_parse_from_env, GameTime, SimulationTime,
+    COMPONENT_FRAMEBUFFER_LIMIT,
 };
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    future::Future,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
+use tokio::sync::mpsc::{
+    error::TryRecvError, unbounded_channel, UnboundedReceiver, UnboundedSender,
+};
+use url::Url;
 
+const DEFAULT_MATCHMAKER_PORT: u16 = 8080;
 const DEFAULT_SERVER_PORT: u16 = 3455;
-const DEFAULT_SERVER_IP_ADDR: &str = "127.0.0.1";
+const DEFAULT_SERVER_IP_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
 #[derive(SystemParam)]
 pub struct UpdateParams<'a> {
@@ -59,6 +71,211 @@ pub struct NetworkParams<'a> {
     connection_state: ResMut<'a, ConnectionState>,
 }
 
+#[derive(Debug)]
+pub enum TcpConnectionStatus {
+    Disconnected,
+    Connecting,
+    Connected,
+}
+
+pub struct MatchmakerState {
+    pub servers: Vec<Server>,
+    pub status: TcpConnectionStatus,
+}
+
+pub struct MatchmakerChannels {
+    pub connection_request_tx: UnboundedSender<bool>,
+    pub status_rx: UnboundedReceiver<TcpConnectionStatus>,
+    pub message_rx: UnboundedReceiver<MatchmakerMessage>,
+}
+
+pub struct ServerToConnect(pub Server);
+
+pub fn init_matchmaker_connection(mut commands: Commands) {
+    let matchmaker_addr = match matchmaker_address() {
+        Some(matchmaker_addr) => matchmaker_addr,
+        None => {
+            return;
+        }
+    };
+
+    log::info!("Matchmaker address: {}", matchmaker_addr);
+
+    let (connection_request_tx, connection_request_rx) = unbounded_channel();
+    let (status_tx, status_rx) = unbounded_channel();
+    let (message_tx, message_rx) = unbounded_channel();
+    let url = url::Url::parse(&format!("ws://{}", matchmaker_addr)).unwrap();
+
+    run_async(
+        async move { serve_connection(&url, connection_request_rx, status_tx, message_tx).await },
+    );
+
+    connection_request_tx.send(true).unwrap();
+    commands.insert_resource(MatchmakerChannels {
+        connection_request_tx,
+        status_rx,
+        message_rx,
+    });
+    commands.insert_resource(MatchmakerState {
+        servers: Vec::new(),
+        status: TcpConnectionStatus::Disconnected,
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_async<F>(future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Cannot start tokio runtime");
+
+        rt.block_on(async move {
+            let local = tokio::task::LocalSet::new();
+            local
+                .run_until(async move {
+                    tokio::task::spawn_local(future).await.unwrap();
+                })
+                .await;
+        });
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn run_async<F>(future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    wasm_bindgen_futures::spawn_local(async move {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async move {
+                tokio::task::spawn_local(future).await.unwrap();
+            })
+            .await;
+    });
+}
+
+async fn serve_connection(
+    url: &Url,
+    mut connection_request_rx: UnboundedReceiver<bool>,
+    status_tx: UnboundedSender<TcpConnectionStatus>,
+    message_tx: UnboundedSender<MatchmakerMessage>,
+) {
+    let mut current_state = false;
+
+    let mut disconnect_request_tx = None;
+    let (disconnect_tx, mut disconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+    loop {
+        let connect = select! {
+            connect = connection_request_rx.recv().fuse() => connect,
+            _ = disconnect_rx.recv().fuse() => Some(false),
+        };
+        let connect = match connect {
+            Some(connect) => connect,
+            None => break,
+        };
+
+        if current_state == connect {
+            continue;
+        }
+
+        if connect {
+            log::info!("Connecting to the matchmaker service...");
+            let _ = status_tx.send(TcpConnectionStatus::Connecting);
+            let message_tx = message_tx.clone();
+            let url = url.clone();
+            let ws_status_tx = status_tx.clone();
+            let disconnect_request_channel = tokio::sync::oneshot::channel();
+            disconnect_request_tx = Some(disconnect_request_channel.0);
+            tokio::task::spawn_local(handle_matchmaker_connection(
+                message_tx,
+                url,
+                ws_status_tx,
+                disconnect_request_channel.1,
+                disconnect_tx.clone(),
+            ));
+        } else {
+            // If this fails, the connection is already closed.
+            if disconnect_request_tx.take().unwrap().send(()).is_ok() {
+                log::info!("Dropping the connection with the matchmaker service...");
+                let _ = status_tx.send(TcpConnectionStatus::Disconnected);
+            }
+        }
+
+        current_state = connect;
+    }
+    panic!("Failed to read from a channel (matchmaker connection request");
+}
+
+async fn handle_matchmaker_connection(
+    message_tx: UnboundedSender<MatchmakerMessage>,
+    url: Url,
+    ws_status_tx: UnboundedSender<TcpConnectionStatus>,
+    disconnect_request_rx: tokio::sync::oneshot::Receiver<()>,
+    disconnect_tx: tokio::sync::mpsc::UnboundedSender<()>,
+) {
+    let mut ws_stream = match WebSocketStream::connect(&url).await {
+        Ok(ws_stream) => ws_stream.fuse(),
+        Err(err) => {
+            log::error!("Failed to connect to matchmaker: {:?}", err);
+            let _ = ws_status_tx.send(TcpConnectionStatus::Disconnected);
+            disconnect_tx.send(()).unwrap();
+            return;
+        }
+    };
+    let mut disconnect_rx = disconnect_request_rx.fuse();
+
+    let _ = ws_status_tx.send(TcpConnectionStatus::Connected);
+    log::info!("Successfully connected to the matchmacker");
+
+    loop {
+        let message = select! {
+            message = ws_stream.try_next() => message,
+            _ = disconnect_rx => break,
+        };
+
+        let message: crate::websocket::Message = match message {
+            Ok(Some(message)) => message,
+            Ok(None) => {
+                // In practice, the stream is unlikely to get exhausted before receiving an error.
+                log::warn!("Matchmaker stream has exhausted, disconnecting");
+                break;
+            }
+            Err(err) => {
+                log::error!("Matchmaker connection error: {:?}", err);
+                break;
+            }
+        };
+
+        let matchmaker_message = match message {
+            crate::websocket::Message::Binary(data) => {
+                match bincode::deserialize::<MatchmakerMessage>(&data) {
+                    Ok(server_update) => server_update,
+                    Err(err) => {
+                        log::error!(
+                            "Failed to deserialize matchmaker message, disconnecting: {:?}",
+                            err
+                        );
+                        break;
+                    }
+                }
+            }
+            _ => continue,
+        };
+
+        if let Err(err) = message_tx.send(matchmaker_message) {
+            log::error!("Failed to send a matchmaker update: {:?}", err);
+        }
+    }
+
+    let _ = ws_status_tx.send(TcpConnectionStatus::Disconnected);
+    disconnect_tx.send(()).unwrap();
+}
+
 pub fn process_network_events(
     mut network_params: NetworkParams,
     mut network_events: EventReader<NetworkEvent>,
@@ -79,6 +296,9 @@ pub fn process_network_events(
                     "Sending an Initialize message: {}",
                     network_params.connection_state.handshake_id
                 );
+                network_params
+                    .connection_state
+                    .set_status(ConnectionStatus::Initialized);
                 if let Err(err) = network_params.net.send_message(
                     *handle,
                     Message {
@@ -268,7 +488,7 @@ pub fn process_network_events(
                 ReliableServerMessage::Initialize => {
                     if !matches!(
                         network_params.connection_state.status(),
-                        ConnectionStatus::Uninitialized
+                        ConnectionStatus::Initialized,
                     ) {
                         continue;
                     }
@@ -424,11 +644,49 @@ pub fn process_network_events(
 
 pub fn maintain_connection(
     time: Res<GameTime>,
+    matchmaker_state: Option<ResMut<MatchmakerState>>,
+    matchmaker_channels: Option<ResMut<MatchmakerChannels>>,
+    mut server_to_connect: ResMut<Option<ServerToConnect>>,
     mut network_params: NetworkParams,
     mut initial_rtt: ResMut<InitialRtt>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
+
+    if matches!(
+        network_params.connection_state.status(),
+        ConnectionStatus::Connected
+    ) && server_to_connect.is_some()
+    {
+        *server_to_connect = None;
+        if let Some(matchmaker_channels) = matchmaker_channels.as_ref() {
+            matchmaker_channels
+                .connection_request_tx
+                .send(false)
+                .expect("Failed to write to a channel (matchmaker connection request)");
+        }
+    }
+
+    let mut matchmaker = matchmaker_state.zip(matchmaker_channels);
+    if let Some((matchmaker_state, matchmaker_channels)) = matchmaker.as_mut() {
+        loop {
+            match matchmaker_channels.status_rx.try_recv() {
+                Ok(status) => {
+                    log::debug!("Updating matchmaker status: {:?}", status);
+                    matchmaker_state.status = status;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    panic!("Failed to read from a channel (matchmaker status)")
+                }
+            }
+        }
+    }
+
+    let connection_is_uninitialized = matches!(
+        network_params.connection_state.status(),
+        ConnectionStatus::Uninitialized
+    );
 
     // TODO: if a client isn't getting any updates, we may also want to pause the game and wait for
     //  some time for a server to respond.
@@ -439,7 +697,7 @@ pub fn maintain_connection(
         .unwrap()
         > std::time::Duration::from_millis(CONNECTION_TIMEOUT_MILLIS);
 
-    if connection_timeout {
+    if connection_timeout && !connection_is_uninitialized {
         log::warn!("Connection timeout, resetting");
     }
 
@@ -456,7 +714,7 @@ pub fn maintain_connection(
         }
     });
 
-    if is_falling_behind {
+    if is_falling_behind && !connection_is_uninitialized {
         log::warn!(
             "The client is falling behind, resetting (newest acknowledged frame: {}, current frame: {})",
             newest_acknowledged_incoming_packet.unwrap(),
@@ -464,7 +722,7 @@ pub fn maintain_connection(
         );
     }
 
-    if connection_timeout
+    if !connection_is_uninitialized && connection_timeout
         || is_falling_behind
         || matches!(
             network_params.connection_state.status(),
@@ -479,10 +737,26 @@ pub fn maintain_connection(
     }
 
     if network_params.net.connections.is_empty() {
-        let server_socket_addr = server_addr();
+        if let Some((matchmaker_state, matchmaker_channels)) = matchmaker.as_mut() {
+            if matches!(matchmaker_state.status, TcpConnectionStatus::Disconnected) {
+                log::trace!("Requesting a connection to the matchmaker");
+                matchmaker_channels
+                    .connection_request_tx
+                    .send(true)
+                    .expect("Failed to write to a channel (matchmaker connection request)");
+                return;
+            }
 
-        log::info!("Connecting to {}", server_socket_addr);
-        network_params.net.connect(server_socket_addr);
+            if let Some(ServerToConnect(server)) = &*server_to_connect {
+                log::info!("Connecting to {}: {}", server.name, server.addr);
+                network_params.net.connect(server.addr);
+            }
+        } else {
+            let server_socket_addr = server_addr();
+
+            log::info!("Connecting to {}", server_socket_addr);
+            network_params.net.connect(server_socket_addr);
+        }
     }
 }
 
@@ -998,21 +1272,16 @@ fn player_start_position(player_net_id: PlayerNetId, delta_update: &DeltaUpdate)
         .map(|player_state| player_state.position)
 }
 
+fn matchmaker_address() -> Option<SocketAddr> {
+    let port: u16 =
+        try_parse_from_env!("MUDDLE_MATCHMAKER_PORT").unwrap_or(DEFAULT_MATCHMAKER_PORT);
+    let ip_addr: Option<IpAddr> = try_parse_from_env!("MUDDLE_MATCHMAKER_IP_ADDR");
+    ip_addr.map(|ip_addr| SocketAddr::new(ip_addr, port))
+}
+
 fn server_addr() -> SocketAddr {
-    let server_port = std::env::var("MUDDLE_SERVER_PORT")
-        .ok()
-        .or_else(|| std::option_env!("MUDDLE_SERVER_PORT").map(str::to_owned))
-        .map(|port| port.parse::<u16>().expect("invalid port"))
-        .unwrap_or(DEFAULT_SERVER_PORT);
-
-    let env_ip_addr = std::env::var("MUDDLE_SERVER_IP_ADDR")
-        .ok()
-        .or_else(|| std::option_env!("MUDDLE_SERVER_IP_ADDR").map(str::to_owned));
-
-    let ip_addr = env_ip_addr.as_deref().unwrap_or(DEFAULT_SERVER_IP_ADDR);
-
-    SocketAddr::new(
-        ip_addr.parse::<IpAddr>().expect("invalid socket address"),
-        server_port,
-    )
+    let port: u16 = try_parse_from_env!("MUDDLE_SERVER_PORT").unwrap_or(DEFAULT_SERVER_PORT);
+    let ip_addr: IpAddr =
+        try_parse_from_env!("MUDDLE_SERVER_IP_ADDR").unwrap_or(DEFAULT_SERVER_IP_ADDR);
+    SocketAddr::new(ip_addr, port)
 }

@@ -26,6 +26,8 @@ pub type SessionId = WrappedCounter<u16>;
 #[derive(Debug, Clone, Copy)]
 pub enum ConnectionStatus {
     Uninitialized,
+    /// Used only on the client side, to mark that the `Initialize` message has been sent.
+    Initialized,
     Connecting,
     Handshaking,
     Connected,
