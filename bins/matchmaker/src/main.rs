@@ -89,7 +89,7 @@ async fn watch_pods(tx: Sender<MatchmakerMessage>, servers: Servers) {
     let client = Client::try_default().await.unwrap();
     let pods: Api<Pod> = Api::namespaced(client, "default");
 
-    let lp = ListParams::default().labels("app=mr").timeout(0);
+    let lp = ListParams::default().labels("app=mr_server").timeout(0);
     let mut stream = pods
         .watch(&lp, "0")
         .await
