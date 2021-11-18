@@ -2,7 +2,7 @@ on:
   push:
     branches: [main]
 
-name: Build
+name: Build and publish
 
 jobs:
   mr_matchmaker:
@@ -27,8 +27,8 @@ jobs:
           file: mr_matchmaker.dockerfile
           push: true
           tags: mvlabat/mr_matchmaker:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=mvlabat/mr_matchmaker:buildcache
+          cache-to: type=registry,ref=mvlabat/mr_matchmaker:buildcache,mode=max
 
   mr_server:
     runs-on: ubuntu-latest
@@ -52,8 +52,8 @@ jobs:
           file: mr_server.dockerfile
           push: true
           tags: mvlabat/mr_server:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=mvlabat/mr_server:buildcache
+          cache-to: type=registry,ref=mvlabat/mr_server:buildcache,mode=max
 
   mr_web_client:
     runs-on: ubuntu-latest
@@ -77,7 +77,7 @@ jobs:
           file: mr_web_client.dockerfile
           push: true
           tags: mvlabat/mr_web_client:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=mvlabat/mr_web_client:buildcache
+          cache-to: type=registry,ref=mvlabat/mr_web_client:buildcache,mode=max
           build-args: |
             muddle_matchmaker_url=muddle.run:8080
