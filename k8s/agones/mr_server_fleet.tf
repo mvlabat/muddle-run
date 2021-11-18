@@ -74,9 +74,14 @@ resource "kubernetes_manifest" "mr_server_fleet" {
           # Pod template configuration
           # https://v1-20.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#podtemplate-v1-core
           template = {
+            metadata = {
+              labels = {
+                app = "mr_server"
+              }
+            }
             spec = {
               nodeSelector = {
-                "app" = "mr_server"
+                app = "mr_server"
               }
               tolerations = [
                 {

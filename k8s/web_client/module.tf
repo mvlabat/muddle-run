@@ -1,12 +1,12 @@
-resource "kubernetes_deployment" "mr_matchmaker" {
+resource "kubernetes_deployment" "mr_web_client" {
   metadata {
-    name = "mr-matchmaker"
+    name = "mr-web-client"
   }
 
   spec {
     selector {
       match_labels = {
-        service = "mr-matchmaker"
+        service = "mr-web-client"
       }
     }
     replicas = 2
@@ -14,17 +14,17 @@ resource "kubernetes_deployment" "mr_matchmaker" {
       metadata {
         labels = {
           app     = "muddle-run"
-          service = "mr-matchmaker"
+          service = "mr-web-client"
         }
       }
       spec {
         termination_grace_period_seconds = 5
         container {
-          name              = "mr-matchmaker"
-          image             = "mvlabat/mr_matchmaker:latest"
+          name              = "mr-web-client"
+          image             = "mvlabat/mr_web_client:latest"
           image_pull_policy = "Always"
           port {
-            container_port = 8080
+            container_port = 80
           }
         }
       }

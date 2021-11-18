@@ -118,6 +118,16 @@ module "matchmaker" {
   depends_on = [module.aws_load_balancer_controller, module.helm_agones]
 }
 
+module "web_client" {
+  source = "./k8s/web_client"
+  depends_on = [module.aws_load_balancer_controller]
+}
+
+module "service" {
+  source = "./k8s/service"
+  depends_on = [module.matchmaker, module.web_client]
+}
+
 # Comment this out if running for the first time (i.e. when `helm_agones` is not installed).
 module "agones" {
   source     = "./k8s/agones"
