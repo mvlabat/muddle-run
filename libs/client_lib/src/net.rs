@@ -41,7 +41,6 @@ use tokio::sync::mpsc::{
 };
 use url::Url;
 
-const DEFAULT_MATCHMAKER_PORT: u16 = 8080;
 const DEFAULT_SERVER_PORT: u16 = 3455;
 const DEFAULT_SERVER_IP_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
@@ -92,19 +91,19 @@ pub struct MatchmakerChannels {
 pub struct ServerToConnect(pub Server);
 
 pub fn init_matchmaker_connection(mut commands: Commands) {
-    let matchmaker_addr = match matchmaker_address() {
-        Some(matchmaker_addr) => matchmaker_addr,
+    let url = match matchmaker_url() {
+        Some(url) => url,
         None => {
             return;
         }
     };
 
-    log::info!("Matchmaker address: {}", matchmaker_addr);
+    log::info!("Matchmaker address: {}", url);
 
     let (connection_request_tx, connection_request_rx) = unbounded_channel();
     let (status_tx, status_rx) = unbounded_channel();
     let (message_tx, message_rx) = unbounded_channel();
-    let url = url::Url::parse(&format!("ws://{}", matchmaker_addr)).unwrap();
+    let url = url::Url::parse(&format!("ws://{}", url)).unwrap();
 
     run_async(
         async move { serve_connection(&url, connection_request_rx, status_tx, message_tx).await },
@@ -1272,11 +1271,8 @@ fn player_start_position(player_net_id: PlayerNetId, delta_update: &DeltaUpdate)
         .map(|player_state| player_state.position)
 }
 
-fn matchmaker_address() -> Option<SocketAddr> {
-    let port: u16 =
-        try_parse_from_env!("MUDDLE_MATCHMAKER_PORT").unwrap_or(DEFAULT_MATCHMAKER_PORT);
-    let ip_addr: Option<IpAddr> = try_parse_from_env!("MUDDLE_MATCHMAKER_IP_ADDR");
-    ip_addr.map(|ip_addr| SocketAddr::new(ip_addr, port))
+fn matchmaker_url() -> Option<String> {
+    std::option_env!("MUDDLE_MATCHMAKER_URL").map(str::to_owned)
 }
 
 fn server_addr() -> SocketAddr {

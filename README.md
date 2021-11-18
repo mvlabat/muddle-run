@@ -83,9 +83,8 @@ a binary take higher priority.
 
 #### `mr_desktop_client` and `mr_web_client`
 
-- `MUDDLE_MATCHMAKER_IP_ADDR` (optional)
+- `MUDDLE_MATCHMAKER_URL` (optional)
   - If this variable is passed, `MUDDLE_SERVER_IP_ADDR` and `MUDDLE_SERVER_PORT` are ignored.
-- `MUDDLE_MATCHMAKER_PORT` (defaults to `8080`)
 - `MUDDLE_SERVER_IP_ADDR` (defaults to `127.0.0.1`)
 - `MUDDLE_SERVER_PORT` (defaults to `3455`)
 

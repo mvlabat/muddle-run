@@ -42,11 +42,9 @@ COPY --from=deps-builder /usr/local/cargo /usr/local/cargo
 COPY --from=deps-builder /usr/src/muddle-run/target/ target
 
 ARG sentry_dsn
-ARG muddle_matchmaker_ip_addr
-ARG muddle_matchmaker_port
+ARG muddle_matchmaker_url
 ENV SENTRY_DSN=${sentry_dsn}
-ENV MUDDLE_MATCHMAKER_IP_ADDR=${muddle_matchmaker_ip_addr}
-ENV MUDDLE_MATCHMAKER_PORT=${muddle_matchmaker_port}
+ENV MUDDLE_MATCHMAKER_URL=${muddle_matchmaker_url}
 
 RUN find /usr/src/muddle-run/bins -type f -exec touch {} +
 RUN find /usr/src/muddle-run/libs -type f -exec touch {} +
