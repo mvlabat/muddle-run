@@ -119,12 +119,12 @@ module "matchmaker" {
 }
 
 module "web_client" {
-  source = "./k8s/web_client"
+  source     = "./k8s/web_client"
   depends_on = [module.aws_load_balancer_controller]
 }
 
 module "service" {
-  source = "./k8s/service"
+  source     = "./k8s/service"
   depends_on = [module.matchmaker, module.web_client]
 }
 

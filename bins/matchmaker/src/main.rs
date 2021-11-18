@@ -1,10 +1,13 @@
 use futures::{future, pin_mut, SinkExt, StreamExt, TryStreamExt};
-use k8s_openapi::api::core::v1::Pod;
 use kube::{
     api::{Api, ListParams, WatchEvent},
     Client,
 };
+use kube_derive::CustomResource;
 use mr_messages_lib::{MatchmakerMessage, Server};
+use schemars::JsonSchema;
+use serde::Deserializer;
+use serde_derive::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
@@ -21,6 +24,36 @@ use tokio_tungstenite::tungstenite::Message;
 #[derive(Clone, Default)]
 pub struct Servers {
     servers: std::sync::Arc<Mutex<HashMap<String, Server>>>,
+}
+
+#[derive(CustomResource, Debug, Serialize, Deserialize, Default, Clone, JsonSchema)]
+#[kube(group = "agones.dev", version = "v1", kind = "GameServer", namespaced)]
+#[kube(status = "GameServerStatus")]
+pub struct GameServerSpec {
+    container: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GameServerStatus {
+    state: String,
+    #[serde(deserialize_with = "deserialize_null_default")]
+    ports: Vec<GameServerPort>,
+    address: String,
+    node_name: String,
+    players: GameServerPlayerStatus,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, JsonSchema)]
+pub struct GameServerPort {
+    name: String,
+    port: u16,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, JsonSchema)]
+pub struct GameServerPlayerStatus {
+    count: u64,
+    capacity: u64,
 }
 
 impl Servers {
@@ -77,34 +110,34 @@ async fn main() {
 
     let servers = Servers::default();
     future::select(
-        tokio::spawn(watch_pods(tx.clone(), servers.clone())),
+        tokio::spawn(watch_game_servers(tx.clone(), servers.clone())),
         tokio::spawn(listen_websocket(tx, servers)),
     )
     .await;
 }
 
-async fn watch_pods(tx: Sender<MatchmakerMessage>, servers: Servers) {
+async fn watch_game_servers(tx: Sender<MatchmakerMessage>, servers: Servers) {
     log::info!("Starting k8s client...");
 
     let client = Client::try_default().await.unwrap();
-    let pods: Api<Pod> = Api::namespaced(client, "default");
+    let game_servers: Api<GameServer> = Api::namespaced(client, "default");
 
     let lp = ListParams::default().labels("app=mr_server").timeout(0);
-    let mut stream = pods
+    let mut stream = game_servers
         .watch(&lp, "0")
         .await
-        .expect("Failed to start watching pods")
+        .expect("Failed to start watching game servers")
         .boxed();
 
-    log::info!("Watching pod updates...");
+    log::info!("Watching GameServer updates...");
 
-    let initial_list = pods
+    let initial_list = game_servers
         .list(&lp)
         .await
-        .expect("Failed to get a list of running pods")
+        .expect("Failed to get a list of running game servers")
         .items
         .into_iter()
-        .filter_map(|pod| server_from_resource(&pod))
+        .filter_map(|gs| server_from_resource(&gs))
         .collect::<Vec<_>>();
     let list_len = initial_list.len();
     servers.init(initial_list).await;
@@ -119,7 +152,7 @@ async fn watch_pods(tx: Sender<MatchmakerMessage>, servers: Servers) {
         let message = match status {
             WatchEvent::Added(resource) => {
                 if let Some(server) = server_from_resource(&resource) {
-                    log::info!("New server: {:?}", server);
+                    log::info!("New server: {:?}", resource.status);
                     servers.add(server.clone()).await;
                     Some(MatchmakerMessage::ServerUpdated(server))
                 } else {
@@ -226,55 +259,64 @@ async fn handle_connection(
     log::info!("{} disconnected", addr);
 }
 
-fn server_from_resource(resource: &Pod) -> Option<Server> {
+fn server_from_resource(resource: &GameServer) -> Option<Server> {
     resource
-        .spec
+        .status
         .as_ref()
-        .and_then(|spec| {
-            spec.containers
-                .iter()
-                .find(|container| container.name == "mr-server")
-                .map(|container| {
-                    (
-                        resource
-                            .metadata
-                            .name
-                            .clone()
-                            .expect("Expected a name for a server"),
-                        container.clone(),
-                    )
-                })
-        })
-        .and_then(|(name, container)| {
-            let status = resource.status.as_ref().expect("Expected pod status");
-            if status.phase.as_deref() != Some("Running") {
-                log::warn!("Pod {} is not yet in the running state", name);
+        .and_then(|status: &GameServerStatus| {
+            let name = match &resource.metadata.name {
+                Some(name) => name.clone(),
+                None => {
+                    log::error!("GameServer doesn't have a name, skipping");
+                    return None;
+                }
+            };
+
+            if status.state != "Ready" {
+                log::info!(
+                    "GameServer {} is not in Ready state (current: {}), skipping",
+                    name,
+                    status.state
+                );
                 return None;
             }
 
-            let host_ip = match &status.host_ip {
-                Some(host_ip) => host_ip.parse::<IpAddr>().expect("Failed to parse host ip"),
-                None => {
-                    log::warn!("Host ip of {} pod is not yet allocated", name);
+            let ip_addr = match status.address.parse::<IpAddr>() {
+                Ok(ip) => ip,
+                Err(err) => {
+                    log::error!(
+                        "Skipping GameServer {} (failed to parse ip address '{}': {:?})",
+                        name,
+                        status.address,
+                        err
+                    );
                     return None;
                 }
             };
-            let port = match container.ports.and_then(|ports| {
-                ports
-                    .iter()
-                    .find(|port| port.protocol.as_deref() == Some("UDP"))
-                    .cloned()
-            }) {
-                Some(port) => port.host_port.expect("Expected a host_port"),
+            let GameServerPort { port, .. } = match status
+                .ports
+                .iter()
+                .find(|port| port.name == "MUDDLE_LISTEN_PORT-udp")
+                .cloned()
+            {
+                Some(port) => port,
                 None => {
-                    log::error!("Pod {} doesn't expose a UDP port", name);
+                    log::error!("GameServer {} doesn't expose a UDP port, skipping", name);
                     return None;
                 }
             };
-
             Some(Server {
                 name,
-                addr: SocketAddr::new(host_ip, port as u16),
+                addr: SocketAddr::new(ip_addr, port),
             })
         })
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    T: Default + serde::Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    let opt = <Option<_> as serde::Deserialize>::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
 }

@@ -29,6 +29,11 @@ resource "kubernetes_manifest" "mr_server_fleet" {
         type = "Recreate"
       }
       template = {
+        metadata = {
+          labels = {
+            app = "mr_server"
+          }
+        }
         spec = {
           ports = [
             {

@@ -1568,8 +1568,18 @@ version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d706e75d87e35569db781a9b5e2416cff1236a47ed380831f959382ccd5f858"
 dependencies = [
- "darling_core",
- "darling_macro",
+ "darling_core 0.10.2",
+ "darling_macro 0.10.2",
+]
+
+[[package]]
+name = "darling"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f2c43f534ea4b0b049015d00269734195e6d3f0f6635cb692251aca6f9f8b3c"
+dependencies = [
+ "darling_core 0.12.4",
+ "darling_macro 0.12.4",
 ]
 
 [[package]]
@@ -1582,7 +1592,21 @@ dependencies = [
  "ident_case",
  "proc-macro2",
  "quote",
- "strsim",
+ "strsim 0.9.3",
+ "syn",
+]
+
+[[package]]
+name = "darling_core"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e91455b86830a1c21799d94524df0845183fa55bafd9aa137b01c7d1065fa36"
+dependencies = [
+ "fnv",
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim 0.10.0",
  "syn",
 ]
 
@@ -1592,7 +1616,18 @@ version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9b5a2f4ac4969822c62224815d069952656cadc7084fdca9751e6d959189b72"
 dependencies = [
- "darling_core",
+ "darling_core 0.10.2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29b5acf0dea37a7f66f7b25d2c5e93fd46f8f6968b1a5d7a3e02e97768afc95a"
+dependencies = [
+ "darling_core 0.12.4",
  "quote",
  "syn",
 ]
@@ -1719,6 +1754,12 @@ name = "dtoa"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56899898ce76aaf4a0f24d914c97ea6ed976d42fec6ad33fcbb0a1103e07b2b0"
+
+[[package]]
+name = "dyn-clone"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee2626afccd7561a06cf1367e2950c4718ea04565e20fb5029b6c7d8ad09abcf"
 
 [[package]]
 name = "egui"
@@ -2886,9 +2927,9 @@ dependencies = [
 
 [[package]]
 name = "kube"
-version = "0.61.0"
+version = "0.60.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbaea4edf25bd83d77eebacd353bacd35d659678d57238aae07a8d739b26f1cd"
+checksum = "a0ae4dcb1a65182551922303a2d292b463513a6727db5ad980afbd32df7f3c16"
 dependencies = [
  "base64",
  "bytes 1.1.0",
@@ -2921,11 +2962,10 @@ dependencies = [
 
 [[package]]
 name = "kube-core"
-version = "0.61.0"
+version = "0.60.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa3021021480d7034e2cbe50bff9e8176e5ce33ddd6ba0c26ea9cfe310304c63"
+checksum = "04ccd59635e9b21353da8d4a394bb5d3473b5965ed44496c8f857281b0625ffe"
 dependencies = [
- "chrono",
  "form_urlencoded",
  "http",
  "json-patch",
@@ -2937,10 +2977,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "kube-runtime"
-version = "0.61.0"
+name = "kube-derive"
+version = "0.60.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b10dde88f05e8dc156d72736639476b62ae1bedf99680dc32556ac4de274a9ea"
+checksum = "e4191660b8e26f6e6cb06f21b5372bdbc2c76b54f7c3d65e7a8c8708f9c36ed5"
+dependencies = [
+ "darling 0.12.4",
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "syn",
+]
+
+[[package]]
+name = "kube-runtime"
+version = "0.60.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eec378b03890f9f2bfa9448a51aa0f6a4299f6bb2ed0d180330e628c7a395918"
 dependencies = [
  "dashmap",
  "derivative",
@@ -3323,12 +3376,16 @@ dependencies = [
  "futures",
  "k8s-openapi",
  "kube",
+ "kube-derive",
  "kube-runtime",
  "log",
  "mr_messages_lib",
  "mr_utils_lib",
  "rymder",
+ "schemars",
  "sentry",
+ "serde",
+ "serde_derive",
  "serde_json",
  "tokio 1.12.0",
  "tokio-tungstenite",
@@ -3626,7 +3683,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05d1c6307dc424d0f65b9b06e94f88248e6305726b14729fd67a5e47b2dc481d"
 dependencies = [
- "darling",
+ "darling 0.10.2",
  "proc-macro-crate 0.1.5",
  "proc-macro2",
  "quote",
@@ -4702,6 +4759,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "schemars"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "271ac0c667b8229adf70f0f957697c96fafd7486ab7481e15dc5e45e3e6a4368"
+dependencies = [
+ "dyn-clone",
+ "schemars_derive",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ebda811090b257411540779860bc09bf321bc587f58d2c5864309d1566214e7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn",
+]
+
+[[package]]
 name = "scoped-tls"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4867,6 +4948,17 @@ name = "serde_derive"
 version = "1.0.130"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7bc1a1ab1961464eae040d96713baa5a724a8152c1222492465b54322ec508b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "serde_derive_internals"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dbab34ca63057a1f15280bdf3c39f2b1eb1b54c17e98360e511637aef7418c6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5289,6 +5381,12 @@ name = "strsim"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6446ced80d6c486436db5c078dde11a9f73d42b57fb273121e160b84f63d894c"
+
+[[package]]
+name = "strsim"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "svg_fmt"
