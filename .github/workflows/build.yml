@@ -1,0 +1,83 @@
+on:
+  push:
+    branches: [main]
+
+name: Build
+
+jobs:
+  mr_matchmaker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: mr_matchmaker.dockerfile
+          push: true
+          tags: mvlabat/mr_matchmaker:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  mr_server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: mr_server.dockerfile
+          push: true
+          tags: mvlabat/mr_server:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  mr_web_client:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: mr_web_client.dockerfile
+          push: true
+          tags: mvlabat/mr_web_client:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            muddle_matchmaker_url=muddle.run:8080
