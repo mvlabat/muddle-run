@@ -96,3 +96,57 @@ a binary take higher priority.
     default one if your device can't handle 120 simulations per second.
   - **Note** that both the server and the client
     must be compiled with the same value.
+
+## Building docker images
+
+### mr_matchmaker
+
+```bash
+docker build -t mvlabat/mr_matchmaker -f mr_matchmaker.dockerfile . --platform linux/amd64
+```
+
+### mr_web_client
+
+```bash
+docker build -t mvlabat/mr_web_client --build-arg muddle_matchmaker_ip_addr=<IP> --build-arg muddle_matchmaker_port=<PORT> -f mr_web_client.dockerfile .  --platform linux/amd64
+```
+
+### mr_server
+
+```bash
+docker build -t mvlabat/mr_server -f mr_server.dockerfile . --platform linux/amd64
+```
+
+## DevOps
+
+### Prerequisites
+
+- [aws-cli](https://aws.amazon.com/cli/) (tested with 2.3.2)
+  - Make sure to [configure AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html): `aws configure` 
+- [kubectl](https://kubernetes.io/docs/tasks/tools/) (v1.21.0)
+- [helm](https://helm.sh/docs/intro/install/) (tested with v3.7.1)
+
+### Applying
+
+1. `terraform apply -target=module.eks_cluster`
+2. `aws eks --region <region-code> update-kubeconfig --name <cluster_name>`
+3. `terraform apply -target=module.helm_agones`
+   - Resources declared with `kubernetes_manifest` fail to plan without this helm release installed first
+4. `terraform apply`
+
+### Destroying
+
+- `terraform destroy -target=module.mathcmaker`
+- `terraform destroy -target=module.agones`
+- `helm delete agones -n agones-system && terraform destroy -target=module.helm_agones`
+- `terraform destroy -target=module.eks_cluster`
+
+### Updating deployment
+
+```bash
+kubectl set image deployment <DEPLOYMENT_NAME> <CONTAINER_NAME>=<TAG>
+```
+
+For example:
+
+- `kubectl set image deployment mr-matchmaker mr-matchmaker=mvlabat/mr_matchmaker`

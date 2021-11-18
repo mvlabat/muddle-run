@@ -5,3 +5,8 @@
 target
 pkg
 /bins/LICENSE
+
+# DevOps stuff
+.terraform
+terraform.tfvars
+terraform.tfstate*
