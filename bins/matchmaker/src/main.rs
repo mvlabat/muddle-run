@@ -137,7 +137,13 @@ async fn watch_game_servers(tx: Sender<MatchmakerMessage>, servers: Servers) {
         .expect("Failed to get a list of running game servers")
         .items
         .into_iter()
-        .filter_map(|gs| server_from_resource(&gs))
+        .filter_map(|gs| {
+            if let Some(ServerCommand::Update(server)) = server_command_from_resource(&gs) {
+                Some(server)
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>();
     let list_len = initial_list.len();
     servers.init(initial_list).await;
@@ -150,29 +156,36 @@ async fn watch_game_servers(tx: Sender<MatchmakerMessage>, servers: Servers) {
         .expect("Failed to read from the k8s stream")
     {
         let message = match status {
-            WatchEvent::Added(resource) => {
-                if let Some(server) = server_from_resource(&resource) {
-                    log::info!("New server: {:?}", resource.status);
-                    servers.add(server.clone()).await;
-                    Some(MatchmakerMessage::ServerUpdated(server))
-                } else {
-                    None
-                }
-            }
-            WatchEvent::Modified(resource) => {
-                if let Some(server) = server_from_resource(&resource) {
-                    log::info!("Server updated: {:?}", server);
-                    servers.add(server.clone()).await;
-                    Some(MatchmakerMessage::ServerUpdated(server))
+            WatchEvent::Added(resource) | WatchEvent::Modified(resource) => {
+                if let Some(server_command) = server_command_from_resource(&resource) {
+                    log::info!("Resource updated: {:?}", resource.status);
+                    match server_command {
+                        ServerCommand::Update(server) => {
+                            servers.add(server.clone()).await;
+                            Some(MatchmakerMessage::ServerUpdated(server))
+                        }
+                        ServerCommand::Delete(server_name) => {
+                            servers.remove(&server_name).await;
+                            Some(MatchmakerMessage::ServerRemoved(server_name))
+                        }
+                    }
                 } else {
                     None
                 }
             }
             WatchEvent::Deleted(resource) => {
-                if let Some(server) = server_from_resource(&resource) {
-                    log::info!("Server removed: {:?}", server);
-                    servers.remove(&server.name).await;
-                    Some(MatchmakerMessage::ServerRemoved(server.name))
+                if let Some(server_command) = server_command_from_resource(&resource) {
+                    log::info!("Resource deleted: {:?}", server_command);
+                    match server_command {
+                        ServerCommand::Update(server) => {
+                            servers.remove(&server.name).await;
+                            Some(MatchmakerMessage::ServerRemoved(server.name))
+                        }
+                        ServerCommand::Delete(server_name) => {
+                            servers.remove(&server_name).await;
+                            Some(MatchmakerMessage::ServerRemoved(server_name))
+                        }
+                    }
                 } else {
                     None
                 }
@@ -259,7 +272,13 @@ async fn handle_connection(
     log::info!("{} disconnected", addr);
 }
 
-fn server_from_resource(resource: &GameServer) -> Option<Server> {
+#[derive(Debug)]
+enum ServerCommand {
+    Update(Server),
+    Delete(String),
+}
+
+fn server_command_from_resource(resource: &GameServer) -> Option<ServerCommand> {
     resource
         .status
         .as_ref()
@@ -272,13 +291,13 @@ fn server_from_resource(resource: &GameServer) -> Option<Server> {
                 }
             };
 
-            if status.state != "Ready" {
+            if status.state != "Ready" && status.state != "Allocated" && status.state != "Reserved" {
                 log::info!(
-                    "GameServer {} is not in Ready state (current: {}), skipping",
+                    "GameServer {} is not in Ready, Allocated or Reserved state (current: {}), deleting",
                     name,
                     status.state
                 );
-                return None;
+                return Some(ServerCommand::Delete(name));
             }
 
             let ip_addr = match status.address.parse::<IpAddr>() {
@@ -305,10 +324,10 @@ fn server_from_resource(resource: &GameServer) -> Option<Server> {
                     return None;
                 }
             };
-            Some(Server {
+            Some(ServerCommand::Update(Server {
                 name,
                 addr: SocketAddr::new(ip_addr, port),
-            })
+            }))
         })
 }
 
