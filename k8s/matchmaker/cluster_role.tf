@@ -4,8 +4,8 @@ resource "kubernetes_cluster_role" "matchmaker_role" {
   }
 
   rule {
-    api_groups = [""]
-    resources  = ["pods"]
+    api_groups = ["agones.dev"]
+    resources  = ["gameservers"]
     verbs      = ["get", "watch", "list"]
   }
 }

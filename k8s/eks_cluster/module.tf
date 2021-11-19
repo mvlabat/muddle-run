@@ -80,6 +80,38 @@ module "vpc" {
   }
 }
 
+resource "aws_security_group" "game_server_worker_group" {
+  name_prefix = "game_server_worker_group"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port = 7000
+    to_port   = 8000
+    protocol  = "udp"
+
+    cidr_blocks = [
+      "0.0.0.0/0",
+    ]
+  }
+
+  ingress {
+    from_port = 7000
+    to_port   = 8000
+    protocol  = "tcp"
+
+    cidr_blocks = [
+      "0.0.0.0/0",
+    ]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
 module "eks" {
   source           = "git::github.com/terraform-aws-modules/terraform-aws-eks.git?ref=v17.22.0"
   cluster_name     = var.cluster_name
@@ -102,12 +134,13 @@ module "eks" {
       kubelet_extra_args = "--node-labels=node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle`"
     },
     {
-      name                    = "game-server-workers"
-      override_instance_types = ["c5a.large", "c5.large", "c4.large"]
-      asg_desired_capacity    = 1
-      asg_min_size            = 0
-      asg_max_size            = 3
-      public_ip               = true
+      name                          = "game-server-workers"
+      override_instance_types       = ["c5a.large", "c5.large", "c4.large"]
+      asg_desired_capacity          = 1
+      asg_min_size                  = 0
+      asg_max_size                  = 3
+      additional_security_group_ids = [aws_security_group.game_server_worker_group.id]
+      public_ip                     = true
 
       tags = [
         {
