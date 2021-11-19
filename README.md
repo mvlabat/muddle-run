@@ -135,7 +135,6 @@ docker build -t mvlabat/mr_server -f mr_server.dockerfile . --platform linux/amd
 
 ### Destroying
 
-- `terraform destroy -target=module.mathcmaker`
 - `terraform destroy -target=module.agones`
 - `helm delete agones -n agones-system && terraform destroy -target=module.helm_agones`
 - `terraform destroy -target=module.eks_cluster`

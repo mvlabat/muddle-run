@@ -1,6 +1,12 @@
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'k8s'
+      - '.rustfmt.toml'
+      - 'LICENSE'
+      - 'README.md'
+      - 'wasm-pack.dockerfile'
 
 name: Build and publish
 
