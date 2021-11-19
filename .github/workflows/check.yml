@@ -137,7 +137,7 @@ jobs:
           args: -p mr_server --features "use-udp" --release -- -D warnings
 
   mr_matchmaker:
-    name: Check mr_server
+    name: Check mr_matchmaker
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
