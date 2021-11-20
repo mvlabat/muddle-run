@@ -216,7 +216,7 @@ async fn watch_game_servers(tx: Sender<MatchmakerMessage>, servers: Servers) {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct FleetAutoscaleReview {
     request: FleetAutoscaleRequest,
-    response: FleetAutoscaleResponse,
+    response: Option<FleetAutoscaleResponse>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -292,11 +292,16 @@ async fn serve_webhook_service(tx: Sender<MatchmakerMessage>, servers: Servers) 
                 let total_capacity = servers.iter().map(|s| s.player_capacity).sum::<u16>() as u32;
 
                 let desired_replicas_count = active_players.unstable_div_ceil(total_capacity);
-                fleet_autoscale_review.response = FleetAutoscaleResponse {
+                fleet_autoscale_review.response = Some(FleetAutoscaleResponse {
                     uid: fleet_autoscale_review.request.uid.clone(),
                     scale: desired_replicas_count != fleet_autoscale_review.request.status.replicas,
                     replicas: desired_replicas_count,
-                };
+                });
+
+                log::info!(
+                    "Webhook response: {:?}",
+                    fleet_autoscale_review.response.as_ref().unwrap()
+                );
 
                 let body = serde_json::to_vec(&fleet_autoscale_review).unwrap();
                 Ok(hyper::Response::new(
