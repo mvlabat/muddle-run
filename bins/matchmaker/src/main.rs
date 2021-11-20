@@ -1,10 +1,14 @@
+#![feature(int_roundings)]
+#![feature(async_closure)]
+
+use future::FutureExt;
 use futures::{future, pin_mut, SinkExt, StreamExt, TryStreamExt};
 use kube::{
     api::{Api, ListParams, WatchEvent},
     Client,
 };
 use kube_derive::CustomResource;
-use mr_messages_lib::{MatchmakerMessage, Server};
+use mr_messages_lib::{MatchmakerMessage, Server, PLAYER_CAPACITY};
 use schemars::JsonSchema;
 use serde::Deserializer;
 use serde_derive::{Deserialize, Serialize};
@@ -109,11 +113,16 @@ async fn main() {
     drop(rx);
 
     let servers = Servers::default();
-    future::select(
-        tokio::spawn(watch_game_servers(tx.clone(), servers.clone())),
-        tokio::spawn(listen_websocket(tx, servers)),
-    )
-    .await;
+    let mut watch_game_servers =
+        tokio::spawn(watch_game_servers(tx.clone(), servers.clone())).fuse();
+    let mut serve_webhook_service =
+        tokio::spawn(serve_webhook_service(tx.clone(), servers.clone())).fuse();
+    let mut listen_websocket = tokio::spawn(listen_websocket(tx, servers)).fuse();
+    futures::select!(
+        _ = watch_game_servers => {},
+        _ = serve_webhook_service => {},
+        _ = listen_websocket => {},
+    );
 }
 
 async fn watch_game_servers(tx: Sender<MatchmakerMessage>, servers: Servers) {
@@ -200,6 +209,103 @@ async fn watch_game_servers(tx: Sender<MatchmakerMessage>, servers: Servers) {
         if let Some(message) = message {
             let _ = tx.send(message);
         }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct FleetAutoscaleReview {
+    request: FleetAutoscaleRequest,
+    response: FleetAutoscaleResponse,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct FleetAutoscaleRequest {
+    uid: String,
+    name: String,
+    namespace: String,
+    status: FleetStatus,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct FleetAutoscaleResponse {
+    uid: String,
+    scale: bool,
+    replicas: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct FleetStatus {
+    replicas: u32,
+    ready_replicas: u32,
+    reserved_replicas: u32,
+    allocated_replicas: u32,
+}
+
+async fn serve_webhook_service(tx: Sender<MatchmakerMessage>, servers: Servers) {
+    let make_svc = hyper::service::make_service_fn(move |_conn| {
+        fn bad_request() -> hyper::Response<hyper::Body> {
+            hyper::Response::builder()
+                .status(400)
+                .body(hyper::Body::empty())
+                .unwrap()
+        }
+
+        let tx = tx.clone();
+        let servers = servers.clone();
+
+        let serve = move |req: hyper::Request<hyper::Body>| {
+            let tx = tx.clone();
+            let servers = servers.clone();
+            async move {
+                let body = match hyper::body::aggregate(req).await {
+                    Ok(body) => body,
+                    Err(err) => {
+                        log::error!("Failed to read body: {:?}", err);
+                        return Ok::<_, std::convert::Infallible>(bad_request());
+                    }
+                };
+
+                use hyper::body::Buf;
+                let mut fleet_autoscale_review: FleetAutoscaleReview =
+                    match serde_json::from_reader(body.reader()) {
+                        Ok(request) => request,
+                        Err(err) => {
+                            log::error!("Failed to parse body: {:?}", err);
+                            return Ok(bad_request());
+                        }
+                    };
+
+                let servers = servers.all().await;
+                let active_players = tx.receiver_count() as u32
+                    + servers.iter().map(|s| s.player_count).sum::<u16>() as u32;
+                let total_capacity = servers.iter().map(|s| s.player_capacity).sum::<u16>() as u32;
+
+                let desired_replicas_count = active_players.unstable_div_ceil(total_capacity);
+                fleet_autoscale_review.response = FleetAutoscaleResponse {
+                    uid: fleet_autoscale_review.request.uid.clone(),
+                    scale: desired_replicas_count != fleet_autoscale_review.request.status.replicas,
+                    replicas: desired_replicas_count,
+                };
+
+                let body = serde_json::to_vec(&fleet_autoscale_review).unwrap();
+                Ok(hyper::Response::new(
+                    hyper::body::Bytes::copy_from_slice(&body).into(),
+                ))
+            }
+        };
+
+        async { Ok::<_, std::convert::Infallible>(hyper::service::service_fn(serve)) }
+    });
+
+    let addr = ([0, 0, 0, 0], 8081).into();
+
+    let server = hyper::Server::bind(&addr).serve(make_svc);
+
+    log::info!("Webhook is listening on http://{}", addr);
+
+    if let Err(err) = server.await {
+        log::error!("An error occurred while serving the webhook: {:?}", err);
     }
 }
 
@@ -327,6 +433,8 @@ fn server_command_from_resource(resource: &GameServer) -> Option<ServerCommand> 
             Some(ServerCommand::Update(Server {
                 name,
                 addr: SocketAddr::new(ip_addr, port),
+                player_capacity: PLAYER_CAPACITY,
+                player_count: 0,
             }))
         })
 }
