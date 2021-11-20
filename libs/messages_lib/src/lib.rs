@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
+pub const PLAYER_CAPACITY: u16 = 10;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MatchmakerMessage {
     /// Is sent when a client is connected, contains a list of active servers.
@@ -15,4 +17,6 @@ pub enum MatchmakerMessage {
 pub struct Server {
     pub name: String,
     pub addr: SocketAddr,
+    pub player_capacity: u16,
+    pub player_count: u16,
 }

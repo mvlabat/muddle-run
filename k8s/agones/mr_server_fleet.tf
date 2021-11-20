@@ -133,16 +133,19 @@ resource "kubernetes_manifest" "mr_server_fleet_autoscaler" {
     spec = {
       fleetName = "mr-server"
       policy = {
-        type = "Buffer"
-        buffer = {
-          bufferSize  = 1
-          maxReplicas = 6
+        type = "Webhook"
+        webhook = {
+          service = {
+            name      = "mr-autoscaler-webhook-service"
+            namespace = "default"
+            port      = 8081
+          }
         }
       }
       sync = {
         type = "FixedInterval"
         fixedInterval = {
-          seconds = 30
+          seconds = 5
         }
       }
     }

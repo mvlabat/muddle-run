@@ -9,7 +9,10 @@ resource "kubernetes_deployment" "mr_matchmaker" {
         service = "mr-matchmaker"
       }
     }
-    replicas = 2
+    # We can't have more replicas until we implement state sharing.
+    # To be able to serve the webhook autoscaler's endpoint correctly, we need to know how many clients there are
+    # connected to all the matchmaker replicas in total.
+    replicas = 1
     template {
       metadata {
         labels = {
@@ -24,7 +27,12 @@ resource "kubernetes_deployment" "mr_matchmaker" {
           image             = "mvlabat/mr_matchmaker:latest"
           image_pull_policy = "Always"
           port {
+            name           = "ws"
             container_port = 8080
+          }
+          port {
+            name           = "webhook"
+            container_port = 8081
           }
         }
       }
