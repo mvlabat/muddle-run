@@ -14,6 +14,7 @@ use serde::Deserializer;
 use serde_derive::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    io::Read,
     net::{IpAddr, SocketAddr},
 };
 use tokio::{
@@ -258,7 +259,15 @@ async fn serve_webhook_service(tx: Sender<MatchmakerMessage>, servers: Servers) 
             let tx = tx.clone();
             let servers = servers.clone();
             async move {
-                let body = match hyper::body::aggregate(req).await {
+                let json_string = match hyper::body::aggregate(req)
+                    .await
+                    .map_err(anyhow::Error::msg)
+                    .and_then(|body| {
+                        use hyper::body::Buf;
+                        let mut json_string = String::new();
+                        body.reader().read_to_string(&mut json_string)?;
+                        Ok(json_string)
+                    }) {
                     Ok(body) => body,
                     Err(err) => {
                         log::error!("Failed to read body: {:?}", err);
@@ -266,9 +275,10 @@ async fn serve_webhook_service(tx: Sender<MatchmakerMessage>, servers: Servers) 
                     }
                 };
 
-                use hyper::body::Buf;
+                log::info!("Incoming request: {}", json_string);
+
                 let mut fleet_autoscale_review: FleetAutoscaleReview =
-                    match serde_json::from_reader(body.reader()) {
+                    match serde_json::from_str(&json_string) {
                         Ok(request) => request,
                         Err(err) => {
                             log::error!("Failed to parse body: {:?}", err);
