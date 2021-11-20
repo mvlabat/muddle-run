@@ -130,7 +130,7 @@ pub fn init_level(
     if let Some(agones) = agones {
         let mut sdk = agones.sdk.clone();
         TOKIO.spawn(async move {
-            if let Err(err) = sdk.mark_ready().await {
+            if let Err(err) = sdk.allocate().await {
                 log::error!(
                     "Failed to mark the Game Server as ready, exiting: {:?}",
                     err
