@@ -355,7 +355,7 @@ async fn handle_connection(
     let ws_stream = match tokio_tungstenite::accept_async(stream).await {
         Ok(ws_stream) => ws_stream,
         Err(err) => {
-            log::error!("Error during the websocket handshake occurred: {:?}", err);
+            log::debug!("Error during the websocket handshake occurred: {:?}", err);
             return;
         }
     };
