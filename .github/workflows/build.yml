@@ -87,3 +87,4 @@ jobs:
           cache-to: type=registry,ref=mvlabat/mr_web_client:buildcache,mode=max
           build-args: |
             muddle_matchmaker_url=muddle.run:8080
+            sentry_dsn=${{ secrets.SENTRY_DSN_CLIENT }} # a client secret is not a secret really, but nvm :)
