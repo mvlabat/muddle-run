@@ -757,7 +757,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
- "uuid",
+ "uuid 0.8.1",
 ]
 
 [[package]]
@@ -807,7 +807,7 @@ dependencies = [
  "ron",
  "serde",
  "thiserror",
- "uuid",
+ "uuid 0.8.1",
 ]
 
 [[package]]
@@ -915,7 +915,7 @@ dependencies = [
  "getrandom 0.2.3",
  "instant",
  "tracing",
- "uuid",
+ "uuid 0.8.1",
 ]
 
 [[package]]
@@ -1649,7 +1649,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f91cf5a8c2f2097e2a32627123508635d47ce10563d999ec1a95addf08b502ba"
 dependencies = [
  "serde",
- "uuid",
+ "uuid 0.8.1",
 ]
 
 [[package]]
@@ -2275,7 +2275,7 @@ dependencies = [
  "fnv",
  "gilrs-core",
  "log",
- "uuid",
+ "uuid 0.8.1",
  "vec_map",
 ]
 
@@ -2293,7 +2293,7 @@ dependencies = [
  "nix 0.20.1",
  "rusty-xinput",
  "stdweb 0.4.20",
- "uuid",
+ "uuid 0.8.1",
  "vec_map",
  "winapi 0.3.9",
 ]
@@ -3426,6 +3426,7 @@ dependencies = [
  "rand 0.8.4",
  "rymder",
  "tokio 1.12.0",
+ "uuid 1.0.0-alpha.1",
 ]
 
 [[package]]
@@ -3448,6 +3449,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio 1.12.0",
 ]
 
 [[package]]
@@ -3464,7 +3466,7 @@ dependencies = [
  "console_log",
  "log",
  "mr_client_lib",
- "uuid",
+ "uuid 0.8.1",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -4923,7 +4925,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "url",
- "uuid",
+ "uuid 0.8.1",
 ]
 
 [[package]]
@@ -5985,6 +5987,16 @@ checksum = "9fde2f6a4bea1d6e007c4ad38c6839fa71cbb63b6dbf5b595aa38dc9b1093c11"
 dependencies = [
  "rand 0.7.3",
  "serde",
+]
+
+[[package]]
+name = "uuid"
+version = "1.0.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb3ab47baa004111b323696c6eaa2752e7356f7f77cf6b6dc7a2087368ce1ca4"
+dependencies = [
+ "getrandom 0.2.3",
+ "rand 0.8.4",
 ]
 
 [[package]]

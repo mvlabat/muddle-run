@@ -44,6 +44,8 @@ pub struct Agones {
     pub game_server: rymder::GameServer,
 }
 
+pub use mr_shared_lib::player::PlayerEvent;
+
 pub struct LastPlayerDisconnectedAt(pub Instant);
 
 pub struct IdleTimeout(pub Duration);

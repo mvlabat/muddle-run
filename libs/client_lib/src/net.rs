@@ -1149,7 +1149,10 @@ fn process_start_game_message(
     current_player_net_id.0 = Some(start_game.net_id);
     players.insert(
         start_game.net_id,
-        Player::new_with_nickname(PlayerRole::Runner, start_game.nickname),
+        Player {
+            uuid: start_game.uuid,
+            ..Player::new_with_nickname(PlayerRole::Runner, start_game.nickname)
+        },
     );
     update_params.game_time.session += 1;
     let rtt_frames = FrameNumber::new(

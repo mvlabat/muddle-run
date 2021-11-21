@@ -1,5 +1,5 @@
 use bevy::{app::App, log};
-use mr_server_lib::{try_parse_from_env, Agones, MuddleServerPlugin, TOKIO};
+use mr_server_lib::{try_parse_from_env, Agones, MuddleServerPlugin, PlayerEvent, TOKIO};
 use std::{ops::Deref, time::Duration};
 
 fn main() {
@@ -39,6 +39,8 @@ fn main() {
     std::thread::spawn(|| TOKIO.deref()).join().unwrap();
 
     let agones_sdk_grpc_port: Option<u16> = try_parse_from_env!("AGONES_SDK_GRPC_PORT");
+    let (player_tracking_tx, mut player_tracking_rx) =
+        tokio::sync::mpsc::unbounded_channel::<PlayerEvent>();
     let agones = agones_sdk_grpc_port.map(|grpc_port| {
         log::info!("Connecting to Agones...");
         TOKIO
@@ -48,6 +50,7 @@ fn main() {
                         .await?;
 
                 let mut watch_client = sdk.clone();
+                let mut player_tracking_client = sdk.clone();
 
                 if let Some(health_spec) = &game_server.health_spec {
                     let health_check = sdk.health_check();
@@ -63,6 +66,25 @@ fn main() {
                         }
                     });
                 }
+
+                tokio::spawn(async move {
+                    while let Some(player_event) = player_tracking_rx.recv().await {
+                        let result = match player_event {
+                            PlayerEvent::Connected(uuid) => {
+                                log::info!("Sending PlayerConnect event ({})...", uuid);
+                                player_tracking_client.player_connect(uuid).await
+                            }
+                            PlayerEvent::Disconnected(uuid) => {
+                                log::info!("Sending PlayerDisconnect event ({})...", uuid);
+                                player_tracking_client.player_disconnect(uuid).await
+                            }
+                        };
+                        if let Err(err) = result {
+                            log::error!("Failed to report a player event to Agones: {:?}", err);
+                        }
+                    }
+                    log::warn!("Player tracking channel is closed");
+                });
 
                 tokio::spawn(async move {
                     use rymder::futures_util::stream::StreamExt;
@@ -99,6 +121,7 @@ fn main() {
     let mut app_builder = App::build();
     if let Some(agones) = agones {
         app_builder.insert_resource(agones);
+        app_builder.insert_resource(player_tracking_tx);
     }
     app_builder.add_plugin(MuddleServerPlugin).run();
 }

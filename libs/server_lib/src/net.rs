@@ -20,7 +20,7 @@ use mr_shared_lib::{
         UnreliableClientMessage, UnreliableServerMessage,
     },
     net::{ConnectionState, ConnectionStatus, SessionId, CONNECTION_TIMEOUT_MILLIS},
-    player::{random_name, Player, PlayerRole},
+    player::{random_name, Player, PlayerEvent, PlayerRole},
     registry::{EntityRegistry, Registry},
     server::level_spawn_location_service::LevelSpawnLocationService,
     try_parse_from_env, GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
@@ -66,6 +66,7 @@ pub struct NetworkParams<'a> {
     player_connections: ResMut<'a, PlayerConnections>,
     new_player_connections: ResMut<'a, Vec<(PlayerNetId, u32)>>,
     last_player_disconnected_at: ResMut<'a, LastPlayerDisconnectedAt>,
+    players_tracking_channel: Option<ResMut<'a, tokio::sync::mpsc::Sender<PlayerEvent>>>,
 }
 
 pub fn process_network_events(
@@ -335,9 +336,22 @@ pub fn process_network_events(
                         .push((player_net_id, *handle));
 
                     let nickname = random_name();
+                    let uuid = uuid::Uuid::new_v4().to_string();
+                    if let Some(players_tracking_channel) =
+                        network_params.players_tracking_channel.as_mut()
+                    {
+                        if let Err(err) =
+                            players_tracking_channel.try_send(PlayerEvent::Connected(uuid.clone()))
+                        {
+                            log::error!("Failed to send PlayerEvent: {:?}", err);
+                        }
+                    }
                     players.insert(
                         player_net_id,
-                        Player::new_with_nickname(PlayerRole::Runner, nickname),
+                        Player {
+                            uuid,
+                            ..Player::new_with_nickname(PlayerRole::Runner, nickname)
+                        },
                     );
                     update_params
                         .spawn_player_commands
@@ -881,6 +895,7 @@ fn broadcast_start_game_messages(
         let message = ReliableServerMessage::StartGame(StartGame {
             handshake_id: connection_state.handshake_id,
             net_id: *connected_player_net_id,
+            uuid: connected_player.uuid.clone(),
             nickname: connected_player.nickname.clone(),
             objects: level_state
                 .objects
