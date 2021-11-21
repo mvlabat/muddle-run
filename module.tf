@@ -53,6 +53,16 @@ variable "region_account" {
   default = 602401143452
 }
 
+variable "hosted_zone_name" {
+  type    = string
+  default = ""
+}
+
+variable "record_name" {
+  type    = string
+  default = ""
+}
+
 provider "aws" {
   profile = "default"
   region  = var.region
@@ -126,6 +136,15 @@ module "web_client" {
 module "service" {
   source     = "./k8s/service"
   depends_on = [module.matchmaker, module.web_client]
+}
+
+module "route53" {
+  source     = "./k8s/route53"
+  depends_on = [module.service]
+  count      = min(length(var.hosted_zone_name), 1)
+
+  hosted_zone_name = var.hosted_zone_name
+  record_name      = var.record_name
 }
 
 # Comment this out if running for the first time (i.e. when `helm_agones` is not installed).
