@@ -1,6 +1,7 @@
 use bevy::{app::App, log};
 use mr_server_lib::{try_parse_from_env, Agones, MuddleServerPlugin, TOKIO};
 use std::{ops::Deref, time::Duration};
+use git_version::git_version;
 
 fn main() {
     env_logger::init();
@@ -30,8 +31,12 @@ fn main() {
         });
     }));
 
+    let release = sentry::release_name!().map(|name| name + "+" + git_version!());
+    if let Some(release) = &release {
+        log::info!("Release: {}", release);
+    }
     let _guard = sentry::init(sentry::ClientOptions {
-        release: sentry::release_name!(),
+        release,
         ..Default::default()
     });
 

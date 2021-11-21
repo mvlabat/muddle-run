@@ -1,11 +1,16 @@
 use bevy::prelude::*;
 use mr_client_lib::MuddleClientPlugin;
+use git_version::git_version;
 
 fn main() {
     env_logger::init();
 
+    let release = sentry::release_name!().map(|name| name + "+" + git_version!());
+    if let Some(release) = &release {
+        log::info!("Release: {}", release);
+    }
     let _guard = sentry::init(sentry::ClientOptions {
-        release: sentry::release_name!(),
+        release,
         ..Default::default()
     });
 
