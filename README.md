@@ -148,3 +148,5 @@ kubectl set image deployment <DEPLOYMENT_NAME> <CONTAINER_NAME>=<TAG>
 For example:
 
 - `kubectl set image deployment mr-matchmaker mr-matchmaker=mvlabat/mr_matchmaker`
+  - You can also alternate appending and removing `:latest` tag suffix, to trick kubernetes into redeploying
+    (otherwise it might think that the image is the same and won't pull its updated version).
