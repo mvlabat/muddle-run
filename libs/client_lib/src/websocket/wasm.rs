@@ -34,6 +34,12 @@ pub struct WebSocketStream {
     receiver: WebSocketReceiver,
 }
 
+impl Drop for WebSocketStream {
+    fn drop(&mut self) {
+        self.sender.close(None);
+    }
+}
+
 /// WebSocket sender. Also responsible for closing the connection.
 #[derive(Debug, Clone)]
 struct WebSocketSender {
@@ -90,10 +96,7 @@ impl WebSocketStream {
                 let _on_message_callback = {
                     let sender = sender.clone();
                     let _on_message_callback = Closure::wrap(Box::new(move |e: MessageEvent| {
-                        let sender = sender.clone();
-                        spawn_local(async move {
-                            sender.send(e.try_into()).ok();
-                        })
+                        sender.send(e.try_into()).ok();
                     })
                         as Box<dyn FnMut(MessageEvent)>);
                     websocket.set_onmessage(Some(_on_message_callback.as_ref().unchecked_ref()));
@@ -101,7 +104,9 @@ impl WebSocketStream {
                 };
                 // Close event.
                 let _on_close_callback = Closure::wrap(Box::new(move |_e: CloseEvent| {
-                    // TODO: close.
+                    sender
+                        .send(Err(anyhow::Error::msg("Connection closed normally")))
+                        .ok();
                 })
                     as Box<dyn FnMut(CloseEvent)>);
                 websocket.set_onclose(Some(_on_close_callback.as_ref().unchecked_ref()));
@@ -122,13 +127,12 @@ impl WebSocketStream {
 
 impl WebSocketSender {
     /// Attempts to close the connection and returns `SendError` if it fails.
-    pub async fn close(&mut self, message: Option<super::CloseFrame<'_>>) -> Result<(), ()> {
+    pub fn close(&mut self, message: Option<super::CloseFrame<'_>>) -> Result<(), ()> {
         self.send(&super::Message::Close(message.map(|msg| msg.into_owned())))
-            .await
     }
 
     /// Attempts to send a message and returns `SendError` if it fails.
-    pub async fn send(&mut self, message: &super::Message) -> Result<(), ()> {
+    pub fn send(&mut self, message: &super::Message) -> Result<(), ()> {
         if self.websocket.ready_state() == web_sys::WebSocket::OPEN {
             match message {
                 super::Message::Text(text) => self.websocket.send_with_str(text).map_err(|_| ()),
