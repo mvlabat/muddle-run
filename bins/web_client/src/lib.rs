@@ -4,8 +4,6 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
 pub fn main() {
-    // TODO: sentry support (track https://github.com/getsentry/sentry-rust/issues/226).
-
     App::build()
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(bevy_webgl2::DefaultPlugins)

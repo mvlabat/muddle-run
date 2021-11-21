@@ -10,8 +10,6 @@ edition = "2018"
 mr_client_lib = { path = "../../libs/client_lib", features = ["use-udp", "profiler"] }
 
 env_logger = "0.8.1"
-git-version = "0.3.5"
-log = "0.4.14"
 sentry = "0.21.0"
 
 [dependencies.bevy]
