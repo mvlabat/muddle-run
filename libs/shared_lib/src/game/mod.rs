@@ -221,7 +221,7 @@ pub fn switch_player_role(
 pub fn remove_disconnected_players(
     player_entities: Res<EntityRegistry<PlayerNetId>>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
-    mut players_tracking_channel: Option<ResMut<tokio::sync::mpsc::Sender<PlayerEvent>>>,
+    mut players_tracking_channel: Option<ResMut<tokio::sync::mpsc::UnboundedSender<PlayerEvent>>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -229,12 +229,12 @@ pub fn remove_disconnected_players(
         let remove = !player.is_connected && player_entities.get_entity(*player_net_id).is_none();
         if remove {
             log::info!("Player {} is disconnected and removed", player_net_id.0);
-        }
-        if let Some(players_tracking_channel) = players_tracking_channel.as_mut() {
-            if let Err(err) =
-                players_tracking_channel.try_send(PlayerEvent::Disconnected(player.uuid.clone()))
-            {
-                log::error!("Failed to send PlayerEvent: {:?}", err);
+            if let Some(players_tracking_channel) = players_tracking_channel.as_mut() {
+                if let Err(err) =
+                    players_tracking_channel.send(PlayerEvent::Disconnected(player.uuid.clone()))
+                {
+                    log::error!("Failed to send PlayerEvent: {:?}", err);
+                }
             }
         }
         remove

@@ -66,7 +66,7 @@ pub struct NetworkParams<'a> {
     player_connections: ResMut<'a, PlayerConnections>,
     new_player_connections: ResMut<'a, Vec<(PlayerNetId, u32)>>,
     last_player_disconnected_at: ResMut<'a, LastPlayerDisconnectedAt>,
-    players_tracking_channel: Option<ResMut<'a, tokio::sync::mpsc::Sender<PlayerEvent>>>,
+    players_tracking_channel: Option<ResMut<'a, tokio::sync::mpsc::UnboundedSender<PlayerEvent>>>,
 }
 
 pub fn process_network_events(
@@ -341,7 +341,7 @@ pub fn process_network_events(
                         network_params.players_tracking_channel.as_mut()
                     {
                         if let Err(err) =
-                            players_tracking_channel.try_send(PlayerEvent::Connected(uuid.clone()))
+                            players_tracking_channel.send(PlayerEvent::Connected(uuid.clone()))
                         {
                             log::error!("Failed to send PlayerEvent: {:?}", err);
                         }
