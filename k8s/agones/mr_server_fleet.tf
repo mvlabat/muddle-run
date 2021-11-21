@@ -111,6 +111,17 @@ resource "kubernetes_manifest" "mr_server_fleet" {
                       cpu    = "500m"
                     }
                   }
+                  env = [
+                    {
+                      name = "SENTRY_DSN"
+                      valueFrom = {
+                        secretKeyRef = {
+                          name = "sentry-dsn"
+                          key  = "server"
+                        }
+                      }
+                    }
+                  ]
                 }
               ]
             }

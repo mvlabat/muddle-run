@@ -34,6 +34,15 @@ resource "kubernetes_deployment" "mr_matchmaker" {
             name           = "webhook"
             container_port = 8081
           }
+          env {
+            name = "SENTRY_DSN"
+            value_from {
+              secret_key_ref {
+                name = "sentry-dsn"
+                key  = "matchmaker"
+              }
+            }
+          }
         }
       }
     }

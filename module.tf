@@ -63,6 +63,18 @@ variable "record_name" {
   default = ""
 }
 
+variable "sentry_dsn_server" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "sentry_dsn_matchmaker" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
 provider "aws" {
   profile = "default"
   region  = var.region
@@ -100,6 +112,16 @@ provider "kubernetes" {
   }
 }
 
+resource "kubernetes_secret" "sentry_dsn" {
+  metadata {
+    name = "sentry-dsn"
+  }
+  data = {
+    server     = var.sentry_dsn_server
+    matchmaker = var.sentry_dsn_matchmaker
+  }
+}
+
 variable "log_level" {
   default = "info"
 }
@@ -125,7 +147,7 @@ module "aws_autoscaler" {
 
 module "matchmaker" {
   source     = "./k8s/matchmaker"
-  depends_on = [module.aws_load_balancer_controller, module.helm_agones]
+  depends_on = [module.aws_load_balancer_controller, module.helm_agones, kubernetes_secret.sentry_dsn]
 }
 
 module "web_client" {
@@ -150,7 +172,7 @@ module "route53" {
 # Comment this out if running for the first time (i.e. when `helm_agones` is not installed).
 module "agones" {
   source     = "./k8s/agones"
-  depends_on = [module.eks_cluster, module.helm_agones]
+  depends_on = [module.eks_cluster, module.helm_agones, kubernetes_secret.sentry_dsn]
 }
 
 // Next Helm module cause "terraform destroy" timeout, unless helm release would be deleted first.
