@@ -11,6 +11,12 @@ use bevy::{
 };
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug)]
+pub enum PlayerEvent {
+    Connected(String),
+    Disconnected(String),
+}
+
 #[derive(SystemParam)]
 pub struct PlayerSystemParamsMut<'a> {
     pub players: ResMut<'a, HashMap<PlayerNetId, Player>>,
@@ -73,6 +79,7 @@ impl PlayerUpdates {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Player {
+    pub uuid: String,
     pub nickname: String,
     pub role: PlayerRole,
     pub respawning_at: Option<(FrameNumber, RespawnPlayerReason)>,
@@ -84,6 +91,7 @@ pub struct Player {
 impl Player {
     pub fn new(role: PlayerRole) -> Player {
         Player {
+            uuid: String::new(),
             nickname: "?".to_owned(),
             role,
             respawning_at: None,
@@ -95,6 +103,7 @@ impl Player {
 
     pub fn new_with_nickname(role: PlayerRole, nickname: String) -> Player {
         Player {
+            uuid: String::new(),
             nickname,
             role,
             respawning_at: None,

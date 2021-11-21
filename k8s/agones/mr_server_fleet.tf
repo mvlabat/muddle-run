@@ -69,13 +69,6 @@ resource "kubernetes_manifest" "mr_server_fleet" {
             grpcPort = 9357
             httpPort = 9358
           }
-          # [Stage:Alpha]
-          # [FeatureFlag:PlayerTracking]
-          # Players provides the configuration for player tracking features.
-          # Commented out since Alpha, and disabled by default
-          # players:
-          #   # set this GameServer's initial player capacity
-          #   initialCapacity: 10
           # Pod template configuration
           # https://v1-20.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#podtemplate-v1-core
           template = {

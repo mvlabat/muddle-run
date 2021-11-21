@@ -14,6 +14,7 @@ use crate::{
     },
 };
 use bevy::{core::FixedTimestep, log, prelude::*, utils::HashMap};
+use mr_messages_lib::PLAYER_CAPACITY;
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -43,6 +44,8 @@ pub struct Agones {
     pub sdk: rymder::Sdk,
     pub game_server: rymder::GameServer,
 }
+
+pub use mr_shared_lib::player::PlayerEvent;
 
 pub struct LastPlayerDisconnectedAt(pub Instant);
 
@@ -133,6 +136,13 @@ pub fn init_level(
             if let Err(err) = sdk.allocate().await {
                 log::error!(
                     "Failed to mark the Game Server as ready, exiting: {:?}",
+                    err
+                );
+                std::process::exit(1);
+            }
+            if let Err(err) = sdk.set_player_capacity(PLAYER_CAPACITY as u64).await {
+                log::error!(
+                    "Failed to set Game Server player capacity, exiting: {:?}",
                     err
                 );
                 std::process::exit(1);

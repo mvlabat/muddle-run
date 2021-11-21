@@ -10,3 +10,4 @@ pkg
 .terraform
 terraform.tfvars
 terraform.tfstate*
+.terraform.tfstate.lock.info

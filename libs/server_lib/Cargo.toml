@@ -20,6 +20,7 @@ puffin = { version = "0.8.1", optional = true }
 rand = "0.8.4"
 rymder = "0.2.2"
 tokio = "1.12.0"
+uuid = { version = "1.0.0-alpha.1", features = ["v4", "fast-rng"] }
 
 [dependencies.bevy]
 version = "0.5"
@@ -28,6 +29,10 @@ default-features = false
 [dependencies.bevy_networking_turbulence]
 version = "0.3.3"
 default-features = false
+
+[dependencies.mr_messages_lib]
+version = "*"
+path = "../messages_lib"
 
 [dependencies.mr_shared_lib]
 version = "*"

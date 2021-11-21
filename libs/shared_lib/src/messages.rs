@@ -135,6 +135,7 @@ pub struct StartGame {
     /// Correlates to a handshake id of a client's request.
     pub handshake_id: MessageId,
     pub net_id: PlayerNetId,
+    pub uuid: String,
     pub nickname: String,
     pub objects: Vec<commands::UpdateLevelObject>,
     pub players: Vec<(PlayerNetId, Player)>,
