@@ -118,11 +118,6 @@ pub fn spawn_players(
                     (),
                 );
             }
-
-            #[cfg(feature = "client")]
-            if command.is_player_frame_simulated {
-                entity_commands.insert(PlayerFrameSimulated);
-            }
             spawned.push_command(time.server_frame, SpawnCommand::Spawn);
 
             continue;
@@ -197,6 +192,14 @@ pub fn spawn_players(
                 frames_ahead + 1,
             ))
             .insert(Spawned::new(time.server_frame));
+        #[cfg(feature = "client")]
+        if command.is_player_frame_simulated {
+            log::debug!(
+                "Tagging player ({}) entity as PlayerFrameSimulated",
+                command.net_id.0
+            );
+            entity_commands.insert(PlayerFrameSimulated);
+        }
         entity_commands.insert(PlayerSensors {
             main: PlayerSensorState::default(),
             sensors,

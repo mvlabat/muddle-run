@@ -1050,10 +1050,9 @@ fn process_delta_update_message(
             update_params.spawn_player_commands.push(SpawnPlayer {
                 net_id: player_state.net_id,
                 start_position: player_state.position,
-                is_player_frame_simulated: current_player_net_id
-                    .map_or(false, |current_player_net_id| {
-                        current_player_net_id == player_state.net_id
-                    }),
+                is_player_frame_simulated: current_player_net_id.expect(
+                    "Processing delta updates isn't expected before processing StartGame message",
+                ) == player_state.net_id,
             });
             players
                 .entry(player_state.net_id)
