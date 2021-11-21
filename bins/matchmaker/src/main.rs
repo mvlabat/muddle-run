@@ -304,7 +304,8 @@ async fn serve_webhook_service(tx: Sender<MatchmakerMessage>, servers: Servers) 
                 });
 
                 log::info!(
-                    "Webhook response: {:?}",
+                    "Webhook response (active players: {}): {:?}",
+                    active_players,
                     fleet_autoscale_review.response.as_ref().unwrap()
                 );
 
