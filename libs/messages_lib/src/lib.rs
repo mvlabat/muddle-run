@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
-pub const PLAYER_CAPACITY: u16 = 10;
+pub const PLAYER_CAPACITY: u16 = 5;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MatchmakerMessage {

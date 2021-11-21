@@ -30,6 +30,10 @@ default-features = false
 version = "0.3.3"
 default-features = false
 
+[dependencies.mr_messages_lib]
+version = "*"
+path = "../messages_lib"
+
 [dependencies.mr_shared_lib]
 version = "*"
 path = "../shared_lib"

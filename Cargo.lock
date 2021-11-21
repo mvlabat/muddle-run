@@ -3421,6 +3421,7 @@ dependencies = [
  "bevy_rapier2d",
  "chrono",
  "env_logger 0.8.4",
+ "mr_messages_lib",
  "mr_shared_lib",
  "puffin",
  "rand 0.8.4",
