@@ -105,6 +105,11 @@ async fn main() {
         });
     }));
 
+    let _guard = sentry::init(sentry::ClientOptions {
+        release: sentry::release_name!(),
+        ..Default::default()
+    });
+
     let mut builder = env_logger::Builder::from_default_env();
     builder.filter_level(log::LevelFilter::Info).init();
 
