@@ -350,7 +350,7 @@ async fn handle_connection(
     mut rx: Receiver<MatchmakerMessage>,
     servers: Servers,
 ) {
-    log::info!("Incoming TCP connection from: {}", addr);
+    log::debug!("Incoming TCP connection from: {}", addr);
 
     let ws_stream = match tokio_tungstenite::accept_async(stream).await {
         Ok(ws_stream) => ws_stream,
@@ -453,8 +453,8 @@ fn server_command_from_resource(resource: &GameServer) -> Option<ServerCommand> 
             Some(ServerCommand::Update(Server {
                 name,
                 addr: SocketAddr::new(ip_addr, port),
-                player_capacity: PLAYER_CAPACITY,
-                player_count: 0,
+                player_capacity: status.players.capacity as u16,
+                player_count: status.players.count as u16,
             }))
         })
 }
