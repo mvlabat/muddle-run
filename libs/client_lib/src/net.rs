@@ -78,7 +78,6 @@ pub enum TcpConnectionStatus {
 }
 
 pub struct MatchmakerState {
-    pub servers: Vec<Server>,
     pub status: TcpConnectionStatus,
 }
 
@@ -116,7 +115,6 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
         message_rx,
     });
     commands.insert_resource(MatchmakerState {
-        servers: Vec::new(),
         status: TcpConnectionStatus::Disconnected,
     });
 }
