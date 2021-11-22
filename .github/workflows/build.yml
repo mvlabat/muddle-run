@@ -10,6 +10,10 @@ on:
 
 name: Build and publish
 
+concurrency:
+  group: Build
+  cancel-in-progress: true
+
 jobs:
   mr_matchmaker:
     runs-on: ubuntu-latest
@@ -32,7 +36,7 @@ jobs:
           context: .
           file: mr_matchmaker.dockerfile
           push: true
-          tags: mvlabat/mr_matchmaker:latest
+          tags: mvlabat/mr_matchmaker:latest,mvlabat/mr_matchmaker:${{ github.sha }}
           cache-from: type=registry,ref=mvlabat/mr_matchmaker:buildcache
           cache-to: type=registry,ref=mvlabat/mr_matchmaker:buildcache,mode=max
 
@@ -57,7 +61,7 @@ jobs:
           context: .
           file: mr_server.dockerfile
           push: true
-          tags: mvlabat/mr_server:latest
+          tags: mvlabat/mr_server:latest,mvlabat/mr_server:${{ github.sha }}
           cache-from: type=registry,ref=mvlabat/mr_server:buildcache
           cache-to: type=registry,ref=mvlabat/mr_server:buildcache,mode=max
 
@@ -82,9 +86,34 @@ jobs:
           context: .
           file: mr_web_client.dockerfile
           push: true
-          tags: mvlabat/mr_web_client:latest
+          tags: mvlabat/mr_web_client:latest,mvlabat/mr_web_client:${{ github.sha }}
           cache-from: type=registry,ref=mvlabat/mr_web_client:buildcache
           cache-to: type=registry,ref=mvlabat/mr_web_client:buildcache,mode=max
           build-args: |
             muddle_matchmaker_url=muddle.run:8080
             sentry_dsn=${{ secrets.SENTRY_DSN_CLIENT }} # a client secret is not a secret really, but nvm :)
+
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    needs: [mr_matchmaker, mr_server, mr_web_client]
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Configure kubectl
+        run: echo ${{ secrets.KUBE_CONFIG_DATA }} | base64 -d > /tmp/kube_config
+
+      - name: Deploy mr_matchmaker
+        env:
+          KUBECONFIG: /tmp/kube_config
+        run: kubectl set image deployment mr-matchmaker mr-matchmaker=mvlabat/mr_matchmaker:${{ github.sha }}
+
+      - name: Deploy mr_web_client
+        env:
+          KUBECONFIG: /tmp/kube_config
+        run: kubectl set image deployment mr-web-client mr-web-client=mvlabat/mr_web_client:${{ github.sha }}
