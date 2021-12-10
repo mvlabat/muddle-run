@@ -22,10 +22,12 @@ COPY bins/desktop_client/Cargo.toml bins/desktop_client/
 COPY bins/server/Cargo.toml bins/server/
 COPY bins/web_client/Cargo.toml bins/web_client/
 COPY bins/matchmaker/Cargo.toml bins/matchmaker/
+COPY bins/persistence/Cargo.toml bins/persistence/
 COPY libs/docker_dummy/src/lib.rs bins/desktop_client/src/main.rs
 COPY libs/docker_dummy/src/lib.rs bins/server/src/main.rs
 COPY libs/docker_dummy/src/lib.rs bins/web_client/src/lib.rs
 COPY libs/docker_dummy/src/lib.rs bins/matchmaker/src/main.rs
+COPY libs/docker_dummy/src/lib.rs bins/persistence/src/main.rs
 
 WORKDIR /usr/src/muddle-run/bins/server
 RUN cargo build --release --features "use-webrtc"

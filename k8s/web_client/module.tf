@@ -9,7 +9,7 @@ resource "kubernetes_deployment" "mr_web_client" {
         service = "mr-web-client"
       }
     }
-    replicas = 2
+    replicas = 1
     template {
       metadata {
         labels = {

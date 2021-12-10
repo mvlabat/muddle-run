@@ -21,7 +21,7 @@ kube-runtime = "0.60.0"
 log = "0.4.14"
 k8s-openapi = { version = "0.13.1", default-features = false, features = ["v1_20"] }
 rymder = "0.2.2"
-sentry = "0.21.0"
+sentry = "0.23.0"
 serde = "1.0.68"
 serde_derive = "1.0.68"
 serde_json = "1.0.68"

@@ -1,3 +1,6 @@
+#![feature(let_else)]
+#![feature(slice_pattern)]
+
 use crate::{
     camera::{move_free_camera_pivot, reattach_camera},
     components::{CameraPivotDirection, CameraPivotTag},
@@ -130,7 +133,7 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::inspect_object.system())
             .add_system(ui::player_ui::leaderboard_ui.system())
             .add_system(ui::player_ui::help_ui.system())
-            .add_system(ui::matchmaker_ui::matchmaker_ui.system())
+            .add_system(ui::main_menu_ui::matchmaker_ui.system())
             // Not only Egui for builder mode.
             .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))
             // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.

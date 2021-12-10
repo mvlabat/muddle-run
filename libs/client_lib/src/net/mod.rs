@@ -7,6 +7,7 @@ use crate::{
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashMap};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
+use core::slice::SlicePattern;
 use futures::{select, FutureExt, StreamExt, TryStreamExt};
 use mr_messages_lib::{MatchmakerMessage, Server};
 use mr_shared_lib::{
@@ -32,6 +33,8 @@ use mr_shared_lib::{
     simulations_per_second, try_parse_from_env, GameTime, SimulationTime,
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
+use rand::{thread_rng, Rng};
+use serde::{Deserialize, Serialize};
 use std::{
     future::Future,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -41,6 +44,22 @@ use tokio::sync::mpsc::{
 };
 use url::Url;
 
+// The code is definitely read. A clippy bug?
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct OAuthResponse {
+    state: String,
+    code: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+mod redirect_uri_server;
+
+#[cfg(target_arch = "wasm32")]
+mod listen_local_storage;
+
+const CODE_VERIFIER_CHARS: &[u8] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-.~_";
 const DEFAULT_SERVER_PORT: u16 = 3455;
 const DEFAULT_SERVER_IP_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
@@ -70,6 +89,58 @@ pub struct NetworkParams<'a> {
     connection_state: ResMut<'a, ConnectionState>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AuthCodeRequest {
+    client_id: String,
+    scope: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthRequestParams {
+    client_id: String,
+    redirect_uri: String,
+    response_type: String,
+    scope: String,
+    code_challenge: String,
+    code_challenge_method: String,
+    state: String,
+    access_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuthCodeResponse {
+    device_code: String,
+    expires_in: u64,
+    interval: u64,
+    user_code: String,
+    verification_url: String,
+}
+
+#[derive(Debug)]
+pub struct AuthCodeErrorResponse {
+    error_code: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthTokenRequest {
+    client_id: String,
+    client_secret: Option<String>,
+    code: String,
+    code_verifier: String,
+    grant_type: String,
+    redirect_uri: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuthTokenResponse {
+    access_token: String,
+    expires_in: u64,
+    refresh_token: String,
+    scope: String,
+    token_type: String,
+    id_token: String,
+}
+
 #[derive(Debug)]
 pub enum TcpConnectionStatus {
     Disconnected,
@@ -81,10 +152,34 @@ pub struct MatchmakerState {
     pub status: TcpConnectionStatus,
 }
 
-pub struct MatchmakerChannels {
+#[derive(Debug)]
+pub enum AuthRequest {
+    PasswordSignIn { username: String, password: String },
+    RedirectUrlServerPort(u16),
+    RequestGoogleAuth,
+    HandleOAuthResponse { state: String, code: String },
+}
+
+#[derive(Debug)]
+pub enum AuthMessage {
+    RedirectUrlServerIsReady,
+    Success,
+    WrongPasswordError,
+    UnavailableError,
+}
+
+pub struct MainMenuUiChannels {
+    pub auth_request_tx: UnboundedSender<AuthRequest>,
+    pub auth_message_rx: UnboundedReceiver<AuthMessage>,
     pub connection_request_tx: UnboundedSender<bool>,
     pub status_rx: UnboundedReceiver<TcpConnectionStatus>,
-    pub message_rx: UnboundedReceiver<MatchmakerMessage>,
+    pub matchmaker_message_rx: UnboundedReceiver<MatchmakerMessage>,
+}
+
+pub struct AuthConfig {
+    pub google_client_id: String,
+    // Google OAuth requires it for desktop clients.
+    pub google_client_secret: Option<String>,
 }
 
 pub struct ServerToConnect(pub Server);
@@ -97,22 +192,69 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
         }
     };
 
+    let auth_config = AuthConfig {
+        google_client_id: google_client_id().expect("Expected MUDDLE_GOOGLE_CLIENT_ID"),
+        google_client_secret: google_client_secret(),
+    };
+    if cfg!(not(target_arch = "wasm32")) {
+        auth_config
+            .google_client_secret
+            .as_ref()
+            .expect("Expected MUDDLE_GOOGLE_CLIENT_SECRET");
+    }
+
     log::info!("Matchmaker address: {}", url);
 
+    let (auth_request_tx, auth_request_rx) = unbounded_channel();
+    let (auth_message_tx, auth_message_rx) = unbounded_channel();
     let (connection_request_tx, connection_request_rx) = unbounded_channel();
     let (status_tx, status_rx) = unbounded_channel();
-    let (message_tx, message_rx) = unbounded_channel();
+    let (matchmaker_message_tx, matchmaker_message_rx) = unbounded_channel();
     let url = url::Url::parse(&format!("ws://{}", url)).unwrap();
 
-    run_async(
-        async move { serve_connection(&url, connection_request_rx, status_tx, message_tx).await },
-    );
+    let auth_request_tx_clone = auth_request_tx.clone();
+    run_async(async move {
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut serve_redirect_uri_future =
+            tokio::task::spawn_local(redirect_uri_server::serve(auth_request_tx_clone.clone()))
+                .fuse();
+        #[cfg(target_arch = "wasm32")]
+        let mut serve_redirect_uri_future =
+            tokio::task::spawn_local(listen_local_storage::serve(auth_request_tx_clone.clone()))
+                .fuse();
+        let mut serve_auth_future = tokio::task::spawn_local(serve_auth_requests(
+            auth_config,
+            auth_request_rx,
+            auth_message_tx,
+        ))
+        .fuse();
+        let mut serve_matchmaker_future = tokio::task::spawn_local(serve_matchmaker_connection(
+            url,
+            connection_request_rx,
+            status_tx,
+            matchmaker_message_tx,
+        ))
+        .fuse();
+        select! {
+            _ = serve_redirect_uri_future => {
+                log::warn!("Redirect uri server task finished");
+            },
+            _ = serve_auth_future => {
+                log::warn!("Auth task finished");
+            },
+            _ = serve_matchmaker_future => {
+                log::warn!("Matchmaker task finished");
+            },
+        }
+    });
 
     connection_request_tx.send(true).unwrap();
-    commands.insert_resource(MatchmakerChannels {
+    commands.insert_resource(MainMenuUiChannels {
+        auth_request_tx,
+        auth_message_rx,
         connection_request_tx,
         status_rx,
-        message_rx,
+        matchmaker_message_rx,
     });
     commands.insert_resource(MatchmakerState {
         status: TcpConnectionStatus::Disconnected,
@@ -156,11 +298,11 @@ where
     });
 }
 
-async fn serve_connection(
-    url: &Url,
+async fn serve_matchmaker_connection(
+    url: Url,
     mut connection_request_rx: UnboundedReceiver<bool>,
     status_tx: UnboundedSender<TcpConnectionStatus>,
-    message_tx: UnboundedSender<MatchmakerMessage>,
+    matchmaker_message_tx: UnboundedSender<MatchmakerMessage>,
 ) {
     let mut current_state = false;
 
@@ -183,7 +325,7 @@ async fn serve_connection(
         if connect {
             log::info!("Connecting to the matchmaker service...");
             let _ = status_tx.send(TcpConnectionStatus::Connecting);
-            let message_tx = message_tx.clone();
+            let message_tx = matchmaker_message_tx.clone();
             let url = url.clone();
             let ws_status_tx = status_tx.clone();
             let disconnect_request_channel = tokio::sync::oneshot::channel();
@@ -206,6 +348,167 @@ async fn serve_connection(
         current_state = connect;
     }
     panic!("Failed to read from a channel (matchmaker connection request");
+}
+
+async fn serve_auth_requests(
+    auth_config: AuthConfig,
+    mut auth_request_rx: UnboundedReceiver<AuthRequest>,
+    auth_message_tx: UnboundedSender<AuthMessage>,
+) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut redirect_uri_server_port: Option<u16> = None;
+    let mut req_state_token = None;
+    let mut req_code_verifier = None;
+    let mut req_redirect_uri = None;
+
+    loop {
+        match auth_request_rx.recv().await {
+            Some(AuthRequest::PasswordSignIn { .. }) => unimplemented!(),
+            Some(AuthRequest::RedirectUrlServerPort(_port)) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    redirect_uri_server_port = Some(_port);
+                }
+                auth_message_tx
+                    .send(AuthMessage::RedirectUrlServerIsReady)
+                    .expect("Failed to send an auth update");
+            }
+            Some(AuthRequest::RequestGoogleAuth) => {
+                req_state_token = Some(state_token());
+                let (code_verifier, code_challenge) = code_challenge();
+                req_code_verifier = Some(code_verifier);
+
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    req_redirect_uri = Some(format!(
+                        "http://127.0.0.1:{}",
+                        redirect_uri_server_port.unwrap()
+                    ));
+                }
+
+                #[cfg(target_arch = "wasm32")]
+                {
+                    req_redirect_uri = Some(format!(
+                        "{}/auth",
+                        web_sys::window().unwrap().location().origin().unwrap()
+                    ));
+                }
+
+                let params = AuthRequestParams {
+                    client_id: auth_config.google_client_id.clone(),
+                    redirect_uri: req_redirect_uri.clone().unwrap(),
+                    response_type: "code".to_owned(),
+                    scope: "openid email".to_owned(),
+                    code_challenge,
+                    code_challenge_method: "S256".to_owned(),
+                    state: req_state_token.clone().unwrap(),
+                    access_type: "offline".to_owned(),
+                };
+
+                let url = format!(
+                    "https://accounts.google.com/o/oauth2/v2/auth?{}",
+                    serde_urlencoded::to_string(params).unwrap()
+                );
+
+                webbrowser::open(&url).expect("Failed to open a URL in browser");
+            }
+            Some(AuthRequest::HandleOAuthResponse { state, code }) => {
+                let Some((state_token, code_verifier)) = req_state_token.as_ref().zip(req_code_verifier.as_ref()) else {
+                    log::warn!("Ignoring unexpected OAuth response");
+                    continue;
+                };
+
+                if *state_token != state {
+                    log::warn!("Ignoring OAuth response: invalid state token");
+                    continue;
+                }
+
+                let success = exchange_auth_code(
+                    &auth_config,
+                    code,
+                    code_verifier.clone(),
+                    req_redirect_uri.clone().unwrap(),
+                    &auth_message_tx,
+                )
+                .await;
+
+                if success {
+                    req_state_token = None;
+                    req_code_verifier = None;
+                    req_redirect_uri = None;
+                }
+            }
+            None => {
+                return;
+            }
+        }
+    }
+}
+
+async fn exchange_auth_code(
+    auth_config: &AuthConfig,
+    code: String,
+    code_verifier: String,
+    redirect_uri: String,
+    auth_message_tx: &UnboundedSender<AuthMessage>,
+) -> bool {
+    let result = reqwest::Client::new()
+        .post("https://oauth2.googleapis.com/token")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(
+            serde_urlencoded::to_string(AuthTokenRequest {
+                client_id: auth_config.google_client_id.clone(),
+                client_secret: auth_config.google_client_secret.clone(),
+                code,
+                code_verifier,
+                grant_type: "authorization_code".to_owned(),
+                redirect_uri,
+            })
+            .unwrap(),
+        )
+        .send()
+        .await;
+
+    let (data, success) = match result {
+        Ok(result) => {
+            let is_success = result.status().is_success();
+            (result.bytes().await, is_success)
+        }
+        Err(err) => {
+            log::error!("Failed to fetch token: {:?}", err);
+            auth_message_tx
+                .send(AuthMessage::UnavailableError)
+                .expect("Failed to send an auth update");
+            return false;
+        }
+    };
+
+    if success {
+        let response = data.map_err(anyhow::Error::msg).and_then(|data| {
+            serde_json::from_slice::<AuthTokenResponse>(data.as_slice()).map_err(anyhow::Error::msg)
+        });
+
+        match response {
+            Ok(_response) => {
+                auth_message_tx
+                    .send(AuthMessage::Success)
+                    .expect("Failed to send an auth update");
+            }
+            Err(err) => {
+                log::error!("Failed to serialize token body: {:?}", err);
+                auth_message_tx
+                    .send(AuthMessage::UnavailableError)
+                    .expect("Failed to send an auth update");
+            }
+        }
+    } else {
+        log::error!("Auth token exchange failed");
+        auth_message_tx
+            .send(AuthMessage::UnavailableError)
+            .expect("Failed to send an auth update");
+    }
+
+    success
 }
 
 async fn handle_matchmaker_connection(
@@ -642,7 +945,7 @@ pub fn process_network_events(
 pub fn maintain_connection(
     time: Res<GameTime>,
     matchmaker_state: Option<ResMut<MatchmakerState>>,
-    matchmaker_channels: Option<ResMut<MatchmakerChannels>>,
+    matchmaker_channels: Option<ResMut<MainMenuUiChannels>>,
     mut server_to_connect: ResMut<Option<ServerToConnect>>,
     mut network_params: NetworkParams,
     mut initial_rtt: ResMut<InitialRtt>,
@@ -1275,9 +1578,57 @@ fn matchmaker_url() -> Option<String> {
     std::option_env!("MUDDLE_MATCHMAKER_URL").map(str::to_owned)
 }
 
+fn google_client_id() -> Option<String> {
+    std::option_env!("MUDDLE_GOOGLE_CLIENT_ID").map(str::to_owned)
+}
+
+fn google_client_secret() -> Option<String> {
+    std::option_env!("MUDDLE_GOOGLE_CLIENT_SECRET").map(str::to_owned)
+}
+
 fn server_addr() -> SocketAddr {
     let port: u16 = try_parse_from_env!("MUDDLE_SERVER_PORT").unwrap_or(DEFAULT_SERVER_PORT);
     let ip_addr: IpAddr =
         try_parse_from_env!("MUDDLE_SERVER_IP_ADDR").unwrap_or(DEFAULT_SERVER_IP_ADDR);
     SocketAddr::new(ip_addr, port)
+}
+
+fn code_challenge() -> (String, String) {
+    use sha2::Digest;
+
+    let mut rng = thread_rng();
+    let code_verifier: Vec<u8> = (0..128)
+        .map(|_| {
+            let i = rng.gen_range(0..CODE_VERIFIER_CHARS.len());
+            CODE_VERIFIER_CHARS[i]
+        })
+        .collect();
+
+    let mut sha = sha2::Sha256::new();
+    sha.update(&code_verifier);
+    let result = sha.finalize();
+
+    let b64 = base64::encode(result);
+    let challenge = b64
+        .chars()
+        .filter_map(|c| match c {
+            '=' => None,
+            '+' => Some('-'),
+            '/' => Some('_'),
+            x => Some(x),
+        })
+        .collect();
+
+    (String::from_utf8(code_verifier).unwrap(), challenge)
+}
+
+fn state_token() -> String {
+    use sha2::Digest;
+
+    let mut rng = thread_rng();
+    let random_bytes = rng.gen::<[u8; 16]>();
+
+    let mut sha = sha2::Sha256::new();
+    sha.update(random_bytes);
+    format!("{:x}", sha.finalize())
 }

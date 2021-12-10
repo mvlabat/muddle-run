@@ -11,7 +11,7 @@ use mr_shared_lib::game::components::{PlayerDirection, Position};
 
 pub mod builder_ui;
 pub mod debug_ui;
-pub mod matchmaker_ui;
+pub mod main_menu_ui;
 pub mod overlay_ui;
 pub mod player_ui;
 

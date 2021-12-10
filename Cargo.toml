@@ -10,6 +10,7 @@ members = [
     "bins/web_client",
     "bins/server",
     "bins/matchmaker",
+    "bins/persistence",
 ]
 resolver = "2"
 
