@@ -150,3 +150,12 @@ For example:
 - `kubectl set image deployment mr-matchmaker mr-matchmaker=mvlabat/mr_matchmaker`
   - You can also alternate appending and removing `:latest` tag suffix, to trick kubernetes into redeploying
     (otherwise it might think that the image is the same and won't pull its updated version).
+
+### Troubleshooting
+
+- **Error: Kubernetes cluster unreachable: invalid configuration: no configuration has been provided, try setting KUBERNETES_MASTER environment variable**
+  
+  To fix this error, run `export KUBE_CONFIG_PATH=~/.kube/config` (or add it to your shell rc).
+
+  - Also, make sure you ran `aws eks --region <region-code> update-kubeconfig --name <cluster_name>` before.
+  

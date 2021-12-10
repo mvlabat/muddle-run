@@ -130,9 +130,9 @@ module "eks" {
   worker_groups_launch_template = [
     {
       name                          = "default"
-      override_instance_types       = ["t3a.medium", "t3.medium", "t2.medium"]
-      asg_desired_capacity          = 3
-      asg_min_size                  = 3
+      override_instance_types       = ["t3a.micro", "t3.micro", "t2.micro"]
+      asg_desired_capacity          = 4
+      asg_min_size                  = 4
       asg_max_size                  = 4
       additional_security_group_ids = [aws_security_group.worker_group_mgmt_one.id]
       public_ip                     = true

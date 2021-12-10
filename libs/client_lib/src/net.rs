@@ -7,6 +7,7 @@ use crate::{
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashMap};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
+use core::slice::SlicePattern;
 use futures::{select, FutureExt, StreamExt, TryStreamExt};
 use mr_messages_lib::{MatchmakerMessage, Server};
 use mr_shared_lib::{
@@ -32,9 +33,11 @@ use mr_shared_lib::{
     simulations_per_second, try_parse_from_env, GameTime, SimulationTime,
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     future::Future,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    time::Duration,
 };
 use tokio::sync::mpsc::{
     error::TryRecvError, unbounded_channel, UnboundedReceiver, UnboundedSender,
@@ -70,6 +73,44 @@ pub struct NetworkParams<'a> {
     connection_state: ResMut<'a, ConnectionState>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AuthCodeRequest {
+    client_id: String,
+    scope: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuthCodeResponse {
+    device_code: String,
+    expires_in: u64,
+    interval: u64,
+    user_code: String,
+    verification_url: String,
+}
+
+#[derive(Debug)]
+pub struct AuthCodeErrorResponse {
+    error_code: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthTokenRequest {
+    grant_type: String,
+    device_code: String,
+    client_id: String,
+    client_secret: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuthTokenResponse {
+    access_token: String,
+    expires_in: u64,
+    refresh_token: String,
+    scope: String,
+    token_type: String,
+    id_token: String,
+}
+
 #[derive(Debug)]
 pub enum TcpConnectionStatus {
     Disconnected,
@@ -81,10 +122,35 @@ pub struct MatchmakerState {
     pub status: TcpConnectionStatus,
 }
 
-pub struct MatchmakerChannels {
+#[derive(Debug)]
+pub enum AuthRequest {
+    PasswordSignIn { username: String, password: String },
+    RequestGoogleDeviceCode,
+    StopDeviceFlowPolling,
+}
+
+#[derive(Debug)]
+pub enum AuthMessage {
+    Success,
+    DeviceCode {
+        user_code: String,
+        verification_url: String,
+    },
+    WrongPasswordError,
+    UnavailableError,
+}
+
+pub struct MainMenuUiChannels {
+    pub auth_request_tx: UnboundedSender<AuthRequest>,
+    pub auth_message_rx: UnboundedReceiver<AuthMessage>,
     pub connection_request_tx: UnboundedSender<bool>,
     pub status_rx: UnboundedReceiver<TcpConnectionStatus>,
-    pub message_rx: UnboundedReceiver<MatchmakerMessage>,
+    pub matchmaker_message_rx: UnboundedReceiver<MatchmakerMessage>,
+}
+
+pub struct AuthConfig {
+    pub google_client_id: String,
+    pub google_client_secret: String,
 }
 
 pub struct ServerToConnect(pub Server);
@@ -97,22 +163,53 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
         }
     };
 
+    let auth_config = AuthConfig {
+        google_client_id: google_client_id().expect("Expected MUDDLE_GOOGLE_CLIENT_ID"),
+        google_client_secret: google_client_secret().expect("Expected MUDDLE_GOOGLE_CLIENT_SECRET"),
+    };
+
     log::info!("Matchmaker address: {}", url);
 
+    let (auth_request_tx, auth_request_rx) = unbounded_channel();
+    let (auth_message_tx, auth_message_rx) = unbounded_channel();
     let (connection_request_tx, connection_request_rx) = unbounded_channel();
     let (status_tx, status_rx) = unbounded_channel();
-    let (message_tx, message_rx) = unbounded_channel();
+    let (matchmaker_message_tx, matchmaker_message_rx) = unbounded_channel();
     let url = url::Url::parse(&format!("ws://{}", url)).unwrap();
 
-    run_async(
-        async move { serve_connection(&url, connection_request_rx, status_tx, message_tx).await },
-    );
+    let auth_request_tx_clone = auth_request_tx.clone();
+    run_async(async move {
+        let mut serve_auth_future = tokio::task::spawn_local(serve_auth(
+            auth_config,
+            auth_request_tx_clone,
+            auth_request_rx,
+            auth_message_tx,
+        ))
+        .fuse();
+        let mut serve_auth_and_matchmaker_future = tokio::task::spawn_local(serve_matchmaker(
+            url,
+            connection_request_rx,
+            status_tx,
+            matchmaker_message_tx,
+        ))
+        .fuse();
+        select! {
+            _ = serve_auth_future => {
+                log::warn!("Auth task finished");
+            },
+            _ = serve_auth_and_matchmaker_future => {
+                log::warn!("Matchmaker task finished");
+            },
+        }
+    });
 
     connection_request_tx.send(true).unwrap();
-    commands.insert_resource(MatchmakerChannels {
+    commands.insert_resource(MainMenuUiChannels {
+        auth_request_tx,
+        auth_message_rx,
         connection_request_tx,
         status_rx,
-        message_rx,
+        matchmaker_message_rx,
     });
     commands.insert_resource(MatchmakerState {
         status: TcpConnectionStatus::Disconnected,
@@ -156,11 +253,11 @@ where
     });
 }
 
-async fn serve_connection(
-    url: &Url,
+async fn serve_matchmaker(
+    url: Url,
     mut connection_request_rx: UnboundedReceiver<bool>,
     status_tx: UnboundedSender<TcpConnectionStatus>,
-    message_tx: UnboundedSender<MatchmakerMessage>,
+    matchmaker_message_tx: UnboundedSender<MatchmakerMessage>,
 ) {
     let mut current_state = false;
 
@@ -183,7 +280,7 @@ async fn serve_connection(
         if connect {
             log::info!("Connecting to the matchmaker service...");
             let _ = status_tx.send(TcpConnectionStatus::Connecting);
-            let message_tx = message_tx.clone();
+            let message_tx = matchmaker_message_tx.clone();
             let url = url.clone();
             let ws_status_tx = status_tx.clone();
             let disconnect_request_channel = tokio::sync::oneshot::channel();
@@ -206,6 +303,179 @@ async fn serve_connection(
         current_state = connect;
     }
     panic!("Failed to read from a channel (matchmaker connection request");
+}
+
+async fn serve_auth(
+    auth_config: AuthConfig,
+    auth_request_tx: UnboundedSender<AuthRequest>,
+    mut auth_request_rx: UnboundedReceiver<AuthRequest>,
+    auth_message_tx: UnboundedSender<AuthMessage>,
+) {
+    // The second tuple element is interval in seconds.
+    let mut request_to_poll: Option<(reqwest::Request, u64)> = None;
+
+    loop {
+        match request_to_poll.take() {
+            Some((request, interval_secs)) => loop {
+                // We don't expect streams here, so cloning should be ok.
+                let request = request.try_clone().unwrap();
+                let result = select! {
+                    req = auth_request_rx.recv().fuse() => match req {
+                        Some(AuthRequest::StopDeviceFlowPolling) => {
+                            break;
+                        }
+                        Some(_) => {
+                            log::warn!("Ignoring an Auth request while polling");
+                            continue;
+                        }
+                        None => {
+                            return;
+                        }
+                    },
+                    _ = poll_token(request, interval_secs, auth_request_tx.clone(), auth_message_tx.clone()).fuse() => {
+                        break;
+                    },
+                };
+            },
+            None => match auth_request_rx.recv().await {
+                Some(AuthRequest::PasswordSignIn { .. }) => unimplemented!(),
+                Some(AuthRequest::RequestGoogleDeviceCode) => {
+                    let result = reqwest::Client::new()
+                        .post("https://oauth2.googleapis.com/device/code")
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .body(
+                            serde_urlencoded::to_string(AuthCodeRequest {
+                                client_id: auth_config.google_client_id.clone(),
+                                scope: "email".to_string(),
+                            })
+                            .unwrap(),
+                        )
+                        .send()
+                        .await;
+
+                    let data = match result {
+                        Ok(result) => result.bytes().await,
+                        Err(err) => {
+                            log::error!("Failed to fetch device code: {:?}", err);
+                            auth_message_tx
+                                .send(AuthMessage::UnavailableError)
+                                .expect("Failed to send an auth update");
+                            continue;
+                        }
+                    };
+
+                    let response = data.map_err(anyhow::Error::msg).and_then(|data| {
+                        serde_json::from_slice::<AuthCodeResponse>(data.as_slice())
+                            .map_err(anyhow::Error::msg)
+                    });
+
+                    match response {
+                        Ok(response) => {
+                            auth_message_tx
+                                .send(AuthMessage::DeviceCode {
+                                    user_code: response.user_code,
+                                    verification_url: response.verification_url,
+                                })
+                                .expect("Failed to send an auth update");
+                            let request = reqwest::Client::new()
+                                .post("https://oauth2.googleapis.com/token")
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .body(
+                                    serde_urlencoded::to_string(AuthTokenRequest {
+                                        grant_type: "urn:ietf:params:oauth:grant-type:device_code"
+                                            .to_string(),
+                                        device_code: response.device_code,
+                                        client_id: auth_config.google_client_id.clone(),
+                                        client_secret: auth_config.google_client_secret.clone(),
+                                    })
+                                    .unwrap(),
+                                )
+                                .build()
+                                .unwrap();
+                            request_to_poll = Some((request, response.interval));
+                        }
+                        Err(err) => {
+                            log::error!("Failed to serialize device code body: {:?}", err);
+                            auth_message_tx
+                                .send(AuthMessage::UnavailableError)
+                                .expect("Failed to send an auth update");
+                            continue;
+                        }
+                    }
+                }
+                Some(AuthRequest::StopDeviceFlowPolling) => {
+                    log::warn!("Ignoring StopDeviceFlowPolling request");
+                }
+                None => {
+                    return;
+                }
+            },
+        }
+    }
+}
+
+async fn poll_token(
+    request: reqwest::Request,
+    interval_secs: u64,
+    auth_request_tx: UnboundedSender<AuthRequest>,
+    auth_message_tx: UnboundedSender<AuthMessage>,
+) {
+    loop {
+        // We don't expect streams here, so cloning should be ok.
+        let request = request.try_clone().unwrap();
+
+        let result = reqwest::Client::new().execute(request).await;
+
+        let (data, success) = match result {
+            Ok(result) => {
+                let is_success = result.status().is_success();
+                (result.bytes().await, is_success)
+            }
+            Err(err) => {
+                log::error!("Failed to fetch token: {:?}", err);
+                auth_message_tx
+                    .send(AuthMessage::UnavailableError)
+                    .expect("Failed to send an auth update");
+                break;
+            }
+        };
+
+        if success {
+            let response = data.map_err(anyhow::Error::msg).and_then(|data| {
+                serde_json::from_slice::<AuthTokenResponse>(data.as_slice())
+                    .map_err(anyhow::Error::msg)
+            });
+
+            match response {
+                Ok(_response) => {
+                    auth_message_tx
+                        .send(AuthMessage::Success)
+                        .expect("Failed to send an auth update");
+                }
+                Err(err) => {
+                    log::error!("Failed to serialize token body: {:?}", err);
+                    auth_message_tx
+                        .send(AuthMessage::UnavailableError)
+                        .expect("Failed to send an auth update");
+                }
+            }
+            break;
+        } else {
+            log::debug!(
+                "{:?}",
+                serde_json::from_slice::<serde_json::Value>(data.as_ref().unwrap().as_slice())
+                    .unwrap()
+            );
+            // TODO!
+        }
+
+        let sleep_duration = Duration::from_secs(interval_secs);
+        #[cfg(not(target_arch = "wasm32"))]
+        let sleep = tokio::time::sleep(sleep_duration);
+        #[cfg(target_arch = "wasm32")]
+        let sleep = wasm_timer::Delay::new(sleep_duration);
+        sleep.await.unwrap();
+    }
 }
 
 async fn handle_matchmaker_connection(
@@ -642,7 +912,7 @@ pub fn process_network_events(
 pub fn maintain_connection(
     time: Res<GameTime>,
     matchmaker_state: Option<ResMut<MatchmakerState>>,
-    matchmaker_channels: Option<ResMut<MatchmakerChannels>>,
+    matchmaker_channels: Option<ResMut<MainMenuUiChannels>>,
     mut server_to_connect: ResMut<Option<ServerToConnect>>,
     mut network_params: NetworkParams,
     mut initial_rtt: ResMut<InitialRtt>,
@@ -1273,6 +1543,14 @@ fn player_start_position(player_net_id: PlayerNetId, delta_update: &DeltaUpdate)
 
 fn matchmaker_url() -> Option<String> {
     std::option_env!("MUDDLE_MATCHMAKER_URL").map(str::to_owned)
+}
+
+fn google_client_id() -> Option<String> {
+    std::option_env!("MUDDLE_GOOGLE_CLIENT_ID").map(str::to_owned)
+}
+
+fn google_client_secret() -> Option<String> {
+    std::option_env!("MUDDLE_GOOGLE_CLIENT_SECRET").map(str::to_owned)
 }
 
 fn server_addr() -> SocketAddr {
