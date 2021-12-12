@@ -1,6 +1,6 @@
 use crate::net::{
-    AuthMessage, AuthRequest, MainMenuUiChannels, MatchmakerState, ServerToConnect,
-    TcpConnectionStatus,
+    auth::{AuthMessage, AuthRequest},
+    MainMenuUiChannels, MatchmakerState, ServerToConnect, TcpConnectionStatus,
 };
 use bevy::{
     ecs::system::{Local, Res, ResMut},
@@ -23,11 +23,14 @@ pub struct AuthUiState {
     error_message: String,
     redirect_is_ready: bool,
     pending_request: bool,
+    logged_in_as: Option<String>,
 }
 
 pub enum AuthUiScreen {
     SignIn,
     SignUp,
+    GoogleOpenID,
+    UnstoppableDomainsOpenID,
 }
 
 impl Default for AuthUiScreen {
@@ -88,6 +91,11 @@ pub fn matchmaker_ui(
                 main_menu_ui_state.screen = MainMenuUiScreen::Matchmaker;
                 main_menu_ui_state.auth.pending_request = false;
                 main_menu_ui_state.auth.password.clear();
+            }
+            Ok(AuthMessage::InvalidDomainError) => {
+                main_menu_ui_state.auth.pending_request = false;
+                main_menu_ui_state.auth.error_message =
+                    "The requested domain isn't registered".to_owned();
             }
             Ok(AuthMessage::UnavailableError) => {
                 log::debug!("Authentication unavailable");
@@ -171,7 +179,7 @@ pub fn matchmaker_ui(
                 .fixed_size(egui::Vec2::new(window_width, window_height))
                 .show(ui.ctx(), |ui| {
                     let MainMenuUiState {
-                        screen,
+                        ref mut screen,
                         auth: auth_ui_state,
                         matchmaker:
                             MatchmakerUiState {
@@ -208,11 +216,14 @@ pub fn matchmaker_ui(
                             egui::containers::Frame::none()
                                 .margin([25.0, 15.0])
                                 .show(ui, |ui| {
-                                    authentication_screen(
+                                    let confirm = authentication_screen(
                                         ui,
                                         &mut main_menu_ui_channels.auth_request_tx,
                                         auth_ui_state,
                                     );
+                                    if confirm {
+                                        *screen = MainMenuUiScreen::Matchmaker;
+                                    }
                                 });
                         }
                         MainMenuUiScreen::Matchmaker => {
@@ -233,8 +244,10 @@ fn authentication_screen(
     ui: &mut egui::Ui,
     auth_request_tx: &mut UnboundedSender<AuthRequest>,
     auth_ui_state: &mut AuthUiState,
-) {
+) -> bool {
     ui.style_mut().spacing.item_spacing = egui::Vec2::new(10.0, 5.0);
+    let mut confirm_auth = false;
+    let mut new_screen = None;
     match auth_ui_state.screen {
         AuthUiScreen::SignIn | AuthUiScreen::SignUp => {
             ui.label("Login");
@@ -273,19 +286,20 @@ fn authentication_screen(
                     .ui(ui)
                     .clicked()
                 {
-                    auth_ui_state.pending_request = true;
+                    auth_ui_state.username.clear();
                     auth_ui_state.password.clear();
+                    auth_ui_state.pending_request = true;
+                    new_screen = Some(AuthUiScreen::GoogleOpenID);
                     auth_request_tx
                         .send(AuthRequest::RequestGoogleAuth)
                         .expect("Failed to write to a channel (auth request)");
-                    return;
                 }
 
-                if egui::widgets::Button::new("Unstoppable Domains")
-                    .enabled(false)
-                    .ui(ui)
-                    .clicked()
-                {}
+                if ui.button("Unstoppable Domains").clicked() {
+                    auth_ui_state.username.clear();
+                    auth_ui_state.password.clear();
+                    new_screen = Some(AuthUiScreen::UnstoppableDomainsOpenID);
+                }
             });
 
             ui.separator();
@@ -298,7 +312,7 @@ fn authentication_screen(
                         .ui(ui)
                         .clicked()
                     {
-                        auth_ui_state.screen = AuthUiScreen::SignUp;
+                        new_screen = Some(AuthUiScreen::SignUp);
                     }
                 }
                 AuthUiScreen::SignUp => {
@@ -308,14 +322,74 @@ fn authentication_screen(
                         .ui(ui)
                         .clicked()
                     {
-                        auth_ui_state.screen = AuthUiScreen::SignIn;
+                        new_screen = Some(AuthUiScreen::SignIn);
                     }
                 }
+                _ => unreachable!(),
+            }
+        }
+        AuthUiScreen::GoogleOpenID | AuthUiScreen::UnstoppableDomainsOpenID => {
+            ui.horizontal(|ui| {
+                if ui.button("Back").clicked() {
+                    new_screen = Some(AuthUiScreen::SignIn);
+                    auth_request_tx
+                        .send(AuthRequest::CancelOpenIDRequest)
+                        .expect("Failed to write to a channel (auth request)");
+                }
+                ui.label(&auth_ui_state.error_message);
+            });
+
+            ui.add_space(20.0);
+
+            if !auth_ui_state.pending_request
+                && matches!(auth_ui_state.screen, AuthUiScreen::UnstoppableDomainsOpenID)
+            {
+                ui.label("Domain name");
+
+                ui.with_layout(
+                    egui::Layout::top_down_justified(egui::Align::Center),
+                    |ui| {
+                        ui.text_edit_singleline(&mut auth_ui_state.username);
+                        ui.add_space(5.0);
+                        if egui::widgets::Button::new("Continue")
+                            .enabled(!auth_ui_state.username.is_empty())
+                            .ui(ui)
+                            .clicked()
+                        {
+                            auth_ui_state.pending_request = true;
+                            auth_request_tx
+                                .send(AuthRequest::RequestUnstoppableDomainsAuth {
+                                    username: auth_ui_state.username.clone(),
+                                })
+                                .expect("Failed to write to a channel (auth request)");
+                        }
+                    },
+                );
+            } else if let Some(logged_in_as) = auth_ui_state.logged_in_as.as_ref() {
+                ui.with_layout(
+                    egui::Layout::top_down_justified(egui::Align::Center),
+                    |ui| {
+                        ui.label(format!("Logged in as {}", logged_in_as));
+                        confirm_auth = ui.button("Continue").clicked();
+                    },
+                );
+            } else {
+                ui.with_layout(
+                    egui::Layout::top_down_justified(egui::Align::Center),
+                    |ui| {
+                        ui.label("Please complete the Sign In");
+                        egui::widgets::Button::new("Continue").enabled(false).ui(ui);
+                    },
+                );
             }
         }
     }
 
     ui.add_space(5.0);
+    if let Some(new_screen) = new_screen {
+        auth_ui_state.screen = new_screen;
+    }
+    confirm_auth
 }
 
 fn matchmaker_screen(

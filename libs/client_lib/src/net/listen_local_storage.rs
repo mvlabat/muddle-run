@@ -1,4 +1,4 @@
-use crate::net::AuthRequest;
+use crate::net::auth::AuthRequest;
 use bevy::log;
 use futures::{channel::mpsc::unbounded, StreamExt};
 use tokio::sync::mpsc::UnboundedSender;

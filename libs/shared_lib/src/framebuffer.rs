@@ -230,7 +230,7 @@ impl<T> Framebuffer<Option<T>> {
             .buffer
             .iter()
             .position(|v| v.is_some())
-            .unwrap_or_else(|| self.buffer.len());
+            .unwrap_or(self.buffer.len());
 
         (start_frame..=end_frame)
             .skip(first_some_index)

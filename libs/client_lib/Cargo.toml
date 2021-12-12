@@ -35,7 +35,7 @@ serde_urlencoded = "0.7.0"
 sha2 = "0.10.0"
 tokio = { version = "1.12.0", features = ["rt", "sync"] }
 tokio-stream = "0.1.7"
-url = "2.2.2"
+url = { version = "2.2.2", features = ["serde"] }
 webbrowser = "0.5.5"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -80,3 +80,7 @@ features = ["client"]
 [dependencies.mr_messages_lib]
 version = "*"
 path = "../messages_lib"
+
+[dependencies.unstoppable_resolution]
+version = "*"
+path = "../unstoppable_resolution"

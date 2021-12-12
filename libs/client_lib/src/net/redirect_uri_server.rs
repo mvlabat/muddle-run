@@ -1,4 +1,4 @@
-use crate::net::{AuthRequest, OAuthResponse};
+use crate::net::auth::{AuthRequest, OAuthResponse};
 use bevy::log;
 use tokio::sync::mpsc::UnboundedSender;
 
