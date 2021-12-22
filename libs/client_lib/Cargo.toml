@@ -12,6 +12,7 @@ use-udp = ["bevy_networking_turbulence/use-udp"]
 use-webrtc = ["bevy_networking_turbulence/use-webrtc"]
 web = ["mr_shared_lib/web", "chrono/wasmbind"]
 profiler = ["puffin", "puffin_egui", "mr_shared_lib/profiler"]
+ud-login = ["unstoppable_resolution"]
 
 [dependencies]
 anyhow = "1.0.44"
@@ -84,3 +85,4 @@ path = "../messages_lib"
 [dependencies.unstoppable_resolution]
 version = "*"
 path = "../unstoppable_resolution"
+optional = true

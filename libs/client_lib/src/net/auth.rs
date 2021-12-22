@@ -1,7 +1,6 @@
 use bevy::log;
 use core::slice::SlicePattern;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use url::Url;
 
@@ -86,12 +85,21 @@ pub struct AuthTokenResponse {
 
 #[derive(Debug)]
 pub enum AuthRequest {
-    PasswordSignIn { username: String, password: String },
+    PasswordSignIn {
+        username: String,
+        password: String,
+    },
     RedirectUrlServerPort(u16),
     CancelOpenIDRequest,
     RequestGoogleAuth,
-    RequestUnstoppableDomainsAuth { username: String },
-    HandleOAuthResponse { state: String, code: String },
+    #[cfg(feature = "unstoppable_resolution")]
+    RequestUnstoppableDomainsAuth {
+        username: String,
+    },
+    HandleOAuthResponse {
+        state: String,
+        code: String,
+    },
 }
 
 #[derive(Debug)]
@@ -99,6 +107,7 @@ pub enum AuthMessage {
     RedirectUrlServerIsReady,
     Success,
     WrongPasswordError,
+    #[cfg(feature = "unstoppable_resolution")]
     InvalidDomainError,
     UnavailableError,
 }
@@ -129,15 +138,19 @@ pub async fn serve_auth_requests(
     let mut req_redirect_uri = None;
 
     let client = reqwest::Client::new();
-    let ethereum_rpc_url =
-        Url::parse("https://mainnet.infura.io/v3/c4bb906ed6904c42b19c95825fe55f39").unwrap();
-    let polygon_rpc_url =
-        Url::parse("https://polygon-mainnet.infura.io/v3/c4bb906ed6904c42b19c95825fe55f39")
-            .unwrap();
-    let resolution = unstoppable_resolution::UnsResolutionProvider {
-        http_client: client.clone(),
-        ethereum_rpc_url: Arc::new(ethereum_rpc_url),
-        polygon_rpc_url: Arc::new(polygon_rpc_url),
+
+    #[cfg(feature = "unstoppable_resolution")]
+    let resolution = {
+        let ethereum_rpc_url =
+            Url::parse("https://mainnet.infura.io/v3/c4bb906ed6904c42b19c95825fe55f39").unwrap();
+        let polygon_rpc_url =
+            Url::parse("https://polygon-mainnet.infura.io/v3/c4bb906ed6904c42b19c95825fe55f39")
+                .unwrap();
+        unstoppable_resolution::UnsResolutionProvider {
+            http_client: client.clone(),
+            ethereum_rpc_url: std::sync::Arc::new(ethereum_rpc_url),
+            polygon_rpc_url: std::sync::Arc::new(polygon_rpc_url),
+        }
     };
 
     loop {
@@ -196,6 +209,7 @@ pub async fn serve_auth_requests(
 
                 webbrowser::open(&url).expect("Failed to open a URL in browser");
             }
+            #[cfg(feature = "unstoppable_resolution")]
             Some(AuthRequest::RequestUnstoppableDomainsAuth { username }) => {
                 let rel = "http://openid.net/specs/connect/1.0/issuer";
                 let (user, domain) = username.split_once('@').unwrap_or(("", username.as_str()));
@@ -282,6 +296,7 @@ pub async fn serve_auth_requests(
     }
 }
 
+#[cfg(feature = "unstoppable_resolution")]
 async fn fetch_openid_config(
     client: &reqwest::Client,
     rel: &str,

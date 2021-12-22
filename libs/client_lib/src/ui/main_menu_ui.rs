@@ -13,6 +13,7 @@ use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
 use std::ops::{Add, Mul, Sub};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedSender};
 
+#[allow(dead_code)]
 #[derive(Default)]
 pub struct AuthUiState {
     screen: AuthUiScreen,
@@ -30,6 +31,7 @@ pub enum AuthUiScreen {
     SignIn,
     SignUp,
     GoogleOpenID,
+    #[allow(dead_code)]
     UnstoppableDomainsOpenID,
 }
 
@@ -92,6 +94,7 @@ pub fn matchmaker_ui(
                 main_menu_ui_state.auth.pending_request = false;
                 main_menu_ui_state.auth.password.clear();
             }
+            #[cfg(feature = "unstoppable_resolution")]
             Ok(AuthMessage::InvalidDomainError) => {
                 main_menu_ui_state.auth.pending_request = false;
                 main_menu_ui_state.auth.error_message =
@@ -295,6 +298,7 @@ fn authentication_screen(
                         .expect("Failed to write to a channel (auth request)");
                 }
 
+                #[cfg(feature = "unstoppable_resolution")]
                 if ui.button("Unstoppable Domains").clicked() {
                     auth_ui_state.username.clear();
                     auth_ui_state.password.clear();
@@ -341,6 +345,7 @@ fn authentication_screen(
 
             ui.add_space(20.0);
 
+            #[cfg(feature = "unstoppable_resolution")]
             if !auth_ui_state.pending_request
                 && matches!(auth_ui_state.screen, AuthUiScreen::UnstoppableDomainsOpenID)
             {
@@ -365,7 +370,8 @@ fn authentication_screen(
                         }
                     },
                 );
-            } else if let Some(logged_in_as) = auth_ui_state.logged_in_as.as_ref() {
+            }
+            if let Some(logged_in_as) = auth_ui_state.logged_in_as.as_ref() {
                 ui.with_layout(
                     egui::Layout::top_down_justified(egui::Align::Center),
                     |ui| {
@@ -373,7 +379,7 @@ fn authentication_screen(
                         confirm_auth = ui.button("Continue").clicked();
                     },
                 );
-            } else {
+            } else if auth_ui_state.pending_request {
                 ui.with_layout(
                     egui::Layout::top_down_justified(egui::Align::Center),
                     |ui| {
