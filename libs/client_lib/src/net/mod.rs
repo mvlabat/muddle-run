@@ -110,7 +110,10 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
     let auth_config = AuthConfig {
         google_client_id: auth::google_client_id().expect("Expected MUDDLE_GOOGLE_CLIENT_ID"),
         google_client_secret: auth::google_client_secret(),
+        auth0_client_id: auth::auth0_client_id().expect("Expected MUDDLE_AUTH0_CLIENT_ID"),
+        #[cfg(feature = "unstoppable_resolution")]
         ud_client_id: auth::ud_client_id().expect("Expected MUDDLE_UD_CLIENT_ID"),
+        #[cfg(feature = "unstoppable_resolution")]
         ud_secret_id: auth::ud_client_secret().expect("Expected MUDDLE_UD_CLIENT_SECRET"),
     };
     if cfg!(not(target_arch = "wasm32")) {

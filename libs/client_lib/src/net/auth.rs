@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use url::Url;
 
+const AUTH0_DB_CONNECTION: &str = "Username-Password-Authentication";
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OpenIdConnectConfig {
     pub issuer: Url,
@@ -35,6 +37,47 @@ const CODE_VERIFIER_CHARS: &[u8] =
 pub struct AuthCodeRequest {
     pub client_id: String,
     pub scope: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SignUpRequestParams {
+    pub client_id: String,
+    pub email: String,
+    pub password: String,
+    pub connection: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SignUpErrorResponse {
+    pub code: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SignInRequestParams {
+    pub client_id: String,
+    pub grant_type: String,
+    pub username: String,
+    pub password: String,
+    pub scope: String,
+    pub device: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SignInErrorResponse {
+    pub error: String,
+}
+
+impl SignInRequestParams {
+    pub fn new(client_id: String, username: String, password: String) -> Self {
+        Self {
+            client_id,
+            grant_type: "password".to_owned(),
+            username,
+            password,
+            scope: "openid email offline_access".to_owned(),
+            device: format!("{} {}", whoami::devicename(), whoami::desktop_env()),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -85,9 +128,10 @@ pub struct AuthTokenResponse {
 
 #[derive(Debug)]
 pub enum AuthRequest {
-    PasswordSignIn {
+    Password {
         username: String,
         password: String,
+        is_sign_up: bool,
     },
     RedirectUrlServerPort(u16),
     CancelOpenIDRequest,
@@ -107,6 +151,7 @@ pub enum AuthMessage {
     RedirectUrlServerIsReady,
     Success,
     WrongPasswordError,
+    SignUpFailedError,
     #[cfg(feature = "unstoppable_resolution")]
     InvalidDomainError,
     UnavailableError,
@@ -116,7 +161,10 @@ pub struct AuthConfig {
     pub google_client_id: String,
     // Google OAuth requires it for desktop clients.
     pub google_client_secret: Option<String>,
+    pub auth0_client_id: String,
+    #[cfg(feature = "unstoppable_resolution")]
     pub ud_client_id: String,
+    #[cfg(feature = "unstoppable_resolution")]
     pub ud_secret_id: String,
 }
 
@@ -155,7 +203,28 @@ pub async fn serve_auth_requests(
 
     loop {
         match auth_request_rx.recv().await {
-            Some(AuthRequest::PasswordSignIn { .. }) => unimplemented!(),
+            Some(AuthRequest::Password { username, password, is_sign_up: false }) => {
+                sign_in(
+                    &client,
+                    &SignInRequestParams::new(
+                        auth_config.auth0_client_id.clone(),
+                        username,
+                        password,
+                    ),
+                    &auth_message_tx,
+                )
+                .await;
+            }
+            Some(AuthRequest::Password { username, password, is_sign_up: true }) => {
+                let params = SignUpRequestParams {
+                    client_id: auth_config.auth0_client_id.clone(),
+                    email: username,
+                    password,
+                    connection: AUTH0_DB_CONNECTION.to_owned(),
+                };
+
+                sign_up(&client, &params, &auth_message_tx).await;
+            }
             Some(AuthRequest::RedirectUrlServerPort(_port)) => {
                 log::trace!("Initialized redirect_uri");
                 #[cfg(not(target_arch = "wasm32"))]
@@ -311,6 +380,135 @@ async fn fetch_openid_config(
     client.get(url).send().await.ok()?.json().await.ok()
 }
 
+async fn sign_up(
+    client: &reqwest::Client,
+    params: &SignUpRequestParams,
+    auth_message_tx: &UnboundedSender<AuthMessage>,
+) {
+    let result = client
+        .post("https://muddle-run.eu.auth0.com/dbconnections/signup")
+        .json(params)
+        .send()
+        .await;
+
+    let (data, success) = match result {
+        Ok(result) => {
+            let is_success = result.status().is_success();
+            (result.bytes().await, is_success)
+        }
+        Err(err) => {
+            log::error!("Failed to sign up: {:?}", err);
+            auth_message_tx
+                .send(AuthMessage::UnavailableError)
+                .expect("Failed to send an auth update");
+            return;
+        }
+    };
+
+    if !success {
+        log::error!("Failed to sign up");
+        match data
+            .ok()
+            .and_then(|data| serde_json::from_slice::<SignUpErrorResponse>(data.as_slice()).ok())
+        {
+            Some(response) => {
+                if response.code == "invalid_signup" {
+                    auth_message_tx
+                        .send(AuthMessage::SignUpFailedError)
+                        .expect("Failed to send an auth update");
+                    return;
+                }
+            }
+            None => {
+                log::error!("Failed to parse sign up error code");
+            }
+        }
+        auth_message_tx
+            .send(AuthMessage::UnavailableError)
+            .expect("Failed to send an auth update");
+        return;
+    }
+
+    sign_in(
+        client,
+        &SignInRequestParams::new(
+            params.client_id.clone(),
+            params.email.clone(),
+            params.password.clone(),
+        ),
+        auth_message_tx,
+    )
+    .await;
+}
+
+async fn sign_in(
+    client: &reqwest::Client,
+    body: &SignInRequestParams,
+    auth_message_tx: &UnboundedSender<AuthMessage>,
+) {
+    let result = client
+        .post("https://muddle-run.eu.auth0.com/oauth/token")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(serde_urlencoded::to_string(body).unwrap())
+        .send()
+        .await;
+
+    let (data, success) = match result {
+        Ok(result) => {
+            let is_success = result.status().is_success();
+            (result.bytes().await, is_success)
+        }
+        Err(err) => {
+            log::error!("Failed to fetch token: {:?}", err);
+            auth_message_tx
+                .send(AuthMessage::UnavailableError)
+                .expect("Failed to send an auth update");
+            return;
+        }
+    };
+
+    if success {
+        let response = data.map_err(anyhow::Error::msg).and_then(|data| {
+            serde_json::from_slice::<AuthTokenResponse>(data.as_slice()).map_err(anyhow::Error::msg)
+        });
+
+        match response {
+            Ok(_response) => {
+                auth_message_tx
+                    .send(AuthMessage::Success)
+                    .expect("Failed to send an auth update");
+            }
+            Err(err) => {
+                log::error!("Failed to serialize token body: {:?}", err);
+                auth_message_tx
+                    .send(AuthMessage::UnavailableError)
+                    .expect("Failed to send an auth update");
+            }
+        }
+    } else {
+        log::error!("Failed to sign in");
+        match data
+            .ok()
+            .and_then(|data| serde_json::from_slice::<SignInErrorResponse>(data.as_slice()).ok())
+        {
+            Some(response) => {
+                if response.error == "invalid_grant" {
+                    auth_message_tx
+                        .send(AuthMessage::WrongPasswordError)
+                        .expect("Failed to send an auth update");
+                    return;
+                }
+            }
+            None => {
+                log::error!("Failed to parse sign in error");
+            }
+        }
+        auth_message_tx
+            .send(AuthMessage::UnavailableError)
+            .expect("Failed to send an auth update");
+    }
+}
+
 async fn exchange_auth_code(
     client: &reqwest::Client,
     request: &PendingOAuthRequest,
@@ -388,10 +586,16 @@ pub fn google_client_secret() -> Option<String> {
     std::option_env!("MUDDLE_GOOGLE_CLIENT_SECRET").map(str::to_owned)
 }
 
+pub fn auth0_client_id() -> Option<String> {
+    std::option_env!("MUDDLE_AUTH0_CLIENT_ID").map(str::to_owned)
+}
+
+#[cfg(feature = "unstoppable_resolution")]
 pub fn ud_client_id() -> Option<String> {
     std::option_env!("MUDDLE_UD_CLIENT_ID").map(str::to_owned)
 }
 
+#[cfg(feature = "unstoppable_resolution")]
 pub fn ud_client_secret() -> Option<String> {
     std::option_env!("MUDDLE_UD_CLIENT_SECRET").map(str::to_owned)
 }

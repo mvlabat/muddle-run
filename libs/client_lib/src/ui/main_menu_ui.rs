@@ -13,18 +13,99 @@ use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
 use std::ops::{Add, Mul, Sub};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedSender};
 
-#[allow(dead_code)]
-#[derive(Default)]
+const ERROR_COLOR: egui::Color32 = egui::Color32::RED;
+const INVALID_EMAIL_ERROR: &str = "must be a valid email";
+const SHORT_PASSWORD_ERROR: &str = "must be 8 characters or longer";
+
 pub struct AuthUiState {
     screen: AuthUiScreen,
-    username: String,
-    password: String,
-    verification_url: String,
-    user_code: String,
+    email: InputField,
+    password: InputField,
     error_message: String,
     redirect_is_ready: bool,
     pending_request: bool,
+    #[allow(dead_code)]
     logged_in_as: Option<String>,
+}
+
+impl Default for AuthUiState {
+    fn default() -> Self {
+        Self {
+            screen: AuthUiScreen::SignIn,
+            email: InputField {
+                label: "Email",
+                ..Default::default()
+            },
+            password: InputField {
+                label: "Password",
+                is_password: true,
+                ..Default::default()
+            },
+            error_message: "".to_owned(),
+            redirect_is_ready: false,
+            pending_request: false,
+            logged_in_as: None,
+        }
+    }
+}
+
+impl AuthUiState {
+    pub fn validate(&mut self) {
+        self.email.errors.clear();
+        self.password.errors.clear();
+
+        if !self.email.value.contains('@') {
+            self.email.errors.push(INVALID_EMAIL_ERROR.to_owned());
+        }
+
+        if self.password.value.len() < 8 {
+            self.password.errors.push(SHORT_PASSWORD_ERROR.to_owned());
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct InputField {
+    label: &'static str,
+    is_password: bool,
+    value: String,
+    errors: Vec<String>,
+    was_focused: bool,
+}
+
+impl InputField {
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
+        ui.label(self.label);
+        let resp = egui::widgets::TextEdit::singleline(&mut self.value)
+            .desired_width(350.0)
+            .password(self.is_password)
+            .ui(ui);
+        self.was_focused = self.was_focused || resp.lost_focus();
+        if self.was_focused && !self.errors.is_empty() {
+            ui.scope(|ui| {
+                ui.style_mut()
+                    .visuals
+                    .widgets
+                    .noninteractive
+                    .fg_stroke
+                    .color = ERROR_COLOR;
+                ui.style_mut().body_text_style = egui::TextStyle::Button;
+                for error in &self.errors {
+                    ui.label(format!(" • {}", error));
+                }
+            });
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    pub fn reset(&mut self) {
+        self.value.clear();
+        self.errors.clear();
+        self.was_focused = false;
+    }
 }
 
 pub enum AuthUiScreen {
@@ -92,7 +173,7 @@ pub fn matchmaker_ui(
                 log::debug!("Successful auth");
                 main_menu_ui_state.screen = MainMenuUiScreen::Matchmaker;
                 main_menu_ui_state.auth.pending_request = false;
-                main_menu_ui_state.auth.password.clear();
+                main_menu_ui_state.auth.password.value.clear();
             }
             #[cfg(feature = "unstoppable_resolution")]
             Ok(AuthMessage::InvalidDomainError) => {
@@ -110,6 +191,12 @@ pub fn matchmaker_ui(
                 log::debug!("Wrong password");
                 main_menu_ui_state.auth.pending_request = false;
                 main_menu_ui_state.auth.error_message = "Incorrect username or password".to_owned();
+            }
+            Ok(AuthMessage::SignUpFailedError) => {
+                log::debug!("Bad Sign Up");
+                main_menu_ui_state.auth.pending_request = false;
+                main_menu_ui_state.auth.error_message =
+                    "Signing Up failed (email might be taken)".to_owned();
             }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
@@ -251,32 +338,43 @@ fn authentication_screen(
     ui.style_mut().spacing.item_spacing = egui::Vec2::new(10.0, 5.0);
     let mut confirm_auth = false;
     let mut new_screen = None;
+
+    auth_ui_state.validate();
+
     match auth_ui_state.screen {
         AuthUiScreen::SignIn | AuthUiScreen::SignUp => {
-            ui.label("Login");
-            egui::widgets::TextEdit::singleline(&mut auth_ui_state.username)
-                .desired_width(350.0)
-                .ui(ui);
-            ui.label("Password");
-            egui::widgets::TextEdit::singleline(&mut auth_ui_state.password)
-                .desired_width(350.0)
-                .ui(ui);
+            auth_ui_state.email.ui(ui);
+            auth_ui_state.password.ui(ui);
 
             ui.add_space(5.0);
 
-            if egui::widgets::Button::new("Sign In")
-                .enabled(!auth_ui_state.pending_request)
-                .ui(ui)
-                .clicked()
-            {
-                auth_ui_state.pending_request = true;
-                auth_request_tx
-                    .send(AuthRequest::PasswordSignIn {
-                        username: auth_ui_state.username.clone(),
-                        password: std::mem::take(&mut auth_ui_state.password),
-                    })
-                    .expect("Failed to write to a channel (auth request)");
-            }
+            let is_sign_up = matches!(auth_ui_state.screen, AuthUiScreen::SignUp);
+            let is_valid = auth_ui_state.email.is_valid() && auth_ui_state.password.is_valid();
+            ui.horizontal(|ui| {
+                if egui::widgets::Button::new(if is_sign_up { "Sign Up" } else { "Sign In" })
+                    .enabled(!auth_ui_state.pending_request && is_valid)
+                    .ui(ui)
+                    .clicked()
+                {
+                    auth_ui_state.pending_request = true;
+                    auth_request_tx
+                        .send(AuthRequest::Password {
+                            username: auth_ui_state.email.value.clone(),
+                            password: auth_ui_state.password.value.clone(),
+                            is_sign_up,
+                        })
+                        .expect("Failed to write to a channel (auth request)");
+                    auth_ui_state.password.reset();
+                }
+
+                ui.style_mut()
+                    .visuals
+                    .widgets
+                    .noninteractive
+                    .fg_stroke
+                    .color = ERROR_COLOR;
+                ui.label(auth_ui_state.error_message.clone());
+            });
 
             ui.add_space(5.0);
 
@@ -289,8 +387,8 @@ fn authentication_screen(
                     .ui(ui)
                     .clicked()
                 {
-                    auth_ui_state.username.clear();
-                    auth_ui_state.password.clear();
+                    auth_ui_state.email.value.clear();
+                    auth_ui_state.password.value.clear();
                     auth_ui_state.pending_request = true;
                     new_screen = Some(AuthUiScreen::GoogleOpenID);
                     auth_request_tx
@@ -300,8 +398,8 @@ fn authentication_screen(
 
                 #[cfg(feature = "unstoppable_resolution")]
                 if ui.button("Unstoppable Domains").clicked() {
-                    auth_ui_state.username.clear();
-                    auth_ui_state.password.clear();
+                    auth_ui_state.email.value.clear();
+                    auth_ui_state.password.value.clear();
                     new_screen = Some(AuthUiScreen::UnstoppableDomainsOpenID);
                 }
             });
@@ -340,6 +438,12 @@ fn authentication_screen(
                         .send(AuthRequest::CancelOpenIDRequest)
                         .expect("Failed to write to a channel (auth request)");
                 }
+                ui.style_mut()
+                    .visuals
+                    .widgets
+                    .noninteractive
+                    .fg_stroke
+                    .color = ERROR_COLOR;
                 ui.label(&auth_ui_state.error_message);
             });
 
