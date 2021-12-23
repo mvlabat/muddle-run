@@ -83,6 +83,7 @@ impl SignInRequestParams {
 #[derive(Debug, Serialize)]
 pub struct AuthRequestParams {
     pub client_id: String,
+    pub login_hint: Option<String>,
     pub redirect_uri: String,
     pub response_type: String,
     pub scope: String,
@@ -203,7 +204,11 @@ pub async fn serve_auth_requests(
 
     loop {
         match auth_request_rx.recv().await {
-            Some(AuthRequest::Password { username, password, is_sign_up: false }) => {
+            Some(AuthRequest::Password {
+                username,
+                password,
+                is_sign_up: false,
+            }) => {
                 sign_in(
                     &client,
                     &SignInRequestParams::new(
@@ -215,7 +220,11 @@ pub async fn serve_auth_requests(
                 )
                 .await;
             }
-            Some(AuthRequest::Password { username, password, is_sign_up: true }) => {
+            Some(AuthRequest::Password {
+                username,
+                password,
+                is_sign_up: true,
+            }) => {
                 let params = SignUpRequestParams {
                     client_id: auth_config.auth0_client_id.clone(),
                     email: username,
@@ -260,6 +269,7 @@ pub async fn serve_auth_requests(
 
                 let params = AuthRequestParams {
                     client_id: request.client_id.clone(),
+                    login_hint: None,
                     redirect_uri: req_redirect_uri.clone().unwrap(),
                     response_type: "code".to_owned(),
                     scope: "openid email".to_owned(),
@@ -322,9 +332,10 @@ pub async fn serve_auth_requests(
 
                 let params = AuthRequestParams {
                     client_id: request.client_id.clone(),
+                    login_hint: Some(domain.to_owned()),
                     redirect_uri: req_redirect_uri.clone().unwrap(),
                     response_type: "code".to_owned(),
-                    scope: "openid email wallet".to_owned(),
+                    scope: "openid email wallet offline_access".to_owned(),
                     code_challenge,
                     code_challenge_method: "S256".to_owned(),
                     state: request.state_token.clone(),

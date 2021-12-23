@@ -104,7 +104,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -p mr_web_client --release --target wasm32-unknown-unknown -- -D warnings
+          args: -p mr_web_client --release --target wasm32-unknown-unknown --features "ud-login" -- -D warnings
 
   mr_server:
     name: Check mr_server

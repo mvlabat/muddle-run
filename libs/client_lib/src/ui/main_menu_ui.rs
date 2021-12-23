@@ -21,6 +21,8 @@ pub struct AuthUiState {
     screen: AuthUiScreen,
     email: InputField,
     password: InputField,
+    #[allow(dead_code)]
+    domain: String,
     error_message: String,
     redirect_is_ready: bool,
     pending_request: bool,
@@ -41,6 +43,7 @@ impl Default for AuthUiState {
                 is_password: true,
                 ..Default::default()
             },
+            domain: "".to_owned(),
             error_message: "".to_owned(),
             redirect_is_ready: false,
             pending_request: false,
@@ -458,17 +461,17 @@ fn authentication_screen(
                 ui.with_layout(
                     egui::Layout::top_down_justified(egui::Align::Center),
                     |ui| {
-                        ui.text_edit_singleline(&mut auth_ui_state.username);
+                        ui.text_edit_singleline(&mut auth_ui_state.domain);
                         ui.add_space(5.0);
                         if egui::widgets::Button::new("Continue")
-                            .enabled(!auth_ui_state.username.is_empty())
+                            .enabled(!auth_ui_state.domain.is_empty())
                             .ui(ui)
                             .clicked()
                         {
                             auth_ui_state.pending_request = true;
                             auth_request_tx
                                 .send(AuthRequest::RequestUnstoppableDomainsAuth {
-                                    username: auth_ui_state.username.clone(),
+                                    username: auth_ui_state.domain.clone(),
                                 })
                                 .expect("Failed to write to a channel (auth request)");
                         }

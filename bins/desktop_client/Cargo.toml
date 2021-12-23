@@ -6,6 +6,9 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+ud-login = ["mr_client_lib/ud-login"]
+
 [dependencies]
 mr_client_lib = { path = "../../libs/client_lib", features = ["use-udp", "profiler"] }
 
