@@ -24,12 +24,11 @@ pub struct AuthUiState {
     screen: AuthUiScreen,
     email: InputField,
     password: InputField,
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "unstoppable_resolution"), allow(dead_code))]
     domain: String,
     error_message: String,
-    redirect_is_ready: bool,
+    handler_is_ready: bool,
     pending_request: bool,
-    #[allow(dead_code)]
     logged_in_as: Option<String>,
 }
 
@@ -48,7 +47,7 @@ impl Default for AuthUiState {
             },
             domain: "".to_owned(),
             error_message: "".to_owned(),
-            redirect_is_ready: false,
+            handler_is_ready: false,
             pending_request: false,
             logged_in_as: None,
         }
@@ -67,6 +66,23 @@ impl AuthUiState {
         if self.password.value.len() < 8 {
             self.password.errors.push(SHORT_PASSWORD_ERROR.to_owned());
         }
+    }
+
+    pub fn respond_with_error(&mut self, msg: &str) {
+        self.pending_request = false;
+        self.error_message = msg.to_owned();
+    }
+
+    pub fn switch_screen(&mut self, new_screen: AuthUiScreen) {
+        self.screen = new_screen;
+        self.reset_form();
+    }
+
+    pub fn reset_form(&mut self) {
+        self.email.reset();
+        self.password.reset();
+        self.domain.clear();
+        self.error_message.clear();
     }
 }
 
@@ -119,7 +135,7 @@ pub enum AuthUiScreen {
     SignIn,
     SignUp,
     GoogleOpenID,
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "unstoppable_resolution"), allow(dead_code))]
     UnstoppableDomainsOpenID,
 }
 
@@ -187,45 +203,48 @@ pub fn main_menu_ui(
 
     loop {
         match main_menu_ui_channels.auth_message_rx.try_recv() {
-            Ok(AuthMessage::RedirectUrlServerIsReady) => {
-                main_menu_ui_state.auth.redirect_is_ready = true;
+            Ok(AuthMessage::AuthHandlerIsReady) => {
+                main_menu_ui_state.auth.handler_is_ready = true;
             }
             Ok(AuthMessage::Success { id_token }) => {
                 log::debug!("Successful auth");
                 main_menu_ui_state.screen = MainMenuUiScreen::Matchmaker;
                 main_menu_ui_state.auth.pending_request = false;
-                main_menu_ui_state.auth.password.value.clear();
+                main_menu_ui_state.auth.reset_form();
                 matchmaker_state.id_token = id_token;
             }
             #[cfg(feature = "unstoppable_resolution")]
             Ok(AuthMessage::InvalidDomainError) => {
-                main_menu_ui_state.auth.pending_request = false;
-                main_menu_ui_state.auth.error_message =
-                    "The requested domain isn't registered".to_owned();
+                main_menu_ui_state
+                    .auth
+                    .respond_with_error("The requested domain isn't registered");
             }
             Ok(AuthMessage::UnavailableError) => {
                 log::debug!("Authentication unavailable");
-                main_menu_ui_state.auth.pending_request = false;
-                main_menu_ui_state.auth.error_message =
-                    "The service is unavailable. Please try again later".to_owned();
+                main_menu_ui_state
+                    .auth
+                    .respond_with_error("The service is unavailable. Please try again later");
             }
             Ok(AuthMessage::WrongPasswordError) => {
                 log::debug!("Wrong password");
-                main_menu_ui_state.auth.pending_request = false;
-                main_menu_ui_state.auth.error_message = "Incorrect username or password".to_owned();
+                main_menu_ui_state
+                    .auth
+                    .respond_with_error("Incorrect username or password");
             }
             Ok(AuthMessage::SignUpFailedError) => {
                 log::debug!("Bad Sign Up");
-                main_menu_ui_state.auth.pending_request = false;
-                main_menu_ui_state.auth.error_message =
-                    "Signing Up failed (email might be taken)".to_owned();
+                main_menu_ui_state
+                    .auth
+                    .respond_with_error("Signing Up failed (email might be taken)");
             }
             Ok(AuthMessage::InvalidOrExpiredAuthError) => {
                 log::debug!("Invalid or expired auth");
-                main_menu_ui_state.auth.pending_request = false;
-                main_menu_ui_state.auth.error_message = "Invalid or expired session".to_owned();
                 main_menu_ui_state.screen = MainMenuUiScreen::Auth;
                 main_menu_ui_state.auth.screen = AuthUiScreen::SignIn;
+                main_menu_ui_state.auth.reset_form();
+                main_menu_ui_state
+                    .auth
+                    .respond_with_error("Invalid or expired session");
             }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
@@ -393,6 +412,7 @@ fn authentication_screen(
                     }
                     if ui.button("Use different account").clicked() {
                         new_screen = Some(AuthUiScreen::SignIn);
+                        auth_ui_state.logged_in_as = None;
                     }
                 },
             );
@@ -438,10 +458,8 @@ fn authentication_screen(
             ui.label("Continue with an auth provider");
 
             ui.horizontal(|ui| {
-                ui.set_enabled(!auth_ui_state.pending_request && auth_ui_state.redirect_is_ready);
+                ui.set_enabled(!auth_ui_state.pending_request && auth_ui_state.handler_is_ready);
                 if ui.button("Google").clicked() {
-                    auth_ui_state.email.value.clear();
-                    auth_ui_state.password.value.clear();
                     auth_ui_state.pending_request = true;
                     new_screen = Some(AuthUiScreen::GoogleOpenID);
                     auth_request_tx
@@ -451,8 +469,6 @@ fn authentication_screen(
 
                 #[cfg(feature = "unstoppable_resolution")]
                 if ui.button("Unstoppable Domains").clicked() {
-                    auth_ui_state.email.value.clear();
-                    auth_ui_state.password.value.clear();
                     new_screen = Some(AuthUiScreen::UnstoppableDomainsOpenID);
                 }
             });
@@ -479,6 +495,7 @@ fn authentication_screen(
             ui.horizontal(|ui| {
                 if ui.button("Back").clicked() {
                     new_screen = Some(AuthUiScreen::SignIn);
+                    auth_ui_state.pending_request = false;
                     auth_request_tx
                         .send(AuthRequest::CancelOpenIDRequest)
                         .expect("Failed to write to a channel (auth request)");
@@ -539,7 +556,7 @@ fn authentication_screen(
 
     ui.add_space(5.0);
     if let Some(new_screen) = new_screen {
-        auth_ui_state.screen = new_screen;
+        auth_ui_state.switch_screen(new_screen);
     }
     confirm_auth
 }

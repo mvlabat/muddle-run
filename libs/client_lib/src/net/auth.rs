@@ -30,8 +30,6 @@ pub struct OpenIdConnectConfig {
     pub grant_types_supported: Vec<String>,
 }
 
-// The code is definitely read. A clippy bug?
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct OAuthResponse {
     pub state: String,
@@ -179,7 +177,7 @@ pub enum AuthRequest {
 
 #[derive(Debug)]
 pub enum AuthMessage {
-    RedirectUrlServerIsReady,
+    AuthHandlerIsReady,
     Success {
         id_token: String,
     },
@@ -318,7 +316,7 @@ impl AuthRequestsHandler {
                         ));
                     }
 
-                    self.send_auth_message(AuthMessage::RedirectUrlServerIsReady);
+                    self.send_auth_message(AuthMessage::AuthHandlerIsReady);
                 }
                 Some(AuthRequest::CancelOpenIDRequest) => {
                     self.pending_request = None;
