@@ -217,6 +217,9 @@ jobs:
           restore-keys: |
             cache-${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
             cache-${{ runner.os }}-cargo-debug
+      - name: Install dependencies
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+        if: ${{ runner.os == 'Linux' }}
       - uses: actions-rs/cargo@v1
         with:
           command: test
