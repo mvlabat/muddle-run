@@ -166,8 +166,8 @@ jobs:
           command: clippy
           args: -p mr_matchmaker --release -- -D warnings
 
-  mr_lib_shared:
-    name: Test mr_lib_shared
+  mr_shared_lib:
+    name: Test mr_shared_lib
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -193,3 +193,31 @@ jobs:
         with:
           command: test
           args: -p mr_shared_lib
+
+  mr_client_lib:
+    name: Test mr_client_lib
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cache-${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cache-${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
+            cache-${{ runner.os }}-cargo-debug
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p mr_client_lib --features "use-udp"

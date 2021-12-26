@@ -1,6 +1,14 @@
-use bevy::log;
+use crate::{
+    config_storage,
+    config_storage::{OfflineAuthConfig, AUTH_CONFIG_KEY},
+    utils::parse_jwt,
+};
+use bevy::{ecs::system::ResMut, log};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use core::slice::SlicePattern;
-use serde::{Deserialize, Serialize};
+use mr_messages_lib::JwtAuthClaims;
+use reqwest::IntoUrl;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use url::Url;
 
@@ -32,6 +40,7 @@ pub struct OAuthResponse {
 
 const CODE_VERIFIER_CHARS: &[u8] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-.~_";
+const AUTH0_TOKEN_ENDPOINT: &str = "https://muddle-run.eu.auth0.com/oauth/token";
 
 #[derive(Debug, Serialize)]
 pub struct AuthCodeRequest {
@@ -107,21 +116,41 @@ pub struct AuthCodeErrorResponse {
     pub error_code: String,
 }
 
+#[derive(Serialize, Debug)]
+pub enum AuthorizationCodeGrantType {
+    #[serde(rename = "authorization_code")]
+    Grant,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AuthTokenRequest {
     pub client_id: String,
     pub client_secret: Option<String>,
     pub code: String,
     pub code_verifier: String,
-    pub grant_type: String,
+    pub grant_type: AuthorizationCodeGrantType,
     pub redirect_uri: String,
+}
+
+#[derive(Serialize, Debug)]
+pub enum RefreshTokenGrantType {
+    #[serde(rename = "refresh_token")]
+    Grant,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RefreshAuthTokenRequestParams {
+    pub client_id: String,
+    pub client_secret: Option<String>,
+    pub grant_type: RefreshTokenGrantType,
+    pub refresh_token: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct AuthTokenResponse {
     pub access_token: String,
     pub expires_in: u64,
-    pub refresh_token: String,
+    pub refresh_token: Option<String>,
     pub scope: String,
     pub token_type: String,
     pub id_token: String,
@@ -141,6 +170,7 @@ pub enum AuthRequest {
     RequestUnstoppableDomainsAuth {
         username: String,
     },
+    RefreshAuth(OfflineAuthConfig),
     HandleOAuthResponse {
         state: String,
         code: String,
@@ -150,12 +180,15 @@ pub enum AuthRequest {
 #[derive(Debug)]
 pub enum AuthMessage {
     RedirectUrlServerIsReady,
-    Success,
+    Success {
+        id_token: String,
+    },
     WrongPasswordError,
     SignUpFailedError,
     #[cfg(feature = "unstoppable_resolution")]
     InvalidDomainError,
     UnavailableError,
+    InvalidOrExpiredAuthError,
 }
 
 pub struct AuthConfig {
@@ -170,6 +203,7 @@ pub struct AuthConfig {
 }
 
 pub struct PendingOAuthRequest {
+    username: Option<String>,
     client_id: String,
     client_secret: Option<String>,
     state_token: String,
@@ -178,14 +212,22 @@ pub struct PendingOAuthRequest {
     redirect_uri: String,
 }
 
+pub fn read_offline_auth_config(mut offline_auth_config: ResMut<OfflineAuthConfig>) {
+    let config: OfflineAuthConfig = match config_storage::read(AUTH_CONFIG_KEY) {
+        Ok(config) => config,
+        Err(err) => {
+            log::error!("Failed to read auth config: {:?}", err);
+            return;
+        }
+    };
+    *offline_auth_config = config;
+}
+
 pub async fn serve_auth_requests(
     auth_config: AuthConfig,
-    mut auth_request_rx: UnboundedReceiver<AuthRequest>,
+    auth_request_rx: UnboundedReceiver<AuthRequest>,
     auth_message_tx: UnboundedSender<AuthMessage>,
 ) {
-    let mut pending_request: Option<PendingOAuthRequest> = None;
-    let mut req_redirect_uri = None;
-
     let client = reqwest::Client::new();
 
     #[cfg(feature = "unstoppable_resolution")]
@@ -202,391 +244,521 @@ pub async fn serve_auth_requests(
         }
     };
 
-    loop {
-        match auth_request_rx.recv().await {
-            Some(AuthRequest::Password {
-                username,
-                password,
-                is_sign_up: false,
-            }) => {
-                sign_in(
-                    &client,
-                    &SignInRequestParams::new(
-                        auth_config.auth0_client_id.clone(),
+    let mut handler = AuthRequestsHandler {
+        client,
+        auth_config,
+        auth_request_rx,
+        auth_message_tx,
+        pending_request: None,
+        req_redirect_uri: None,
+        #[cfg(feature = "unstoppable_resolution")]
+        resolution,
+    };
+    handler.serve().await
+}
+
+pub struct AuthRequestsHandler {
+    client: reqwest::Client,
+    auth_config: AuthConfig,
+    auth_request_rx: UnboundedReceiver<AuthRequest>,
+    auth_message_tx: UnboundedSender<AuthMessage>,
+    pending_request: Option<PendingOAuthRequest>,
+    req_redirect_uri: Option<String>,
+    #[cfg(feature = "unstoppable_resolution")]
+    resolution: unstoppable_resolution::UnsResolutionProvider,
+}
+
+enum RequestParams<T> {
+    Json(T),
+    UrlEncoded(T),
+}
+
+impl AuthRequestsHandler {
+    async fn serve(&mut self) {
+        loop {
+            match self.auth_request_rx.recv().await {
+                Some(AuthRequest::Password {
+                    username,
+                    password,
+                    is_sign_up: false,
+                }) => {
+                    self.sign_in(&SignInRequestParams::new(
+                        self.auth_config.auth0_client_id.clone(),
                         username,
                         password,
-                    ),
-                    &auth_message_tx,
-                )
-                .await;
-            }
-            Some(AuthRequest::Password {
-                username,
-                password,
-                is_sign_up: true,
-            }) => {
-                let params = SignUpRequestParams {
-                    client_id: auth_config.auth0_client_id.clone(),
-                    email: username,
+                    ))
+                    .await;
+                }
+                Some(AuthRequest::Password {
+                    username,
                     password,
-                    connection: AUTH0_DB_CONNECTION.to_owned(),
-                };
+                    is_sign_up: true,
+                }) => {
+                    let params = SignUpRequestParams {
+                        client_id: self.auth_config.auth0_client_id.clone(),
+                        email: username,
+                        password,
+                        connection: AUTH0_DB_CONNECTION.to_owned(),
+                    };
 
-                sign_up(&client, &params, &auth_message_tx).await;
-            }
-            Some(AuthRequest::RedirectUrlServerPort(_port)) => {
-                log::trace!("Initialized redirect_uri");
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    req_redirect_uri = Some(format!("http://localhost:{}", _port));
+                    self.sign_up(&params).await;
                 }
+                Some(AuthRequest::RedirectUrlServerPort(_port)) => {
+                    log::trace!("Initialized redirect_uri");
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        self.req_redirect_uri = Some(format!("http://localhost:{}", _port));
+                    }
 
-                #[cfg(target_arch = "wasm32")]
-                {
-                    req_redirect_uri = Some(format!(
-                        "{}/auth",
-                        web_sys::window().unwrap().location().origin().unwrap()
-                    ));
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        self.req_redirect_uri = Some(format!(
+                            "{}/auth",
+                            web_sys::window().unwrap().location().origin().unwrap()
+                        ));
+                    }
+
+                    self.send_auth_message(AuthMessage::RedirectUrlServerIsReady);
                 }
+                Some(AuthRequest::CancelOpenIDRequest) => {
+                    self.pending_request = None;
+                }
+                Some(AuthRequest::RequestGoogleAuth) => {
+                    let (code_verifier, code_challenge) = code_challenge();
+                    let request = PendingOAuthRequest {
+                        username: None,
+                        client_id: self.auth_config.google_client_id.clone(),
+                        client_secret: self.auth_config.google_client_secret.clone(),
+                        state_token: state_token(),
+                        code_verifier,
+                        token_uri: Url::parse("https://oauth2.googleapis.com/token").unwrap(),
+                        redirect_uri: self.req_redirect_uri.clone().unwrap(),
+                    };
 
-                auth_message_tx
-                    .send(AuthMessage::RedirectUrlServerIsReady)
-                    .expect("Failed to send an auth update");
-            }
-            Some(AuthRequest::CancelOpenIDRequest) => {
-                pending_request = None;
-            }
-            Some(AuthRequest::RequestGoogleAuth) => {
-                let (code_verifier, code_challenge) = code_challenge();
-                let request = PendingOAuthRequest {
-                    client_id: auth_config.google_client_id.clone(),
-                    client_secret: auth_config.google_client_secret.clone(),
-                    state_token: state_token(),
-                    code_verifier,
-                    token_uri: Url::parse("https://oauth2.googleapis.com/token").unwrap(),
-                    redirect_uri: req_redirect_uri.clone().unwrap(),
-                };
+                    let params = AuthRequestParams {
+                        client_id: request.client_id.clone(),
+                        login_hint: None,
+                        redirect_uri: self.req_redirect_uri.clone().unwrap(),
+                        response_type: "code".to_owned(),
+                        scope: "openid email".to_owned(),
+                        code_challenge,
+                        code_challenge_method: "S256".to_owned(),
+                        state: request.state_token.clone(),
+                        access_type: "offline".to_owned(),
+                    };
 
-                let params = AuthRequestParams {
-                    client_id: request.client_id.clone(),
-                    login_hint: None,
-                    redirect_uri: req_redirect_uri.clone().unwrap(),
-                    response_type: "code".to_owned(),
-                    scope: "openid email".to_owned(),
-                    code_challenge,
-                    code_challenge_method: "S256".to_owned(),
-                    state: request.state_token.clone(),
-                    access_type: "offline".to_owned(),
-                };
+                    self.pending_request = Some(request);
 
-                pending_request = Some(request);
+                    let url = format!(
+                        "https://accounts.google.com/o/oauth2/v2/auth?{}",
+                        serde_urlencoded::to_string(params).unwrap()
+                    );
 
-                let url = format!(
-                    "https://accounts.google.com/o/oauth2/v2/auth?{}",
-                    serde_urlencoded::to_string(params).unwrap()
-                );
-
-                webbrowser::open(&url).expect("Failed to open a URL in browser");
-            }
-            #[cfg(feature = "unstoppable_resolution")]
-            Some(AuthRequest::RequestUnstoppableDomainsAuth { username }) => {
-                let rel = "http://openid.net/specs/connect/1.0/issuer";
-                let (user, domain) = username.split_once('@').unwrap_or(("", username.as_str()));
-                let jrd = match resolution.domain_jrd(domain, user, rel, None).await {
-                    Ok(jrd) => jrd,
-                    Err(unstoppable_resolution::WebFingerResponseError::InvalidDomainName) => {
-                        auth_message_tx
-                            .send(AuthMessage::InvalidDomainError)
-                            .expect("Failed to send an auth update");
+                    webbrowser::open(&url).expect("Failed to open a URL in browser");
+                }
+                #[cfg(feature = "unstoppable_resolution")]
+                Some(AuthRequest::RequestUnstoppableDomainsAuth { username }) => {
+                    self.request_ud_auth(username).await;
+                }
+                Some(AuthRequest::RefreshAuth(offline_auth_config)) => {
+                    let token_data = offline_auth_config.parse_token_data();
+                    let is_actual = token_data.map_or(false, |token_data| {
+                        let expires_at = DateTime::<Utc>::from_utc(
+                            NaiveDateTime::from_timestamp(token_data.claims.exp, 0),
+                            Utc,
+                        );
+                        expires_at > Utc::now() - Duration::minutes(1)
+                    });
+                    if is_actual {
+                        self.send_auth_message(AuthMessage::Success {
+                            id_token: offline_auth_config.id_token,
+                        });
                         continue;
                     }
-                    Err(err) => {
-                        log::error!("WebFinger error: {:?}", err);
+
+                    let (client_id, client_secret) =
+                        if offline_auth_config.token_uri.contains("google") {
+                            (
+                                self.auth_config.google_client_id.clone(),
+                                self.auth_config.google_client_secret.clone(),
+                            )
+                        } else if offline_auth_config.token_uri.contains("auth0") {
+                            (self.auth_config.auth0_client_id.clone(), None)
+                        } else {
+                            #[allow(unused_mut, unused_assignments)]
+                            let mut result = None;
+                            #[cfg(feature = "unstoppable_resolution")]
+                            {
+                                result = Some((
+                                    self.auth_config.ud_client_id.clone(),
+                                    Some(self.auth_config.ud_secret_id.clone()),
+                                ));
+                            }
+                            match result {
+                                Some(result) => result,
+                                None => {
+                                    self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
+                                    continue;
+                                }
+                            }
+                        };
+
+                    self.refresh_auth_token(
+                        &offline_auth_config,
+                        &RefreshAuthTokenRequestParams {
+                            client_id,
+                            client_secret,
+                            grant_type: RefreshTokenGrantType::Grant,
+                            refresh_token: offline_auth_config.refresh_token.clone(),
+                        },
+                    )
+                    .await;
+                }
+                Some(AuthRequest::HandleOAuthResponse { state, code }) => {
+                    let Some(request) = &self.pending_request else {
+                        log::warn!("Ignoring unexpected OAuth response");
+                        continue;
+                    };
+
+                    if request.state_token != state {
+                        log::warn!("Ignoring OAuth response: invalid state token");
                         continue;
                     }
-                };
-                log::debug!("Domain JRD: {:#?}", jrd);
-                let Some(openid_config) = fetch_openid_config(&client, rel, &jrd).await else {
-                    auth_message_tx
-                        .send(AuthMessage::UnavailableError)
-                        .expect("Failed to send an auth update");
-                    continue;
-                };
 
-                let Some(token_uri) = openid_config.token_endpoint else {
-                    auth_message_tx
-                        .send(AuthMessage::UnavailableError)
-                        .expect("Failed to send an auth update");
-                    continue;
-                };
+                    let success = self.exchange_auth_code(request, code).await;
 
-                let (code_verifier, code_challenge) = code_challenge();
-                let request = PendingOAuthRequest {
-                    client_id: auth_config.ud_client_id.clone(),
-                    client_secret: Some(auth_config.ud_secret_id.clone()),
-                    state_token: state_token(),
-                    code_verifier,
-                    token_uri,
-                    redirect_uri: req_redirect_uri.clone().unwrap(),
-                };
-
-                let params = AuthRequestParams {
-                    client_id: request.client_id.clone(),
-                    login_hint: Some(domain.to_owned()),
-                    redirect_uri: req_redirect_uri.clone().unwrap(),
-                    response_type: "code".to_owned(),
-                    scope: "openid email wallet offline_access".to_owned(),
-                    code_challenge,
-                    code_challenge_method: "S256".to_owned(),
-                    state: request.state_token.clone(),
-                    access_type: "offline".to_owned(),
-                };
-
-                pending_request = Some(request);
-
-                let url = format!(
-                    "{}?{}",
-                    openid_config.authorization_endpoint,
-                    serde_urlencoded::to_string(params).unwrap()
-                );
-
-                webbrowser::open(&url).expect("Failed to open a URL in browser");
-            }
-            Some(AuthRequest::HandleOAuthResponse { state, code }) => {
-                let Some(request) = &pending_request else {
-                    log::warn!("Ignoring unexpected OAuth response");
-                    continue;
-                };
-
-                if request.state_token != state {
-                    log::warn!("Ignoring OAuth response: invalid state token");
-                    continue;
+                    if success {
+                        self.pending_request = None;
+                    }
                 }
-
-                let success = exchange_auth_code(&client, request, code, &auth_message_tx).await;
-
-                if success {
-                    pending_request = None;
+                None => {
+                    return;
                 }
             }
-            None => {
+        }
+    }
+
+    #[cfg(feature = "unstoppable_resolution")]
+    async fn request_ud_auth(&mut self, username: String) {
+        let rel = "http://openid.net/specs/connect/1.0/issuer";
+        let (user, domain) = username.split_once('@').unwrap_or(("", username.as_str()));
+        let jrd = match self.resolution.domain_jrd(domain, user, rel, None).await {
+            Ok(jrd) => jrd,
+            Err(unstoppable_resolution::WebFingerResponseError::InvalidDomainName) => {
+                self.send_auth_message(AuthMessage::InvalidDomainError);
+                return;
+            }
+            Err(err) => {
+                log::error!("WebFinger error: {:?}", err);
+                return;
+            }
+        };
+        log::debug!("Domain JRD: {:#?}", jrd);
+        let Some(openid_config) = self.fetch_openid_config(rel, &jrd).await else {
+            self.send_auth_message(AuthMessage::UnavailableError);
+            return;
+        };
+
+        let Some(token_uri) = openid_config.token_endpoint else {
+            self.send_auth_message(AuthMessage::UnavailableError);
+            return;
+        };
+
+        let (code_verifier, code_challenge) = code_challenge();
+        let request = PendingOAuthRequest {
+            username: Some(username.clone()),
+            client_id: self.auth_config.ud_client_id.clone(),
+            client_secret: None,
+            state_token: state_token(),
+            code_verifier,
+            token_uri,
+            redirect_uri: self.req_redirect_uri.clone().unwrap(),
+        };
+
+        let params = AuthRequestParams {
+            client_id: request.client_id.clone(),
+            login_hint: Some(domain.to_owned()),
+            redirect_uri: self.req_redirect_uri.clone().unwrap(),
+            response_type: "code".to_owned(),
+            scope: "openid email wallet offline_access".to_owned(),
+            code_challenge,
+            code_challenge_method: "S256".to_owned(),
+            state: request.state_token.clone(),
+            access_type: "offline".to_owned(),
+        };
+
+        self.pending_request = Some(request);
+
+        let url = format!(
+            "{}?{}",
+            openid_config.authorization_endpoint,
+            serde_urlencoded::to_string(params).unwrap()
+        );
+
+        webbrowser::open(&url).expect("Failed to open a URL in browser");
+    }
+
+    #[cfg(feature = "unstoppable_resolution")]
+    async fn fetch_openid_config(
+        &self,
+        rel: &str,
+        jrd: &unstoppable_resolution::JrdDocument,
+    ) -> Option<OpenIdConnectConfig> {
+        let link = jrd.links.iter().find(|link| link.rel == rel)?;
+        let url = link
+            .href
+            .as_ref()?
+            .join(".well-known/openid-configuration")
+            .ok()?;
+        self.client.get(url).send().await.ok()?.json().await.ok()
+    }
+
+    async fn sign_up(&self, params: &SignUpRequestParams) {
+        let Some(response) = self
+            .request::<(), SignUpErrorResponse, _, _>(
+                "https://muddle-run.eu.auth0.com/dbconnections/signup",
+                RequestParams::Json(params),
+            )
+            .await else {
+            log::error!("Failed to sign up");
+            return;
+        };
+
+        if let Err(err) = response {
+            if err.code == "invalid_signup" {
+                self.send_auth_message(AuthMessage::SignUpFailedError);
                 return;
             }
         }
-    }
-}
 
-#[cfg(feature = "unstoppable_resolution")]
-async fn fetch_openid_config(
-    client: &reqwest::Client,
-    rel: &str,
-    jrd: &unstoppable_resolution::JrdDocument,
-) -> Option<OpenIdConnectConfig> {
-    let link = jrd.links.iter().find(|link| link.rel == rel)?;
-    let url = link
-        .href
-        .as_ref()?
-        .join(".well-known/openid-configuration")
-        .ok()?;
-    client.get(url).send().await.ok()?.json().await.ok()
-}
-
-async fn sign_up(
-    client: &reqwest::Client,
-    params: &SignUpRequestParams,
-    auth_message_tx: &UnboundedSender<AuthMessage>,
-) {
-    let result = client
-        .post("https://muddle-run.eu.auth0.com/dbconnections/signup")
-        .json(params)
-        .send()
-        .await;
-
-    let (data, success) = match result {
-        Ok(result) => {
-            let is_success = result.status().is_success();
-            (result.bytes().await, is_success)
-        }
-        Err(err) => {
-            log::error!("Failed to sign up: {:?}", err);
-            auth_message_tx
-                .send(AuthMessage::UnavailableError)
-                .expect("Failed to send an auth update");
-            return;
-        }
-    };
-
-    if !success {
-        log::error!("Failed to sign up");
-        match data
-            .ok()
-            .and_then(|data| serde_json::from_slice::<SignUpErrorResponse>(data.as_slice()).ok())
-        {
-            Some(response) => {
-                if response.code == "invalid_signup" {
-                    auth_message_tx
-                        .send(AuthMessage::SignUpFailedError)
-                        .expect("Failed to send an auth update");
-                    return;
-                }
-            }
-            None => {
-                log::error!("Failed to parse sign up error code");
-            }
-        }
-        auth_message_tx
-            .send(AuthMessage::UnavailableError)
-            .expect("Failed to send an auth update");
-        return;
-    }
-
-    sign_in(
-        client,
-        &SignInRequestParams::new(
+        self.sign_in(&SignInRequestParams::new(
             params.client_id.clone(),
             params.email.clone(),
             params.password.clone(),
-        ),
-        auth_message_tx,
-    )
-    .await;
-}
-
-async fn sign_in(
-    client: &reqwest::Client,
-    body: &SignInRequestParams,
-    auth_message_tx: &UnboundedSender<AuthMessage>,
-) {
-    let result = client
-        .post("https://muddle-run.eu.auth0.com/oauth/token")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(serde_urlencoded::to_string(body).unwrap())
-        .send()
+        ))
         .await;
+    }
 
-    let (data, success) = match result {
-        Ok(result) => {
-            let is_success = result.status().is_success();
-            (result.bytes().await, is_success)
-        }
-        Err(err) => {
-            log::error!("Failed to fetch token: {:?}", err);
-            auth_message_tx
-                .send(AuthMessage::UnavailableError)
-                .expect("Failed to send an auth update");
+    async fn sign_in(&self, params: &SignInRequestParams) {
+        let username = params.username.clone();
+
+        let response = self
+            .request::<AuthTokenResponse, SignInErrorResponse, _, _>(
+                AUTH0_TOKEN_ENDPOINT,
+                RequestParams::UrlEncoded(params),
+            )
+            .await;
+
+        let Some(response) = response else {
+            log::error!("Failed to sign in");
             return;
-        }
-    };
-
-    if success {
-        let response = data.map_err(anyhow::Error::msg).and_then(|data| {
-            serde_json::from_slice::<AuthTokenResponse>(data.as_slice()).map_err(anyhow::Error::msg)
-        });
+        };
 
         match response {
-            Ok(_response) => {
-                auth_message_tx
-                    .send(AuthMessage::Success)
-                    .expect("Failed to send an auth update");
-            }
-            Err(err) => {
-                log::error!("Failed to serialize token body: {:?}", err);
-                auth_message_tx
-                    .send(AuthMessage::UnavailableError)
-                    .expect("Failed to send an auth update");
-            }
-        }
-    } else {
-        log::error!("Failed to sign in");
-        match data
-            .ok()
-            .and_then(|data| serde_json::from_slice::<SignInErrorResponse>(data.as_slice()).ok())
-        {
-            Some(response) => {
-                if response.error == "invalid_grant" {
-                    auth_message_tx
-                        .send(AuthMessage::WrongPasswordError)
-                        .expect("Failed to send an auth update");
+            Ok(response) => {
+                if parse_jwt::<JwtAuthClaims>(&response.id_token).is_err() {
+                    log::error!("Failed to parse id_token from the response");
+                    self.send_auth_message(AuthMessage::UnavailableError);
                     return;
+                };
+
+                self.send_auth_message(AuthMessage::Success {
+                    id_token: response.id_token.clone(),
+                });
+
+                if let Some(refresh_token) = response.refresh_token {
+                    if let Err(err) = config_storage::write(
+                        AUTH_CONFIG_KEY,
+                        &OfflineAuthConfig {
+                            username,
+                            token_uri: AUTH0_TOKEN_ENDPOINT.to_owned(),
+                            id_token: response.id_token,
+                            refresh_token,
+                        },
+                    ) {
+                        log::error!("Failed to save auth config: {:?}", err);
+                    }
                 }
             }
-            None => {
-                log::error!("Failed to parse sign in error");
+            Err(err) => {
+                if err.error == "invalid_grant" {
+                    self.send_auth_message(AuthMessage::WrongPasswordError);
+                }
             }
         }
-        auth_message_tx
-            .send(AuthMessage::UnavailableError)
-            .expect("Failed to send an auth update");
     }
-}
 
-async fn exchange_auth_code(
-    client: &reqwest::Client,
-    request: &PendingOAuthRequest,
-    code: String,
-    auth_message_tx: &UnboundedSender<AuthMessage>,
-) -> bool {
-    let result = client
-        .post(request.token_uri.clone())
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(
-            serde_urlencoded::to_string(AuthTokenRequest {
-                client_id: request.client_id.clone(),
-                client_secret: request.client_secret.clone(),
-                code,
-                code_verifier: request.code_verifier.clone(),
-                grant_type: "authorization_code".to_owned(),
-                redirect_uri: request.redirect_uri.to_string(),
-            })
-            .unwrap(),
-        )
-        .send()
-        .await;
-
-    let (data, success) = match result {
-        Ok(result) => {
-            let is_success = result.status().is_success();
-            (result.bytes().await, is_success)
-        }
-        Err(err) => {
-            log::error!("Failed to fetch token: {:?}", err);
-            auth_message_tx
-                .send(AuthMessage::UnavailableError)
-                .expect("Failed to send an auth update");
+    async fn refresh_auth_token(
+        &self,
+        offline_auth_config: &OfflineAuthConfig,
+        params: &RefreshAuthTokenRequestParams,
+    ) -> bool {
+        let Some(Ok(response)) = self
+            .request::<AuthTokenResponse, serde_json::Value, _, _>(
+                &offline_auth_config.token_uri,
+                RequestParams::UrlEncoded(params)
+            ).await else
+        {
+            log::error!("Failed to refresh an auth token");
+            self.send_auth_message(AuthMessage::UnavailableError);
             return false;
-        }
-    };
+        };
 
-    if success {
-        let response = data.map_err(anyhow::Error::msg).and_then(|data| {
-            serde_json::from_slice::<AuthTokenResponse>(data.as_slice()).map_err(anyhow::Error::msg)
+        if parse_jwt::<JwtAuthClaims>(&response.id_token).is_err() {
+            log::error!("Failed to parse id_token from the response");
+            self.send_auth_message(AuthMessage::UnavailableError);
+            return false;
+        };
+
+        self.send_auth_message(AuthMessage::Success {
+            id_token: response.id_token.clone(),
         });
 
-        match response {
-            Ok(_response) => {
-                auth_message_tx
-                    .send(AuthMessage::Success)
-                    .expect("Failed to send an auth update");
-            }
-            Err(err) => {
-                log::error!("Failed to serialize token body: {:?}", err);
-                auth_message_tx
-                    .send(AuthMessage::UnavailableError)
-                    .expect("Failed to send an auth update");
-            }
+        if let Err(err) = config_storage::write(
+            AUTH_CONFIG_KEY,
+            &OfflineAuthConfig {
+                username: offline_auth_config.username.clone(),
+                token_uri: offline_auth_config.token_uri.clone(),
+                id_token: response.id_token,
+                refresh_token: if let Some(refresh_token) = response.refresh_token {
+                    refresh_token
+                } else {
+                    offline_auth_config.refresh_token.clone()
+                },
+            },
+        ) {
+            log::error!("Failed to save auth config: {:?}", err);
         }
-    } else {
-        log::debug!(
-            "{:?}",
-            serde_json::from_slice::<serde_json::Value>(data.unwrap().as_slice())
-        );
-        log::error!("Auth token exchange failed");
-        auth_message_tx
-            .send(AuthMessage::UnavailableError)
-            .expect("Failed to send an auth update");
+
+        true
     }
 
-    success
+    async fn exchange_auth_code(&self, request: &PendingOAuthRequest, code: String) -> bool {
+        let Some(Ok(response)) = self
+            .request::<AuthTokenResponse, serde_json::Value, _, _>(
+                request.token_uri.clone(),
+                RequestParams::UrlEncoded(&AuthTokenRequest {
+                    client_id: request.client_id.clone(),
+                    client_secret: request.client_secret.clone(),
+                    code,
+                    code_verifier: request.code_verifier.clone(),
+                    grant_type: AuthorizationCodeGrantType::Grant,
+                    redirect_uri: request.redirect_uri.to_string(),
+                },
+            )).await else
+        {
+            log::error!("Failed to exchange auth code");
+            return false;
+        };
+
+        let Ok(token_data) = parse_jwt::<JwtAuthClaims>(&response.id_token) else {
+            log::error!("Failed to parse id_token from the response");
+            self.send_auth_message(AuthMessage::UnavailableError);
+            return false;
+        };
+
+        self.send_auth_message(AuthMessage::Success {
+            id_token: response.id_token.clone(),
+        });
+
+        let username = request
+            .username
+            .clone()
+            .or(token_data.claims.email)
+            .expect("Expected username in either request or id_token");
+
+        if let Some(refresh_token) = response.refresh_token {
+            if let Err(err) = config_storage::write(
+                AUTH_CONFIG_KEY,
+                &OfflineAuthConfig {
+                    username,
+                    token_uri: request.token_uri.to_string(),
+                    id_token: response.id_token,
+                    refresh_token,
+                },
+            ) {
+                log::error!("Failed to save auth config: {:?}", err);
+            }
+        };
+
+        true
+    }
+
+    async fn request<R: DeserializeOwned, E: DeserializeOwned, B: Serialize, U: IntoUrl>(
+        &self,
+        uri: U,
+        params: RequestParams<&B>,
+    ) -> Option<Result<R, E>> {
+        let uri = uri.into_url().expect("Expected a valid url");
+        let mut request = self.client.post(uri.clone());
+        request = match params {
+            RequestParams::Json(params) => request.json(params),
+            RequestParams::UrlEncoded(params) => request
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body(serde_urlencoded::to_string(params).unwrap()),
+        };
+        let result = request.send().await;
+
+        let (data, status) = match result {
+            Ok(result) => {
+                let is_success = result.status();
+                (result.bytes().await, is_success)
+            }
+            Err(err) => {
+                log::error!("Failed to send a request: {:?}", err);
+                self.send_auth_message(AuthMessage::UnavailableError);
+                return None;
+            }
+        };
+
+        #[cfg(debug_assertions)]
+        if let Ok(data) = &data {
+            log::debug!(
+                "HTTP response: {}",
+                String::from_utf8_lossy(data.as_slice())
+            );
+        }
+
+        if status.is_success() {
+            match data
+                .ok()
+                .and_then(|data| serde_json::from_slice::<R>(data.as_slice()).ok())
+            {
+                Some(response) => Some(Ok(response)),
+                None => {
+                    log::error!(
+                        "Failed to parse a body response ({:?}, status: {})",
+                        uri.to_string(),
+                        status.as_u16()
+                    );
+                    self.send_auth_message(AuthMessage::UnavailableError);
+                    None
+                }
+            }
+        } else {
+            match data
+                .ok()
+                .and_then(|data| serde_json::from_slice::<E>(data.as_slice()).ok())
+            {
+                Some(response) => Some(Err(response)),
+                None => {
+                    log::error!(
+                        "Failed to parse a body response ({:?}, status: {})",
+                        uri.to_string(),
+                        status.as_u16()
+                    );
+                    self.send_auth_message(AuthMessage::UnavailableError);
+                    None
+                }
+            }
+        }
+    }
+
+    fn send_auth_message(&self, message: AuthMessage) {
+        self.auth_message_tx
+            .send(message)
+            .expect("Failed to send an auth update");
+    }
 }
 
 pub fn google_client_id() -> Option<String> {

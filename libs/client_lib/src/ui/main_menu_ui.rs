@@ -1,6 +1,9 @@
-use crate::net::{
-    auth::{AuthMessage, AuthRequest},
-    MainMenuUiChannels, MatchmakerState, ServerToConnect, TcpConnectionStatus,
+use crate::{
+    net::{
+        auth::{AuthMessage, AuthRequest},
+        MainMenuUiChannels, MatchmakerState, ServerToConnect, TcpConnectionStatus,
+    },
+    OfflineAuthConfig,
 };
 use bevy::{
     ecs::system::{Local, Res, ResMut},
@@ -112,6 +115,7 @@ impl InputField {
 }
 
 pub enum AuthUiScreen {
+    RefreshAuth,
     SignIn,
     SignUp,
     GoogleOpenID,
@@ -134,6 +138,7 @@ pub struct MatchmakerUiState {
 
 #[derive(Default)]
 pub struct MainMenuUiState {
+    initialized: bool,
     screen: MainMenuUiScreen,
     auth: AuthUiState,
     matchmaker: MatchmakerUiState,
@@ -150,10 +155,11 @@ impl Default for MainMenuUiScreen {
     }
 }
 
-pub fn matchmaker_ui(
+pub fn main_menu_ui(
     mut main_menu_ui_state: Local<MainMenuUiState>,
     egui_context: ResMut<EguiContext>,
     matchmaker_state: Option<ResMut<MatchmakerState>>,
+    offline_auth_config: Res<OfflineAuthConfig>,
     main_menu_ui_channels: Option<ResMut<MainMenuUiChannels>>,
     mut server_to_connect: ResMut<Option<ServerToConnect>>,
     connection_state: Res<ConnectionState>,
@@ -161,22 +167,35 @@ pub fn matchmaker_ui(
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
 
-    let (matchmaker_state, mut main_menu_ui_channels) =
+    // If matchmaker address is not configured (which means that the state and the channels aren't
+    // initialized either), we don't want to render this menu.
+    let (mut matchmaker_state, mut main_menu_ui_channels) =
         match matchmaker_state.zip(main_menu_ui_channels) {
             Some(resources) => resources,
             None => return,
         };
+
+    if !main_menu_ui_state.initialized {
+        if offline_auth_config.exists() {
+            main_menu_ui_state.auth.screen = AuthUiScreen::RefreshAuth;
+            main_menu_ui_state.auth.logged_in_as = Some(offline_auth_config.username.clone());
+        } else {
+            main_menu_ui_state.auth.screen = AuthUiScreen::SignIn;
+        }
+        main_menu_ui_state.initialized = true;
+    }
 
     loop {
         match main_menu_ui_channels.auth_message_rx.try_recv() {
             Ok(AuthMessage::RedirectUrlServerIsReady) => {
                 main_menu_ui_state.auth.redirect_is_ready = true;
             }
-            Ok(AuthMessage::Success) => {
+            Ok(AuthMessage::Success { id_token }) => {
                 log::debug!("Successful auth");
                 main_menu_ui_state.screen = MainMenuUiScreen::Matchmaker;
                 main_menu_ui_state.auth.pending_request = false;
                 main_menu_ui_state.auth.password.value.clear();
+                matchmaker_state.id_token = id_token;
             }
             #[cfg(feature = "unstoppable_resolution")]
             Ok(AuthMessage::InvalidDomainError) => {
@@ -200,6 +219,13 @@ pub fn matchmaker_ui(
                 main_menu_ui_state.auth.pending_request = false;
                 main_menu_ui_state.auth.error_message =
                     "Signing Up failed (email might be taken)".to_owned();
+            }
+            Ok(AuthMessage::InvalidOrExpiredAuthError) => {
+                log::debug!("Invalid or expired auth");
+                main_menu_ui_state.auth.pending_request = false;
+                main_menu_ui_state.auth.error_message = "Invalid or expired session".to_owned();
+                main_menu_ui_state.screen = MainMenuUiScreen::Auth;
+                main_menu_ui_state.auth.screen = AuthUiScreen::SignIn;
             }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
@@ -272,6 +298,7 @@ pub fn matchmaker_ui(
                 .fixed_size(egui::Vec2::new(window_width, window_height))
                 .show(ui.ctx(), |ui| {
                     let MainMenuUiState {
+                        initialized: _,
                         ref mut screen,
                         auth: auth_ui_state,
                         matchmaker:
@@ -313,6 +340,7 @@ pub fn matchmaker_ui(
                                         ui,
                                         &mut main_menu_ui_channels.auth_request_tx,
                                         auth_ui_state,
+                                        &offline_auth_config,
                                     );
                                     if confirm {
                                         *screen = MainMenuUiScreen::Matchmaker;
@@ -337,6 +365,7 @@ fn authentication_screen(
     ui: &mut egui::Ui,
     auth_request_tx: &mut UnboundedSender<AuthRequest>,
     auth_ui_state: &mut AuthUiState,
+    offline_auth_config: &OfflineAuthConfig,
 ) -> bool {
     ui.style_mut().spacing.item_spacing = egui::Vec2::new(10.0, 5.0);
     let mut confirm_auth = false;
@@ -345,7 +374,31 @@ fn authentication_screen(
     auth_ui_state.validate();
 
     match auth_ui_state.screen {
+        AuthUiScreen::RefreshAuth => {
+            ui.with_layout(
+                egui::Layout::top_down_justified(egui::Align::Center),
+                |ui| {
+                    ui.label("You've been logged in as");
+                    ui.style_mut().body_text_style = egui::TextStyle::Heading;
+                    ui.label(auth_ui_state.logged_in_as.as_ref().unwrap());
+
+                    ui.add_space(10.0);
+
+                    ui.set_enabled(!auth_ui_state.pending_request);
+                    if ui.button("Continue").clicked() {
+                        auth_ui_state.pending_request = true;
+                        auth_request_tx
+                            .send(AuthRequest::RefreshAuth(offline_auth_config.clone()))
+                            .expect("Failed to write to a channel (auth request)");
+                    }
+                    if ui.button("Use different account").clicked() {
+                        new_screen = Some(AuthUiScreen::SignIn);
+                    }
+                },
+            );
+        }
         AuthUiScreen::SignIn | AuthUiScreen::SignUp => {
+            ui.set_enabled(!auth_ui_state.pending_request);
             auth_ui_state.email.ui(ui);
             auth_ui_state.password.ui(ui);
 
@@ -385,11 +438,8 @@ fn authentication_screen(
             ui.label("Continue with an auth provider");
 
             ui.horizontal(|ui| {
-                if egui::widgets::Button::new("Google")
-                    .enabled(!auth_ui_state.pending_request && auth_ui_state.redirect_is_ready)
-                    .ui(ui)
-                    .clicked()
-                {
+                ui.set_enabled(!auth_ui_state.pending_request && auth_ui_state.redirect_is_ready);
+                if ui.button("Google").clicked() {
                     auth_ui_state.email.value.clear();
                     auth_ui_state.password.value.clear();
                     auth_ui_state.pending_request = true;
@@ -412,21 +462,13 @@ fn authentication_screen(
             match auth_ui_state.screen {
                 AuthUiScreen::SignIn => {
                     ui.label("Don't have an account?");
-                    if egui::widgets::Button::new("Sign Up")
-                        .enabled(!auth_ui_state.pending_request)
-                        .ui(ui)
-                        .clicked()
-                    {
+                    if ui.button("Sign Up").clicked() {
                         new_screen = Some(AuthUiScreen::SignUp);
                     }
                 }
                 AuthUiScreen::SignUp => {
                     ui.label("Already have an account?");
-                    if egui::widgets::Button::new("Sign In")
-                        .enabled(!auth_ui_state.pending_request)
-                        .ui(ui)
-                        .clicked()
-                    {
+                    if ui.button("Sign In").clicked() {
                         new_screen = Some(AuthUiScreen::SignIn);
                     }
                 }
@@ -449,8 +491,9 @@ fn authentication_screen(
                     .color = ERROR_COLOR;
                 ui.label(&auth_ui_state.error_message);
             });
-
             ui.add_space(20.0);
+
+            ui.set_enabled(!auth_ui_state.pending_request);
 
             #[cfg(feature = "unstoppable_resolution")]
             if !auth_ui_state.pending_request
@@ -463,11 +506,7 @@ fn authentication_screen(
                     |ui| {
                         ui.text_edit_singleline(&mut auth_ui_state.domain);
                         ui.add_space(5.0);
-                        if egui::widgets::Button::new("Continue")
-                            .enabled(!auth_ui_state.domain.is_empty())
-                            .ui(ui)
-                            .clicked()
-                        {
+                        if ui.button("Continue").clicked() {
                             auth_ui_state.pending_request = true;
                             auth_request_tx
                                 .send(AuthRequest::RequestUnstoppableDomainsAuth {
@@ -491,7 +530,7 @@ fn authentication_screen(
                     egui::Layout::top_down_justified(egui::Align::Center),
                     |ui| {
                         ui.label("Please complete the Sign In");
-                        egui::widgets::Button::new("Continue").enabled(false).ui(ui);
+                        let _ = ui.button("Continue");
                     },
                 );
             }

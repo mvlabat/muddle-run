@@ -87,6 +87,7 @@ pub enum TcpConnectionStatus {
 
 pub struct MatchmakerState {
     pub status: TcpConnectionStatus,
+    pub id_token: String,
 }
 
 pub struct MainMenuUiChannels {
@@ -178,6 +179,7 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
     });
     commands.insert_resource(MatchmakerState {
         status: TcpConnectionStatus::Disconnected,
+        id_token: String::new(),
     });
 }
 

@@ -1,14 +1,16 @@
+#![feature(assert_matches)]
 #![feature(let_else)]
 #![feature(slice_pattern)]
 
 use crate::{
     camera::{move_free_camera_pivot, reattach_camera},
     components::{CameraPivotDirection, CameraPivotTag},
+    config_storage::OfflineAuthConfig,
     game_events::process_scheduled_spawns,
     input::{LevelObjectRequestsQueue, MouseRay, MouseWorldPosition, PlayerRequestsQueue},
     net::{
-        init_matchmaker_connection, maintain_connection, process_network_events,
-        send_network_updates, send_requests, ServerToConnect,
+        auth::read_offline_auth_config, init_matchmaker_connection, maintain_connection,
+        process_network_events, send_network_updates, send_requests, ServerToConnect,
     },
     ui::{
         builder_ui::{EditedLevelObject, EditedObjectUpdate},
@@ -54,11 +56,13 @@ use std::borrow::Cow;
 
 mod camera;
 mod components;
+mod config_storage;
 mod game_events;
 mod helpers;
 mod input;
 mod net;
 mod ui;
+mod utils;
 mod visuals;
 mod websocket;
 
@@ -114,6 +118,7 @@ impl Plugin for MuddleClientPlugin {
             .add_startup_system(init_matchmaker_connection.system())
             .add_startup_system(init_state.system())
             .add_startup_system(basic_scene.system())
+            .add_startup_system(read_offline_auth_config.system())
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
                 NetAdaptiveTimestemp::default(),
@@ -133,7 +138,7 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::inspect_object.system())
             .add_system(ui::player_ui::leaderboard_ui.system())
             .add_system(ui::player_ui::help_ui.system())
-            .add_system(ui::main_menu_ui::matchmaker_ui.system())
+            .add_system(ui::main_menu_ui::main_menu_ui.system())
             // Not only Egui for builder mode.
             .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))
             // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.
@@ -169,6 +174,7 @@ impl Plugin for MuddleClientPlugin {
         world.get_resource_or_insert_with(MouseWorldPosition::default);
         world.get_resource_or_insert_with(VisibilitySettings::default);
         world.get_resource_or_insert_with(Option::<ServerToConnect>::default);
+        world.get_resource_or_insert_with(OfflineAuthConfig::default);
     }
 }
 
