@@ -115,12 +115,12 @@ fn from_js_err(err: wasm_bindgen::JsValue) -> anyhow::Error {
         message: String,
     }
 
-    let message = match err.into_serde::<JsError>() {
+    let message = match serde_wasm_bindgen::from_value::<JsError>(err.clone()) {
         Ok(err) => err.message,
-        _ => err
-            .into_serde::<serde_json::Value>()
-            .and_then(|err| serde_json::to_string(&err))
-            .unwrap_or_else(|_| "Unknown JS error".to_owned()),
+        _ => js_sys::JSON::stringify(&err)
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_else(|| "Unknown JS error".to_owned()),
     };
     anyhow::Error::msg(message)
 }
