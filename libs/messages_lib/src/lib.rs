@@ -28,3 +28,35 @@ pub struct JwtAuthClaims {
     pub email: Option<String>,
     pub exp: i64,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegisterRequest {
+    pub jwt: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegisterResponse {
+    #[serde(flatten)]
+    pub user: RegisteredUser,
+    pub is_new: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegisteredUser {
+    pub id: i64,
+    pub email: Option<String>,
+    pub username: Option<String>,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ErrorResponse {
+    pub message: String,
+}
+
+impl ErrorResponse {
+    pub fn new(message: String) -> Self {
+        Self { message }
+    }
+}

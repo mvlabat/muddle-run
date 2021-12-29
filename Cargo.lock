@@ -2934,6 +2934,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "headers"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4c4eb0471fcb85846d8b0690695ef354f9afb11cb03cac2e1d7c9253351afb0"
+dependencies = [
+ "base64",
+ "bitflags",
+ "bytes",
+ "headers-core",
+ "http",
+ "httpdate",
+ "mime",
+ "sha-1",
+]
+
+[[package]]
+name = "headers-core"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7f66481bfee273957b1f20485a4ff3362987f85b2c236580d81b4eb7a326429"
+dependencies = [
+ "http",
+]
+
+[[package]]
 name = "heck"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3881,6 +3906,7 @@ dependencies = [
 name = "mr_messages_lib"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "serde",
 ]
 
@@ -3893,6 +3919,7 @@ dependencies = [
  "bincode",
  "env_logger 0.8.4",
  "futures",
+ "headers",
  "jsonwebtoken",
  "log",
  "mr_messages_lib",
@@ -3903,6 +3930,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "sqlx",
+ "tokio",
 ]
 
 [[package]]
@@ -3961,6 +3989,9 @@ dependencies = [
 [[package]]
 name = "mr_utils_lib"
 version = "0.1.0"
+dependencies = [
+ "reqwest",
+]
 
 [[package]]
 name = "mr_web_client"
@@ -5997,6 +6028,7 @@ dependencies = [
  "bitflags",
  "byteorder",
  "bytes",
+ "chrono",
  "crc 2.1.0",
  "crossbeam-channel",
  "crossbeam-queue",
@@ -6059,6 +6091,7 @@ version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d1bd069de53442e7a320f525a6d4deb8bb0621ac7a55f7eccbc2b58b57f43d0"
 dependencies = [
+ "actix-rt",
  "native-tls",
  "once_cell",
  "tokio",

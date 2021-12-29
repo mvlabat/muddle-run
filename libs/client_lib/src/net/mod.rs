@@ -1,5 +1,6 @@
 use crate::{
     input::{LevelObjectRequestsQueue, PlayerRequestsQueue},
+    net::auth::persistence_url,
     websocket::WebSocketStream,
     CurrentPlayerNetId, EstimatedServerTime, InitialRtt, LevelObjectCorrelations, PlayerDelay,
     TargetFramesAhead,
@@ -109,6 +110,7 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
     };
 
     let auth_config = AuthConfig {
+        persistence_url: persistence_url().expect("Expected MUDDLE_PERSISTENCE_URL"),
         google_client_id: auth::google_client_id().expect("Expected MUDDLE_GOOGLE_CLIENT_ID"),
         google_client_secret: auth::google_client_secret(),
         auth0_client_id: auth::auth0_client_id().expect("Expected MUDDLE_AUTH0_CLIENT_ID"),

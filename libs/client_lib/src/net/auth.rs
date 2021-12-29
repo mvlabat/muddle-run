@@ -6,7 +6,8 @@ use crate::{
 use bevy::{ecs::system::ResMut, log};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use core::slice::SlicePattern;
-use mr_messages_lib::JwtAuthClaims;
+use mr_messages_lib::{ErrorResponse, JwtAuthClaims, RegisterRequest, RegisterResponse};
+use mr_shared_lib::try_parse_from_env;
 use reqwest::IntoUrl;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -190,6 +191,7 @@ pub enum AuthMessage {
 }
 
 pub struct AuthConfig {
+    pub persistence_url: Url,
     pub google_client_id: String,
     // Google OAuth requires it for desktop clients.
     pub google_client_secret: Option<String>,
@@ -359,58 +361,7 @@ impl AuthRequestsHandler {
                     self.request_ud_auth(username).await;
                 }
                 Some(AuthRequest::RefreshAuth(offline_auth_config)) => {
-                    let token_data = offline_auth_config.parse_token_data();
-                    let is_actual = token_data.map_or(false, |token_data| {
-                        let expires_at = DateTime::<Utc>::from_utc(
-                            NaiveDateTime::from_timestamp(token_data.claims.exp, 0),
-                            Utc,
-                        );
-                        expires_at > Utc::now() - Duration::minutes(1)
-                    });
-                    if is_actual {
-                        self.send_auth_message(AuthMessage::Success {
-                            id_token: offline_auth_config.id_token,
-                        });
-                        continue;
-                    }
-
-                    let (client_id, client_secret) =
-                        if offline_auth_config.token_uri.contains("google") {
-                            (
-                                self.auth_config.google_client_id.clone(),
-                                self.auth_config.google_client_secret.clone(),
-                            )
-                        } else if offline_auth_config.token_uri.contains("auth0") {
-                            (self.auth_config.auth0_client_id.clone(), None)
-                        } else {
-                            #[allow(unused_mut, unused_assignments)]
-                            let mut result = None;
-                            #[cfg(feature = "unstoppable_resolution")]
-                            {
-                                result = Some((
-                                    self.auth_config.ud_client_id.clone(),
-                                    Some(self.auth_config.ud_secret_id.clone()),
-                                ));
-                            }
-                            match result {
-                                Some(result) => result,
-                                None => {
-                                    self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
-                                    continue;
-                                }
-                            }
-                        };
-
-                    self.refresh_auth_token(
-                        &offline_auth_config,
-                        &RefreshAuthTokenRequestParams {
-                            client_id,
-                            client_secret,
-                            grant_type: RefreshTokenGrantType::Grant,
-                            refresh_token: offline_auth_config.refresh_token.clone(),
-                        },
-                    )
-                    .await;
+                    self.refresh_auth(offline_auth_config).await;
                 }
                 Some(AuthRequest::HandleOAuthResponse { state, code }) => {
                     let Some(request) = &self.pending_request else {
@@ -425,6 +376,10 @@ impl AuthRequestsHandler {
 
                     let success = self.exchange_auth_code(request, code).await;
 
+                    // There might be an edge-case when a user opens two auth forms and completes
+                    // the form for the OIDC provider that we no longer expect. In such a case
+                    // we don't want to forget a pending request, as a user might still complete
+                    // the form that we expect.
                     if success {
                         self.pending_request = None;
                     }
@@ -434,6 +389,58 @@ impl AuthRequestsHandler {
                 }
             }
         }
+    }
+
+    async fn refresh_auth(&self, offline_auth_config: OfflineAuthConfig) {
+        let token_data = offline_auth_config.parse_token_data();
+        let is_actual = token_data.map_or(false, |token_data| {
+            let expires_at = DateTime::<Utc>::from_utc(
+                NaiveDateTime::from_timestamp(token_data.claims.exp, 0),
+                Utc,
+            );
+            expires_at > Utc::now() - Duration::minutes(1)
+        });
+        if is_actual {
+            self.finish_auth(offline_auth_config.id_token).await;
+            return;
+        }
+
+        let (client_id, client_secret) = if offline_auth_config.token_uri.contains("google") {
+            (
+                self.auth_config.google_client_id.clone(),
+                self.auth_config.google_client_secret.clone(),
+            )
+        } else if offline_auth_config.token_uri.contains("auth0") {
+            (self.auth_config.auth0_client_id.clone(), None)
+        } else {
+            #[allow(unused_mut, unused_assignments)]
+            let mut result = None;
+            #[cfg(feature = "unstoppable_resolution")]
+            {
+                result = Some((
+                    self.auth_config.ud_client_id.clone(),
+                    Some(self.auth_config.ud_secret_id.clone()),
+                ));
+            }
+            match result {
+                Some(result) => result,
+                None => {
+                    self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
+                    return;
+                }
+            }
+        };
+
+        self.refresh_auth_token(
+            &offline_auth_config,
+            &RefreshAuthTokenRequestParams {
+                client_id,
+                client_secret,
+                grant_type: RefreshTokenGrantType::Grant,
+                refresh_token: offline_auth_config.refresh_token.clone(),
+            },
+        )
+        .await;
     }
 
     #[cfg(feature = "unstoppable_resolution")]
@@ -560,9 +567,9 @@ impl AuthRequestsHandler {
                     return;
                 };
 
-                self.send_auth_message(AuthMessage::Success {
-                    id_token: response.id_token.clone(),
-                });
+                if !self.finish_auth(response.id_token.clone()).await {
+                    return;
+                }
 
                 if let Some(refresh_token) = response.refresh_token {
                     if let Err(err) = config_storage::write(
@@ -608,9 +615,9 @@ impl AuthRequestsHandler {
             return false;
         };
 
-        self.send_auth_message(AuthMessage::Success {
-            id_token: response.id_token.clone(),
-        });
+        if !self.finish_auth(response.id_token.clone()).await {
+            return false;
+        }
 
         if let Err(err) = config_storage::write(
             AUTH_CONFIG_KEY,
@@ -655,9 +662,9 @@ impl AuthRequestsHandler {
             return false;
         };
 
-        self.send_auth_message(AuthMessage::Success {
-            id_token: response.id_token.clone(),
-        });
+        if !self.finish_auth(response.id_token.clone()).await {
+            return false;
+        }
 
         let username = request
             .username
@@ -679,6 +686,22 @@ impl AuthRequestsHandler {
             }
         };
 
+        true
+    }
+
+    async fn finish_auth(&self, id_token: String) -> bool {
+        let Some(Ok(_registered_user)) = self.request::<RegisterResponse, ErrorResponse, _, _>(
+            self.auth_config.persistence_url.join("users/auth").unwrap(),
+                RequestParams::Json(&RegisterRequest {
+                jwt: id_token.clone(),
+            },
+        )).await else {
+            log::error!("Failed to register a user");
+            self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
+            return false;
+        };
+
+        self.send_auth_message(AuthMessage::Success { id_token });
         true
     }
 
@@ -757,6 +780,10 @@ impl AuthRequestsHandler {
             .send(message)
             .expect("Failed to send an auth update");
     }
+}
+
+pub fn persistence_url() -> Option<Url> {
+    try_parse_from_env!("MUDDLE_PERSISTENCE_URL")
 }
 
 pub fn google_client_id() -> Option<String> {
