@@ -6,7 +6,11 @@ use crate::{
 use bevy::{ecs::system::ResMut, log};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use core::slice::SlicePattern;
-use mr_messages_lib::{ErrorResponse, JwtAuthClaims, RegisterRequest, RegisterResponse};
+use jsonwebtoken::TokenData;
+use mr_messages_lib::{
+    ErrorKind, ErrorResponse, JwtAuthClaims, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
+    LinkAccountRequest, RegisterAccountError, RegisteredUser,
+};
 use mr_shared_lib::try_parse_from_env;
 use reqwest::IntoUrl;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -163,6 +167,7 @@ pub enum AuthRequest {
         is_sign_up: bool,
     },
     RedirectUrlServerPort(u16),
+    CancelLinkingAccount,
     CancelOpenIDRequest,
     RequestGoogleAuth,
     #[cfg(feature = "unstoppable_resolution")]
@@ -188,6 +193,10 @@ pub enum AuthMessage {
     InvalidDomainError,
     UnavailableError,
     InvalidOrExpiredAuthError,
+    LinkAccount {
+        email: String,
+        login_methods: Vec<LinkAccountLoginMethod>,
+    },
 }
 
 pub struct AuthConfig {
@@ -204,6 +213,7 @@ pub struct AuthConfig {
 
 pub struct PendingOAuthRequest {
     username: Option<String>,
+    login_hint: Option<String>,
     client_id: String,
     client_secret: Option<String>,
     state_token: String,
@@ -249,8 +259,10 @@ pub async fn serve_auth_requests(
         auth_config,
         auth_request_rx,
         auth_message_tx,
+        linked_user: None,
         pending_request: None,
         req_redirect_uri: None,
+        id_token: None,
         #[cfg(feature = "unstoppable_resolution")]
         resolution,
     };
@@ -262,8 +274,11 @@ pub struct AuthRequestsHandler {
     auth_config: AuthConfig,
     auth_request_rx: UnboundedReceiver<AuthRequest>,
     auth_message_tx: UnboundedSender<AuthMessage>,
+    /// User id and email.
+    linked_user: Option<(i64, String)>,
     pending_request: Option<PendingOAuthRequest>,
     req_redirect_uri: Option<String>,
+    id_token: Option<String>,
     #[cfg(feature = "unstoppable_resolution")]
     resolution: unstoppable_resolution::UnsResolutionProvider,
 }
@@ -278,6 +293,7 @@ impl AuthRequestsHandler {
         loop {
             match self.auth_request_rx.recv().await {
                 Some(AuthRequest::Password {
+                    // We expect the UI to send an email of a linked account when linking.
                     username,
                     password,
                     is_sign_up: false,
@@ -320,6 +336,9 @@ impl AuthRequestsHandler {
 
                     self.send_auth_message(AuthMessage::AuthHandlerIsReady);
                 }
+                Some(AuthRequest::CancelLinkingAccount) => {
+                    self.linked_user = None;
+                }
                 Some(AuthRequest::CancelOpenIDRequest) => {
                     self.pending_request = None;
                 }
@@ -327,6 +346,7 @@ impl AuthRequestsHandler {
                     let (code_verifier, code_challenge) = code_challenge();
                     let request = PendingOAuthRequest {
                         username: None,
+                        login_hint: self.linked_user.as_ref().map(|(_, email)| email.clone()),
                         client_id: self.auth_config.google_client_id.clone(),
                         client_secret: self.auth_config.google_client_secret.clone(),
                         state_token: state_token(),
@@ -337,7 +357,7 @@ impl AuthRequestsHandler {
 
                     let params = AuthRequestParams {
                         client_id: request.client_id.clone(),
-                        login_hint: None,
+                        login_hint: request.login_hint.clone(),
                         redirect_uri: self.req_redirect_uri.clone().unwrap(),
                         response_type: "code".to_owned(),
                         scope: "openid email".to_owned(),
@@ -364,7 +384,7 @@ impl AuthRequestsHandler {
                     self.refresh_auth(offline_auth_config).await;
                 }
                 Some(AuthRequest::HandleOAuthResponse { state, code }) => {
-                    let Some(request) = &self.pending_request else {
+                    let Some(request) = self.pending_request.take() else {
                         log::warn!("Ignoring unexpected OAuth response");
                         continue;
                     };
@@ -374,14 +394,14 @@ impl AuthRequestsHandler {
                         continue;
                     }
 
-                    let success = self.exchange_auth_code(request, code).await;
+                    let success = self.exchange_auth_code(&request, code).await;
 
                     // There might be an edge-case when a user opens two auth forms and completes
                     // the form for the OIDC provider that we no longer expect. In such a case
                     // we don't want to forget a pending request, as a user might still complete
                     // the form that we expect.
-                    if success {
-                        self.pending_request = None;
+                    if !success {
+                        self.pending_request = Some(request);
                     }
                 }
                 None => {
@@ -391,9 +411,9 @@ impl AuthRequestsHandler {
         }
     }
 
-    async fn refresh_auth(&self, offline_auth_config: OfflineAuthConfig) {
+    async fn refresh_auth(&mut self, offline_auth_config: OfflineAuthConfig) {
         let token_data = offline_auth_config.parse_token_data();
-        let is_actual = token_data.map_or(false, |token_data| {
+        let is_actual = token_data.as_ref().map_or(false, |token_data| {
             let expires_at = DateTime::<Utc>::from_utc(
                 NaiveDateTime::from_timestamp(token_data.claims.exp, 0),
                 Utc,
@@ -401,7 +421,8 @@ impl AuthRequestsHandler {
             expires_at > Utc::now() - Duration::minutes(1)
         });
         if is_actual {
-            self.finish_auth(offline_auth_config.id_token).await;
+            self.finish_auth(offline_auth_config.id_token, token_data.as_ref().unwrap())
+                .await;
             return;
         }
 
@@ -472,6 +493,7 @@ impl AuthRequestsHandler {
         let (code_verifier, code_challenge) = code_challenge();
         let request = PendingOAuthRequest {
             username: Some(username.clone()),
+            login_hint: Some(domain.to_owned()),
             client_id: self.auth_config.ud_client_id.clone(),
             client_secret: None,
             state_token: state_token(),
@@ -482,7 +504,7 @@ impl AuthRequestsHandler {
 
         let params = AuthRequestParams {
             client_id: request.client_id.clone(),
-            login_hint: Some(domain.to_owned()),
+            login_hint: request.login_hint.clone(),
             redirect_uri: self.req_redirect_uri.clone().unwrap(),
             response_type: "code".to_owned(),
             scope: "openid email wallet offline_access".to_owned(),
@@ -518,7 +540,7 @@ impl AuthRequestsHandler {
         self.client.get(url).send().await.ok()?.json().await.ok()
     }
 
-    async fn sign_up(&self, params: &SignUpRequestParams) {
+    async fn sign_up(&mut self, params: &SignUpRequestParams) {
         let Some(response) = self
             .request::<(), SignUpErrorResponse, _, _>(
                 "https://muddle-run.eu.auth0.com/dbconnections/signup",
@@ -544,7 +566,7 @@ impl AuthRequestsHandler {
         .await;
     }
 
-    async fn sign_in(&self, params: &SignInRequestParams) {
+    async fn sign_in(&mut self, params: &SignInRequestParams) {
         let username = params.username.clone();
 
         let response = self
@@ -561,13 +583,16 @@ impl AuthRequestsHandler {
 
         match response {
             Ok(response) => {
-                if parse_jwt::<JwtAuthClaims>(&response.id_token).is_err() {
+                let Ok(token_data) =  parse_jwt::<JwtAuthClaims>(&response.id_token) else {
                     log::error!("Failed to parse id_token from the response");
                     self.send_auth_message(AuthMessage::UnavailableError);
                     return;
                 };
 
-                if !self.finish_auth(response.id_token.clone()).await {
+                let (success, linked_account) = self
+                    .finish_auth(response.id_token.clone(), &token_data)
+                    .await;
+                if !success || linked_account {
                     return;
                 }
 
@@ -594,7 +619,7 @@ impl AuthRequestsHandler {
     }
 
     async fn refresh_auth_token(
-        &self,
+        &mut self,
         offline_auth_config: &OfflineAuthConfig,
         params: &RefreshAuthTokenRequestParams,
     ) -> bool {
@@ -609,14 +634,17 @@ impl AuthRequestsHandler {
             return false;
         };
 
-        if parse_jwt::<JwtAuthClaims>(&response.id_token).is_err() {
+        let Ok(token_data) = parse_jwt::<JwtAuthClaims>(&response.id_token) else {
             log::error!("Failed to parse id_token from the response");
             self.send_auth_message(AuthMessage::UnavailableError);
             return false;
         };
 
-        if !self.finish_auth(response.id_token.clone()).await {
-            return false;
+        let (success, linked_account) = self
+            .finish_auth(response.id_token.clone(), &token_data)
+            .await;
+        if !success || linked_account {
+            return success;
         }
 
         if let Err(err) = config_storage::write(
@@ -638,7 +666,7 @@ impl AuthRequestsHandler {
         true
     }
 
-    async fn exchange_auth_code(&self, request: &PendingOAuthRequest, code: String) -> bool {
+    async fn exchange_auth_code(&mut self, request: &PendingOAuthRequest, code: String) -> bool {
         let Some(Ok(response)) = self
             .request::<AuthTokenResponse, serde_json::Value, _, _>(
                 request.token_uri.clone(),
@@ -662,8 +690,11 @@ impl AuthRequestsHandler {
             return false;
         };
 
-        if !self.finish_auth(response.id_token.clone()).await {
-            return false;
+        let (success, linked_account) = self
+            .finish_auth(response.id_token.clone(), &token_data)
+            .await;
+        if !success || linked_account {
+            return success;
         }
 
         let username = request
@@ -689,20 +720,188 @@ impl AuthRequestsHandler {
         true
     }
 
-    async fn finish_auth(&self, id_token: String) -> bool {
-        let Some(Ok(_registered_user)) = self.request::<RegisterResponse, ErrorResponse, _, _>(
-            self.auth_config.persistence_url.join("users/auth").unwrap(),
-                RequestParams::Json(&RegisterRequest {
-                jwt: id_token.clone(),
-            },
-        )).await else {
-            log::error!("Failed to register a user");
-            self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
-            return false;
+    async fn link_account(&mut self, id_token: String) -> bool {
+        match self
+            .persistence_request::<(), LinkAccountError, _>(
+                reqwest::Method::POST,
+                &format!("users/{}/link", self.linked_user.as_ref().unwrap().0),
+                &LinkAccountRequest {
+                    existing_account_jwt: id_token,
+                },
+            )
+            .await
+        {
+            Some(Ok(())) => {
+                let id_token = self.id_token.clone().unwrap();
+                self.send_auth_message(AuthMessage::Success { id_token });
+                true
+            }
+            Some(Err(ErrorResponse {
+                error_kind: ErrorKind::RouteSpecific(LinkAccountError::AlreadyLinked),
+                ..
+            })) => {
+                let id_token = self.id_token.clone().unwrap();
+                self.send_auth_message(AuthMessage::Success { id_token });
+                true
+            }
+            Some(Err(ErrorResponse {
+                error_kind: ErrorKind::Unauthorized,
+                ..
+            })) => {
+                self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
+                false
+            }
+            Some(Err(ErrorResponse {
+                error_kind: ErrorKind::RouteSpecific(LinkAccountError::ClaimsMismatch),
+                ..
+            })) => {
+                self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
+                false
+            }
+            _ => {
+                log::error!("Failed to link an account");
+                self.send_auth_message(AuthMessage::UnavailableError);
+                false
+            }
+        }
+    }
+
+    // Returns a tuple: the first boolean indicates success,
+    // the second one - whether we linked an account.
+    async fn finish_auth(
+        &mut self,
+        id_token: String,
+        token_data: &TokenData<JwtAuthClaims>,
+    ) -> (bool, bool) {
+        if self.linked_user.is_some() {
+            if self.link_account(id_token).await {
+                self.linked_user = None;
+                return (true, true);
+            }
+            return (false, false);
+        }
+
+        self.id_token = Some(id_token.clone());
+
+        match self
+            .persistence_request::<RegisteredUser, RegisterAccountError, _>(
+                reqwest::Method::POST,
+                "users/auth",
+                &(),
+            )
+            .await
+        {
+            Some(Ok(_registered_user)) => {
+                self.send_auth_message(AuthMessage::Success { id_token });
+                (true, false)
+            }
+            Some(Err(ErrorResponse {
+                error_kind:
+                    ErrorKind::RouteSpecific(RegisterAccountError::UserWithEmailAlreadyExists(
+                        LinkAccount {
+                            user_id,
+                            login_methods,
+                        },
+                    )),
+                ..
+            })) => {
+                log::debug!("Requires other login method: ${:?}", login_methods);
+                let email = token_data
+                    .claims
+                    .email
+                    .clone()
+                    .expect("Expected an email claim when server requires to link accounts");
+                self.linked_user = Some((user_id, email.clone()));
+                self.send_auth_message(AuthMessage::LinkAccount {
+                    email,
+                    login_methods,
+                });
+                (true, false)
+            }
+            Some(Err(ErrorResponse {
+                error_kind: ErrorKind::Unauthorized,
+                ..
+            })) => {
+                self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
+                (false, false)
+            }
+            _ => {
+                log::error!("Failed to register a user");
+                self.send_auth_message(AuthMessage::UnavailableError);
+                (false, false)
+            }
+        }
+    }
+
+    async fn persistence_request<
+        R: DeserializeOwned,
+        E: Serialize + DeserializeOwned + Clone,
+        B: Serialize,
+    >(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: &B,
+    ) -> Option<Result<R, ErrorResponse<E>>> {
+        let result = self
+            .client
+            .request(method, self.auth_config.persistence_url.join(path).unwrap())
+            .bearer_auth(self.id_token.clone().unwrap())
+            .json(body)
+            .send()
+            .await;
+
+        let (data, status) = match result {
+            Ok(result) => {
+                let is_success = result.status();
+                (result.bytes().await, is_success)
+            }
+            Err(err) => {
+                log::error!("Failed to send a request: {:?}", err);
+                self.send_auth_message(AuthMessage::UnavailableError);
+                return None;
+            }
         };
 
-        self.send_auth_message(AuthMessage::Success { id_token });
-        true
+        #[cfg(debug_assertions)]
+        if let Ok(data) = &data {
+            log::debug!(
+                "Persistence server HTTP response: {}",
+                String::from_utf8_lossy(data.as_slice())
+            );
+        }
+
+        if status.is_success() {
+            match data
+                .ok()
+                .and_then(|data| serde_json::from_slice::<R>(data.as_slice()).ok())
+            {
+                Some(response) => Some(Ok(response)),
+                None => {
+                    log::error!(
+                        "Failed to parse a body response from the persistence server ({:?}, status: {})",
+                        path,
+                        status.as_u16()
+                    );
+                    None
+                }
+            }
+        } else {
+            match data
+                .ok()
+                .and_then(|data| serde_json::from_slice::<ErrorResponse<E>>(data.as_slice()).ok())
+            {
+                Some(response) => Some(Err(response)),
+                None => {
+                    log::error!(
+                        "Failed to parse a body response from the persistence server ({:?}, status: {})",
+                        path,
+                        status.as_u16()
+                    );
+                    None
+                }
+            }
+        }
     }
 
     async fn request<R: DeserializeOwned, E: DeserializeOwned, B: Serialize, U: IntoUrl>(

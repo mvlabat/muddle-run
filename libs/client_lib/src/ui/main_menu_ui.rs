@@ -11,7 +11,7 @@ use bevy::{
     utils::{HashMap, Instant},
 };
 use bevy_egui::{egui, egui::Widget, EguiContext};
-use mr_messages_lib::{MatchmakerMessage, Server};
+use mr_messages_lib::{LinkAccountLoginMethod, MatchmakerMessage, Server};
 use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
 use std::ops::{Add, Mul, Sub};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedSender};
@@ -29,7 +29,10 @@ pub struct AuthUiState {
     error_message: String,
     handler_is_ready: bool,
     pending_request: bool,
+    /// Is used only when [`AuthUiScreen::LinkAccount`] is active.
+    available_login_methods: Vec<LinkAccountLoginMethod>,
     logged_in_as: Option<String>,
+    linked_account: Option<String>,
 }
 
 impl Default for AuthUiState {
@@ -49,7 +52,9 @@ impl Default for AuthUiState {
             error_message: "".to_owned(),
             handler_is_ready: false,
             pending_request: false,
+            available_login_methods: Vec::new(),
             logged_in_as: None,
+            linked_account: None,
         }
     }
 }
@@ -84,7 +89,27 @@ impl AuthUiState {
         self.domain.clear();
         self.error_message.clear();
     }
+
+    pub fn login_method_is_available(&self, method: &str) -> bool {
+        if self.linked_account.is_none() {
+            return true;
+        }
+
+        self.available_login_methods
+            .iter()
+            .any(|available_method| available_method.issuer.contains(method))
+    }
+
+    pub fn has_any_login_method_available(&self) -> bool {
+        if self.linked_account.is_none() {
+            return true;
+        }
+
+        self.login_method_is_available("google") || cfg!(feature = "unstoppable_resolution")
+    }
 }
+
+const AUTH_INPUT_FIELD_WIDTH: f32 = 350.0;
 
 #[derive(Default)]
 pub struct InputField {
@@ -99,7 +124,7 @@ impl InputField {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         ui.label(self.label);
         let resp = egui::widgets::TextEdit::singleline(&mut self.value)
-            .desired_width(350.0)
+            .desired_width(AUTH_INPUT_FIELD_WIDTH)
             .password(self.is_password)
             .ui(ui);
         self.was_focused = self.was_focused || resp.lost_focus();
@@ -134,8 +159,8 @@ pub enum AuthUiScreen {
     RefreshAuth,
     SignIn,
     SignUp,
+    LinkAccount,
     GoogleOpenID,
-    #[cfg_attr(not(feature = "unstoppable_resolution"), allow(dead_code))]
     UnstoppableDomainsOpenID,
 }
 
@@ -237,6 +262,17 @@ pub fn main_menu_ui(
                     .auth
                     .respond_with_error("Signing Up failed (email might be taken)");
             }
+            Ok(AuthMessage::InvalidOrExpiredAuthError)
+                if main_menu_ui_state.auth.linked_account.is_some() =>
+            {
+                log::debug!("Failed to link accounts");
+                main_menu_ui_state.screen = MainMenuUiScreen::Auth;
+                main_menu_ui_state.auth.screen = AuthUiScreen::LinkAccount;
+                main_menu_ui_state.auth.reset_form();
+                main_menu_ui_state
+                    .auth
+                    .respond_with_error("Failed to link accounts (email mismatch)");
+            }
             Ok(AuthMessage::InvalidOrExpiredAuthError) => {
                 log::debug!("Invalid or expired auth");
                 main_menu_ui_state.screen = MainMenuUiScreen::Auth;
@@ -245,6 +281,17 @@ pub fn main_menu_ui(
                 main_menu_ui_state
                     .auth
                     .respond_with_error("Invalid or expired session");
+            }
+            Ok(AuthMessage::LinkAccount {
+                email,
+                login_methods,
+            }) => {
+                main_menu_ui_state.screen = MainMenuUiScreen::Auth;
+                main_menu_ui_state.auth.screen = AuthUiScreen::LinkAccount;
+                main_menu_ui_state.auth.available_login_methods = login_methods;
+                main_menu_ui_state.auth.pending_request = false;
+                main_menu_ui_state.auth.reset_form();
+                main_menu_ui_state.auth.linked_account = Some(email);
             }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
@@ -414,87 +461,166 @@ fn authentication_screen(
                         new_screen = Some(AuthUiScreen::SignIn);
                         auth_ui_state.logged_in_as = None;
                     }
+
+                    ui.style_mut().body_text_style = egui::TextStyle::Body;
+                    ui.style_mut()
+                        .visuals
+                        .widgets
+                        .noninteractive
+                        .fg_stroke
+                        .color = ERROR_COLOR;
+                    ui.label(&auth_ui_state.error_message);
                 },
             );
         }
-        AuthUiScreen::SignIn | AuthUiScreen::SignUp => {
+        AuthUiScreen::LinkAccount if !auth_ui_state.has_any_login_method_available() => {
+            if ui.button("Use different account").clicked() {
+                new_screen = Some(AuthUiScreen::SignIn);
+                auth_request_tx
+                    .send(AuthRequest::CancelLinkingAccount)
+                    .expect("Failed to write to a channel (auth request)");
+            }
+
+            ui.add_space(5.0);
+
+            ui.label(format!(
+                "Account with an email {} already exists. The login method used for this account is not available.",
+                auth_ui_state
+                    .linked_account
+                    .as_ref()
+                    .expect("Expected an email when linking accounts")
+            ));
+        }
+        AuthUiScreen::SignIn | AuthUiScreen::SignUp | AuthUiScreen::LinkAccount => {
             ui.set_enabled(!auth_ui_state.pending_request);
-            auth_ui_state.email.ui(ui);
-            auth_ui_state.password.ui(ui);
 
-            ui.add_space(5.0);
-
-            let is_sign_up = matches!(auth_ui_state.screen, AuthUiScreen::SignUp);
-            let is_valid = auth_ui_state.email.is_valid() && auth_ui_state.password.is_valid();
-            ui.horizontal(|ui| {
-                if egui::widgets::Button::new(if is_sign_up { "Sign Up" } else { "Sign In" })
-                    .enabled(!auth_ui_state.pending_request && is_valid)
-                    .ui(ui)
-                    .clicked()
-                {
-                    auth_ui_state.pending_request = true;
+            if matches!(auth_ui_state.screen, AuthUiScreen::LinkAccount) {
+                if ui.button("Use different account").clicked() {
+                    new_screen = Some(AuthUiScreen::SignIn);
                     auth_request_tx
-                        .send(AuthRequest::Password {
-                            username: auth_ui_state.email.value.clone(),
-                            password: auth_ui_state.password.value.clone(),
-                            is_sign_up,
-                        })
-                        .expect("Failed to write to a channel (auth request)");
-                    auth_ui_state.password.reset();
-                }
-
-                ui.style_mut()
-                    .visuals
-                    .widgets
-                    .noninteractive
-                    .fg_stroke
-                    .color = ERROR_COLOR;
-                ui.label(auth_ui_state.error_message.clone());
-            });
-
-            ui.add_space(5.0);
-
-            ui.separator();
-            ui.label("Continue with an auth provider");
-
-            ui.horizontal(|ui| {
-                ui.set_enabled(!auth_ui_state.pending_request && auth_ui_state.handler_is_ready);
-                if ui.button("Google").clicked() {
-                    auth_ui_state.pending_request = true;
-                    new_screen = Some(AuthUiScreen::GoogleOpenID);
-                    auth_request_tx
-                        .send(AuthRequest::RequestGoogleAuth)
+                        .send(AuthRequest::CancelLinkingAccount)
                         .expect("Failed to write to a channel (auth request)");
                 }
 
-                #[cfg(feature = "unstoppable_resolution")]
-                if ui.button("Unstoppable Domains").clicked() {
-                    new_screen = Some(AuthUiScreen::UnstoppableDomainsOpenID);
-                }
-            });
+                ui.add_space(5.0);
 
-            ui.separator();
+                ui.label(format!(
+                    "Account with an email {} already exists. Please sign in to link the accounts.",
+                    auth_ui_state
+                        .linked_account
+                        .as_ref()
+                        .expect("Expected an email when linking accounts")
+                ));
+                ui.add_space(5.0);
+            }
+
+            if auth_ui_state.login_method_is_available("auth0") {
+                if matches!(auth_ui_state.screen, AuthUiScreen::LinkAccount) {
+                    let email = auth_ui_state
+                        .linked_account
+                        .as_mut()
+                        .expect("Expected an email when linking accounts");
+                    egui::widgets::TextEdit::singleline(email)
+                        .desired_width(AUTH_INPUT_FIELD_WIDTH)
+                        .enabled(false)
+                        .ui(ui);
+                } else {
+                    auth_ui_state.email.ui(ui);
+                }
+                auth_ui_state.password.ui(ui);
+
+                ui.add_space(5.0);
+
+                let is_sign_up = matches!(auth_ui_state.screen, AuthUiScreen::SignUp);
+                let is_valid = (matches!(auth_ui_state.screen, AuthUiScreen::LinkAccount)
+                    || auth_ui_state.email.is_valid())
+                    && auth_ui_state.password.is_valid();
+                ui.horizontal(|ui| {
+                    if egui::widgets::Button::new(if is_sign_up { "Sign Up" } else { "Sign In" })
+                        .enabled(!auth_ui_state.pending_request && is_valid)
+                        .ui(ui)
+                        .clicked()
+                    {
+                        auth_ui_state.pending_request = true;
+                        auth_request_tx
+                            .send(AuthRequest::Password {
+                                username: auth_ui_state
+                                    .linked_account
+                                    .clone()
+                                    .unwrap_or_else(|| auth_ui_state.email.value.clone()),
+                                password: auth_ui_state.password.value.clone(),
+                                is_sign_up,
+                            })
+                            .expect("Failed to write to a channel (auth request)");
+                        auth_ui_state.password.reset();
+                    }
+
+                    ui.style_mut()
+                        .visuals
+                        .widgets
+                        .noninteractive
+                        .fg_stroke
+                        .color = ERROR_COLOR;
+                    ui.label(auth_ui_state.error_message.clone());
+                });
+
+                ui.add_space(5.0);
+            }
+
+            let google_is_available = auth_ui_state.login_method_is_available("google");
+            // TODO: such kind of method check won't work for custom OIDC providers.
+            let ud_is_available = cfg!(feature = "unstoppable_resolution")
+                && auth_ui_state.login_method_is_available("unstoppable");
+            if google_is_available || ud_is_available {
+                ui.separator();
+                ui.label("Continue with an auth provider");
+
+                ui.horizontal(|ui| {
+                    ui.set_enabled(
+                        !auth_ui_state.pending_request && auth_ui_state.handler_is_ready,
+                    );
+
+                    if google_is_available && ui.button("Google").clicked() {
+                        auth_ui_state.pending_request = true;
+                        new_screen = Some(AuthUiScreen::GoogleOpenID);
+                        auth_request_tx
+                            .send(AuthRequest::RequestGoogleAuth)
+                            .expect("Failed to write to a channel (auth request)");
+                    }
+
+                    if ud_is_available && ui.button("Unstoppable Domains").clicked() {
+                        new_screen = Some(AuthUiScreen::UnstoppableDomainsOpenID);
+                    }
+                });
+            }
 
             match auth_ui_state.screen {
                 AuthUiScreen::SignIn => {
+                    ui.separator();
                     ui.label("Don't have an account?");
                     if ui.button("Sign Up").clicked() {
                         new_screen = Some(AuthUiScreen::SignUp);
                     }
                 }
                 AuthUiScreen::SignUp => {
+                    ui.separator();
                     ui.label("Already have an account?");
                     if ui.button("Sign In").clicked() {
                         new_screen = Some(AuthUiScreen::SignIn);
                     }
                 }
+                AuthUiScreen::LinkAccount => {}
                 _ => unreachable!(),
             }
         }
         AuthUiScreen::GoogleOpenID | AuthUiScreen::UnstoppableDomainsOpenID => {
             ui.horizontal(|ui| {
                 if ui.button("Back").clicked() {
-                    new_screen = Some(AuthUiScreen::SignIn);
+                    if auth_ui_state.linked_account.is_some() {
+                        new_screen = Some(AuthUiScreen::LinkAccount);
+                    } else {
+                        new_screen = Some(AuthUiScreen::SignIn);
+                    }
                     auth_ui_state.pending_request = false;
                     auth_request_tx
                         .send(AuthRequest::CancelOpenIDRequest)
