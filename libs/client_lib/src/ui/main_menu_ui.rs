@@ -632,16 +632,30 @@ fn authentication_screen(
                 AuthUiScreen::SignIn => {
                     ui.separator();
                     ui.label("Don't have an account?");
-                    if ui.button("Sign Up").clicked() {
-                        new_screen = Some(AuthUiScreen::SignUp);
-                    }
+                    ui.horizontal(|ui| {
+                        ui.style_mut().spacing.item_spacing = egui::Vec2::new(8.0, 5.0);
+                        if ui.button("Sign Up").clicked() {
+                            new_screen = Some(AuthUiScreen::SignUp);
+                        }
+                        ui.label("or");
+                        if ui.button("Play anonymously").clicked() {
+                            confirm_auth = true;
+                        }
+                    });
                 }
                 AuthUiScreen::SignUp => {
                     ui.separator();
                     ui.label("Already have an account?");
-                    if ui.button("Sign In").clicked() {
-                        new_screen = Some(AuthUiScreen::SignIn);
-                    }
+                    ui.horizontal(|ui| {
+                        ui.style_mut().spacing.item_spacing = egui::Vec2::new(8.0, 5.0);
+                        if ui.button("Sign In").clicked() {
+                            new_screen = Some(AuthUiScreen::SignIn);
+                        }
+                        ui.label("or");
+                        if ui.button("Play anonymously").clicked() {
+                            confirm_auth = true;
+                        }
+                    });
                 }
                 AuthUiScreen::LinkAccount => {}
                 _ => unreachable!(),
