@@ -33,7 +33,7 @@ pub struct JwtAuthClaims {
 pub struct RegisteredUser {
     pub id: i64,
     pub email: Option<String>,
-    pub username: Option<String>,
+    pub display_name: Option<String>,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
 }
@@ -51,7 +51,7 @@ pub struct LinkAccountRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LinkAccount {
-    pub user_id: i64,
+    pub user: RegisteredUser,
     pub login_methods: Vec<LinkAccountLoginMethod>,
 }
 
@@ -68,6 +68,11 @@ pub enum LinkAccountError {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PatchUserRequest {
+    pub display_name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ErrorResponse<T: Clone + Serialize + DeserializeOwned = ()> {
     pub message: String,
     #[serde(
@@ -81,6 +86,8 @@ pub struct ErrorResponse<T: Clone + Serialize + DeserializeOwned = ()> {
 pub enum ErrorKind<T = ()> {
     BadRequest,
     Unauthorized,
+    Forbidden,
+    NotFound,
     #[serde(skip)]
     RouteSpecific(T),
     #[serde(skip)]

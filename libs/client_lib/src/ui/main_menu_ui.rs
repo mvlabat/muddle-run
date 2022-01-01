@@ -19,11 +19,15 @@ use tokio::sync::mpsc::{error::TryRecvError, UnboundedSender};
 const ERROR_COLOR: egui::Color32 = egui::Color32::RED;
 const INVALID_EMAIL_ERROR: &str = "must be a valid email";
 const SHORT_PASSWORD_ERROR: &str = "must be 8 characters or longer";
+const EMPTY_DISPLAY_NAME_ERROR: &str = "must not be empty";
+const LONG_DISPLAY_NAME_ERROR: &str = "must not be shorter than 255 characters";
+const NON_ASCII_DISPLAY_NAME_ERROR: &str = "can contain only ASCII characters";
 
 pub struct AuthUiState {
     screen: AuthUiScreen,
     email: InputField,
     password: InputField,
+    display_name: InputField,
     #[cfg_attr(not(feature = "unstoppable_resolution"), allow(dead_code))]
     domain: String,
     error_message: String,
@@ -48,6 +52,10 @@ impl Default for AuthUiState {
                 is_password: true,
                 ..Default::default()
             },
+            display_name: InputField {
+                label: "Display name",
+                ..Default::default()
+            },
             domain: "".to_owned(),
             error_message: "".to_owned(),
             handler_is_ready: false,
@@ -63,6 +71,7 @@ impl AuthUiState {
     pub fn validate(&mut self) {
         self.email.errors.clear();
         self.password.errors.clear();
+        self.display_name.errors.clear();
 
         if !self.email.value.contains('@') {
             self.email.errors.push(INVALID_EMAIL_ERROR.to_owned());
@@ -70,6 +79,23 @@ impl AuthUiState {
 
         if self.password.value.len() < 8 {
             self.password.errors.push(SHORT_PASSWORD_ERROR.to_owned());
+        }
+
+        let display_name = self.display_name.value.trim();
+        if display_name.is_empty() {
+            self.display_name
+                .errors
+                .push(EMPTY_DISPLAY_NAME_ERROR.to_owned());
+        }
+        if display_name.len() > 255 {
+            self.display_name
+                .errors
+                .push(LONG_DISPLAY_NAME_ERROR.to_owned());
+        }
+        if !display_name.is_ascii() {
+            self.display_name
+                .errors
+                .push(NON_ASCII_DISPLAY_NAME_ERROR.to_owned());
         }
     }
 
@@ -86,6 +112,7 @@ impl AuthUiState {
     pub fn reset_form(&mut self) {
         self.email.reset();
         self.password.reset();
+        self.display_name.reset();
         self.domain.clear();
         self.error_message.clear();
     }
@@ -160,6 +187,7 @@ pub enum AuthUiScreen {
     SignIn,
     SignUp,
     LinkAccount,
+    SetDisplayName,
     GoogleOpenID,
     UnstoppableDomainsOpenID,
 }
@@ -292,6 +320,12 @@ pub fn main_menu_ui(
                 main_menu_ui_state.auth.pending_request = false;
                 main_menu_ui_state.auth.reset_form();
                 main_menu_ui_state.auth.linked_account = Some(email);
+            }
+            Ok(AuthMessage::SetDisplayName) => {
+                main_menu_ui_state.screen = MainMenuUiScreen::Auth;
+                main_menu_ui_state.auth.screen = AuthUiScreen::SetDisplayName;
+                main_menu_ui_state.auth.pending_request = false;
+                main_menu_ui_state.auth.reset_form();
             }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
@@ -477,7 +511,7 @@ fn authentication_screen(
             if ui.button("Use different account").clicked() {
                 new_screen = Some(AuthUiScreen::SignIn);
                 auth_request_tx
-                    .send(AuthRequest::CancelLinkingAccount)
+                    .send(AuthRequest::UseDifferentAccount)
                     .expect("Failed to write to a channel (auth request)");
             }
 
@@ -498,7 +532,7 @@ fn authentication_screen(
                 if ui.button("Use different account").clicked() {
                     new_screen = Some(AuthUiScreen::SignIn);
                     auth_request_tx
-                        .send(AuthRequest::CancelLinkingAccount)
+                        .send(AuthRequest::UseDifferentAccount)
                         .expect("Failed to write to a channel (auth request)");
                 }
 
@@ -612,6 +646,38 @@ fn authentication_screen(
                 AuthUiScreen::LinkAccount => {}
                 _ => unreachable!(),
             }
+        }
+        AuthUiScreen::SetDisplayName => {
+            ui.set_enabled(!auth_ui_state.pending_request);
+            if ui.button("Use different account").clicked() {
+                new_screen = Some(AuthUiScreen::SignIn);
+                auth_request_tx
+                    .send(AuthRequest::UseDifferentAccount)
+                    .expect("Failed to write to a channel (auth request)");
+            }
+            ui.add_space(5.0);
+
+            ui.label("Marvelous! You've created a brand new account. The last step is picking a display name, to show off your awesome profile.");
+            ui.add_space(5.0);
+
+            auth_ui_state.display_name.ui(ui);
+            ui.add_space(5.0);
+
+            ui.with_layout(
+                egui::Layout::top_down_justified(egui::Align::Center),
+                |ui| {
+                    if !auth_ui_state.display_name.is_valid() {
+                        ui.set_enabled(false);
+                    }
+                    if ui.button("Continue").clicked() {
+                        auth_request_tx
+                            .send(AuthRequest::SetDisplayName(
+                                auth_ui_state.display_name.value.clone(),
+                            ))
+                            .expect("Failed to write to a channel (auth request)");
+                    }
+                },
+            );
         }
         AuthUiScreen::GoogleOpenID | AuthUiScreen::UnstoppableDomainsOpenID => {
             ui.horizontal(|ui| {

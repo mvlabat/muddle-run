@@ -1,7 +1,7 @@
 #![feature(let_else)]
 #![feature(try_blocks)]
 
-use actix_web::{http::header, post, web, App, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{http::header, patch, post, web, App, HttpRequest, HttpResponse, HttpServer};
 use headers::{
     authorization::{Authorization, Bearer},
     Header,
@@ -13,7 +13,7 @@ use jsonwebtoken::{
 };
 use mr_messages_lib::{
     ErrorKind, ErrorResponse, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
-    LinkAccountRequest, RegisterAccountError, RegisteredUser,
+    LinkAccountRequest, PatchUserRequest, RegisterAccountError, RegisteredUser,
 };
 use reqwest::Url;
 use serde::Deserialize;
@@ -102,13 +102,13 @@ async fn register(data: web::Data<Data>, req: HttpRequest) -> HttpResponse {
     match insert_user(connection, decoded_token).await {
         Ok(user) => HttpResponse::Ok().json(user),
         Err(InsertUserError::AlreadyExists {
-            user_id,
+            user,
             login_methods,
         }) => HttpResponse::BadRequest().json(ErrorResponse::<RegisterAccountError> {
             message: "User is already registered with using a different OIDC provider".to_owned(),
             error_kind: ErrorKind::RouteSpecific(RegisterAccountError::UserWithEmailAlreadyExists(
                 LinkAccount {
-                    user_id,
+                    user,
                     login_methods,
                 },
             )),
@@ -181,6 +181,18 @@ async fn link_account(
     .await
     {
         Ok(()) => HttpResponse::Ok().json(&()),
+        Err(InsertOidcError::NotFound) => {
+            HttpResponse::NotFound().json(ErrorResponse::<LinkAccountError> {
+                message: "User doesn't exist".to_owned(),
+                error_kind: ErrorKind::NotFound,
+            })
+        }
+        Err(InsertOidcError::Forbidden) => {
+            HttpResponse::Forbidden().json(ErrorResponse::<LinkAccountError> {
+                message: "JWT claims mismatch".to_owned(),
+                error_kind: ErrorKind::Forbidden,
+            })
+        }
         Err(InsertOidcError::ClaimsMismatch) => {
             HttpResponse::BadRequest().json(ErrorResponse::<LinkAccountError> {
                 message: "Claims mismatch".to_owned(),
@@ -200,7 +212,111 @@ async fn link_account(
     }
 }
 
+#[patch("/users/{id}")]
+async fn patch_user(
+    data: web::Data<Data>,
+    req: HttpRequest,
+    user_id: web::Path<i64>,
+    body: web::Json<PatchUserRequest>,
+) -> HttpResponse {
+    let user_id = user_id.into_inner();
+    let mut authorization = req.headers().get_all(header::AUTHORIZATION);
+    let jwt = match Authorization::<Bearer>::decode(&mut authorization) {
+        Ok(header_value) => header_value.0.token().to_owned(),
+        Err(_) => {
+            return HttpResponse::Unauthorized().json(ErrorResponse::<()> {
+                message: "Unauthorized".to_owned(),
+                error_kind: ErrorKind::Unauthorized,
+            });
+        }
+    };
+
+    let decoded_token = match decode_token_helper(&data, &jwt, "bearer").await {
+        Ok(token) => token,
+        Err(err) => {
+            return err;
+        }
+    };
+
+    let display_name = body.0.display_name.trim();
+    if display_name.is_empty() || display_name.len() > 255 || !display_name.is_ascii() {
+        return HttpResponse::BadRequest().json(ErrorResponse::<()> {
+            message: "Display name must not be empty and can contain only ASCII characters"
+                .to_owned(),
+            error_kind: ErrorKind::BadRequest,
+        });
+    }
+
+    let mut connection = match data.pool.acquire().await {
+        Ok(c) => c,
+        Err(err) => {
+            log::error!("Failed to acquire a connection: {:?}", err);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    struct UserOidcDto {
+        issuer: String,
+        subject: String,
+    }
+
+    let user_oidcs: Vec<UserOidcDto> = match sqlx::query_as!(
+        UserOidcDto,
+        "
+SELECT o.issuer, o.subject
+FROM users u
+JOIN openids AS o ON u.id = o.user_id
+WHERE u.id = $1
+        ",
+        user_id,
+    )
+    .fetch_all(&mut connection)
+    .await
+    {
+        Ok(u) => u,
+        Err(err) => {
+            log::error!("Failed to get user: {:?}", err);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    if user_oidcs.is_empty() {
+        log::debug!("User {} doesn't exist", user_id);
+        return HttpResponse::NotFound().json(ErrorResponse::<()> {
+            message: "User doesn't exist".to_owned(),
+            error_kind: ErrorKind::NotFound,
+        });
+    }
+
+    let oidc_found = user_oidcs.iter().any(|oidc| {
+        oidc.issuer == decoded_token.claims.iss && oidc.subject == decoded_token.claims.sub
+    });
+    if !oidc_found {
+        log::debug!("Existing user claims mismatch");
+        return HttpResponse::Forbidden().json(ErrorResponse::<()> {
+            message: "JWT claims mismatch".to_owned(),
+            error_kind: ErrorKind::Forbidden,
+        });
+    }
+
+    if let Err(err) = sqlx::query!(
+        "UPDATE users SET display_name = $1 WHERE id = $2",
+        display_name,
+        user_id,
+    )
+    .execute(&mut connection)
+    .await
+    {
+        log::error!("Failed to patch user: {:?}", err);
+        return HttpResponse::InternalServerError().finish();
+    }
+
+    HttpResponse::Ok().json(&())
+}
+
 enum InsertOidcError {
+    NotFound,
+    Forbidden,
     ClaimsMismatch,
     AlreadyLinked,
     Sql(sqlx::Error),
@@ -238,12 +354,17 @@ WHERE u.id = $1
     .fetch_all(&mut connection)
     .await?;
 
+    if user_oidcs.is_empty() {
+        log::debug!("User {} doesn't exist", user_id);
+        return Err(InsertOidcError::NotFound);
+    }
+
     let user_oidc = user_oidcs.iter().find(|oidc| {
         oidc.issuer == existing_account.claims.iss && oidc.subject == existing_account.claims.sub
     });
     let Some(user_oidc) = user_oidc else {
         log::debug!("Existing user claims mismatch");
-        return Err(InsertOidcError::ClaimsMismatch);
+        return Err(InsertOidcError::Forbidden);
     };
 
     if user_oidc.email != new_oidc.claims.email {
@@ -277,7 +398,7 @@ VALUES ($1, $2, $3, $4)
 
 enum InsertUserError {
     AlreadyExists {
-        user_id: i64,
+        user: RegisteredUser,
         login_methods: Vec<LinkAccountLoginMethod>,
     },
     Sql(sqlx::Error),
@@ -298,7 +419,7 @@ async fn insert_user(
     struct UserOidcDto {
         id: Option<i64>,
         email: Option<String>,
-        username: Option<String>,
+        display_name: Option<String>,
         oidc_email: Option<String>,
         issuer: Option<String>,
         subject: Option<String>,
@@ -314,12 +435,12 @@ async fn insert_user(
     let user_oidcs: Vec<UserOidcDto> = sqlx::query_as!(
         UserOidcDto,
         "
-SELECT u.id, u.email, u.username, o.email AS oidc_email, o.issuer, o.subject, o.created_at, o.updated_at
+SELECT u.id, u.email, u.display_name, o.email AS oidc_email, o.issuer, o.subject, o.created_at, o.updated_at
 FROM users u
 JOIN openids AS o ON u.id = o.user_id
 WHERE o.issuer = $1 AND o.subject = $2
 UNION
-SELECT u.id, u.email, u.username, o.email AS oidc_email, o.issuer, o.subject, o.created_at, o.updated_at
+SELECT u.id, u.email, u.display_name, o.email AS oidc_email, o.issuer, o.subject, o.created_at, o.updated_at
 FROM users u
 JOIN openids AS o ON u.id = o.user_id
 WHERE u.email = $3 AND $3 IS NOT NULL
@@ -339,15 +460,22 @@ WHERE u.email = $3 AND $3 IS NOT NULL
         return Ok(RegisteredUser {
             id: user.id.unwrap(),
             email: user.email.clone(),
-            username: user.username.clone(),
+            display_name: user.display_name.clone(),
             created_at: user.created_at.unwrap(),
             updated_at: user.updated_at.unwrap(),
         });
     }
 
     if !user_oidcs.is_empty() {
+        let user = &user_oidcs[0];
         return Err(InsertUserError::AlreadyExists {
-            user_id: user_oidcs[0].id.unwrap(),
+            user: RegisteredUser {
+                id: user.id.unwrap(),
+                email: user.email.clone(),
+                display_name: user.display_name.clone(),
+                created_at: user.created_at.unwrap(),
+                updated_at: user.updated_at.unwrap(),
+            },
             login_methods: user_oidcs
                 .into_iter()
                 .map(|user_oidc| LinkAccountLoginMethod {
@@ -386,7 +514,7 @@ VALUES ($1, $2, $3, $4)
     Ok(RegisteredUser {
         id,
         email,
-        username: None,
+        display_name: None,
         created_at,
         updated_at: created_at,
     })
@@ -545,6 +673,7 @@ async fn main() -> anyhow::Result<()> {
             .app_data(web::Data::new(data))
             .service(register)
             .service(link_account)
+            .service(patch_user)
     };
     HttpServer::new(f)
         .bind("0.0.0.0:8082")?

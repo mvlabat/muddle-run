@@ -6,10 +6,9 @@ use crate::{
 use bevy::{ecs::system::ResMut, log};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use core::slice::SlicePattern;
-use jsonwebtoken::TokenData;
 use mr_messages_lib::{
     ErrorKind, ErrorResponse, JwtAuthClaims, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
-    LinkAccountRequest, RegisterAccountError, RegisteredUser,
+    LinkAccountRequest, PatchUserRequest, RegisterAccountError, RegisteredUser,
 };
 use mr_shared_lib::try_parse_from_env;
 use reqwest::IntoUrl;
@@ -167,7 +166,7 @@ pub enum AuthRequest {
         is_sign_up: bool,
     },
     RedirectUrlServerPort(u16),
-    CancelLinkingAccount,
+    UseDifferentAccount,
     CancelOpenIDRequest,
     RequestGoogleAuth,
     #[cfg(feature = "unstoppable_resolution")]
@@ -179,6 +178,7 @@ pub enum AuthRequest {
         state: String,
         code: String,
     },
+    SetDisplayName(String),
 }
 
 #[derive(Debug)]
@@ -197,6 +197,7 @@ pub enum AuthMessage {
         email: String,
         login_methods: Vec<LinkAccountLoginMethod>,
     },
+    SetDisplayName,
 }
 
 pub struct AuthConfig {
@@ -259,7 +260,7 @@ pub async fn serve_auth_requests(
         auth_config,
         auth_request_rx,
         auth_message_tx,
-        linked_user: None,
+        registered_user: None,
         pending_request: None,
         req_redirect_uri: None,
         id_token: None,
@@ -274,8 +275,7 @@ pub struct AuthRequestsHandler {
     auth_config: AuthConfig,
     auth_request_rx: UnboundedReceiver<AuthRequest>,
     auth_message_tx: UnboundedSender<AuthMessage>,
-    /// User id and email.
-    linked_user: Option<(i64, String)>,
+    registered_user: Option<RegisteredUser>,
     pending_request: Option<PendingOAuthRequest>,
     req_redirect_uri: Option<String>,
     id_token: Option<String>,
@@ -336,8 +336,8 @@ impl AuthRequestsHandler {
 
                     self.send_auth_message(AuthMessage::AuthHandlerIsReady);
                 }
-                Some(AuthRequest::CancelLinkingAccount) => {
-                    self.linked_user = None;
+                Some(AuthRequest::UseDifferentAccount) => {
+                    self.registered_user = None;
                 }
                 Some(AuthRequest::CancelOpenIDRequest) => {
                     self.pending_request = None;
@@ -346,7 +346,11 @@ impl AuthRequestsHandler {
                     let (code_verifier, code_challenge) = code_challenge();
                     let request = PendingOAuthRequest {
                         username: None,
-                        login_hint: self.linked_user.as_ref().map(|(_, email)| email.clone()),
+                        login_hint: self.registered_user.as_ref().map(|user| {
+                            user.email.clone().expect(
+                                "Expected an email claim when server requires to link accounts",
+                            )
+                        }),
                         client_id: self.auth_config.google_client_id.clone(),
                         client_secret: self.auth_config.google_client_secret.clone(),
                         state_token: state_token(),
@@ -404,6 +408,9 @@ impl AuthRequestsHandler {
                         self.pending_request = Some(request);
                     }
                 }
+                Some(AuthRequest::SetDisplayName(display_name)) => {
+                    self.set_display_name(display_name).await;
+                }
                 None => {
                     return;
                 }
@@ -421,8 +428,7 @@ impl AuthRequestsHandler {
             expires_at > Utc::now() - Duration::minutes(1)
         });
         if is_actual {
-            self.finish_auth(offline_auth_config.id_token, token_data.as_ref().unwrap())
-                .await;
+            self.finish_auth(offline_auth_config.id_token).await;
             return;
         }
 
@@ -583,15 +589,13 @@ impl AuthRequestsHandler {
 
         match response {
             Ok(response) => {
-                let Ok(token_data) =  parse_jwt::<JwtAuthClaims>(&response.id_token) else {
-                    log::error!("Failed to parse id_token from the response");
+                if let Err(err) = parse_jwt::<JwtAuthClaims>(&response.id_token) {
+                    log::warn!("Failed to parse id_token from the response: {:?}", err);
                     self.send_auth_message(AuthMessage::UnavailableError);
                     return;
                 };
 
-                let (success, linked_account) = self
-                    .finish_auth(response.id_token.clone(), &token_data)
-                    .await;
+                let (success, linked_account) = self.finish_auth(response.id_token.clone()).await;
                 if !success || linked_account {
                     return;
                 }
@@ -634,15 +638,13 @@ impl AuthRequestsHandler {
             return false;
         };
 
-        let Ok(token_data) = parse_jwt::<JwtAuthClaims>(&response.id_token) else {
-            log::error!("Failed to parse id_token from the response");
+        if let Err(err) = parse_jwt::<JwtAuthClaims>(&response.id_token) {
+            log::warn!("Failed to parse id_token from the response: {:?}", err);
             self.send_auth_message(AuthMessage::UnavailableError);
             return false;
         };
 
-        let (success, linked_account) = self
-            .finish_auth(response.id_token.clone(), &token_data)
-            .await;
+        let (success, linked_account) = self.finish_auth(response.id_token.clone()).await;
         if !success || linked_account {
             return success;
         }
@@ -690,9 +692,7 @@ impl AuthRequestsHandler {
             return false;
         };
 
-        let (success, linked_account) = self
-            .finish_auth(response.id_token.clone(), &token_data)
-            .await;
+        let (success, linked_account) = self.finish_auth(response.id_token.clone()).await;
         if !success || linked_account {
             return success;
         }
@@ -724,18 +724,14 @@ impl AuthRequestsHandler {
         match self
             .persistence_request::<(), LinkAccountError, _>(
                 reqwest::Method::POST,
-                &format!("users/{}/link", self.linked_user.as_ref().unwrap().0),
+                &format!("users/{}/link", self.registered_user.as_ref().unwrap().id),
                 &LinkAccountRequest {
                     existing_account_jwt: id_token,
                 },
             )
             .await
         {
-            Some(Ok(())) => {
-                let id_token = self.id_token.clone().unwrap();
-                self.send_auth_message(AuthMessage::Success { id_token });
-                true
-            }
+            Some(Ok(())) => true,
             Some(Err(ErrorResponse {
                 error_kind: ErrorKind::RouteSpecific(LinkAccountError::AlreadyLinked),
                 ..
@@ -745,7 +741,7 @@ impl AuthRequestsHandler {
                 true
             }
             Some(Err(ErrorResponse {
-                error_kind: ErrorKind::Unauthorized,
+                error_kind: ErrorKind::Unauthorized | ErrorKind::NotFound | ErrorKind::Forbidden,
                 ..
             })) => {
                 self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
@@ -766,16 +762,43 @@ impl AuthRequestsHandler {
         }
     }
 
+    async fn set_display_name(&mut self, display_name: String) {
+        match self
+            .persistence_request::<(), (), _>(
+                reqwest::Method::PATCH,
+                &format!("users/{}", self.registered_user.as_ref().unwrap().id),
+                &PatchUserRequest { display_name },
+            )
+            .await
+        {
+            Some(Ok(())) => {
+                let id_token = self.id_token.clone().unwrap();
+                self.send_auth_message(AuthMessage::Success { id_token });
+            }
+            Some(Err(ErrorResponse {
+                error_kind: ErrorKind::Unauthorized | ErrorKind::NotFound | ErrorKind::Forbidden,
+                ..
+            })) => {
+                self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
+            }
+            _ => {
+                log::error!("Failed to update an account");
+                self.send_auth_message(AuthMessage::UnavailableError);
+            }
+        }
+    }
+
     // Returns a tuple: the first boolean indicates success,
     // the second one - whether we linked an account.
-    async fn finish_auth(
-        &mut self,
-        id_token: String,
-        token_data: &TokenData<JwtAuthClaims>,
-    ) -> (bool, bool) {
-        if self.linked_user.is_some() {
+    async fn finish_auth(&mut self, id_token: String) -> (bool, bool) {
+        if let Some(registered_user) = self.registered_user.clone() {
             if self.link_account(id_token).await {
-                self.linked_user = None;
+                if registered_user.display_name.is_some() {
+                    let id_token = self.id_token.clone().unwrap();
+                    self.send_auth_message(AuthMessage::Success { id_token });
+                } else {
+                    self.send_auth_message(AuthMessage::SetDisplayName);
+                }
                 return (true, true);
             }
             return (false, false);
@@ -791,27 +814,32 @@ impl AuthRequestsHandler {
             )
             .await
         {
-            Some(Ok(_registered_user)) => {
-                self.send_auth_message(AuthMessage::Success { id_token });
+            Some(Ok(registered_user)) => {
+                if registered_user.display_name.is_some() {
+                    let id_token = self.id_token.clone().unwrap();
+                    self.send_auth_message(AuthMessage::Success { id_token });
+                } else {
+                    self.send_auth_message(AuthMessage::SetDisplayName);
+                }
+                self.registered_user = Some(registered_user);
                 (true, false)
             }
             Some(Err(ErrorResponse {
                 error_kind:
                     ErrorKind::RouteSpecific(RegisterAccountError::UserWithEmailAlreadyExists(
                         LinkAccount {
-                            user_id,
+                            user,
                             login_methods,
                         },
                     )),
                 ..
             })) => {
                 log::debug!("Requires other login method: ${:?}", login_methods);
-                let email = token_data
-                    .claims
+                let email = user
                     .email
                     .clone()
                     .expect("Expected an email claim when server requires to link accounts");
-                self.linked_user = Some((user_id, email.clone()));
+                self.registered_user = Some(user);
                 self.send_auth_message(AuthMessage::LinkAccount {
                     email,
                     login_methods,

@@ -15,11 +15,11 @@ $$ language 'plpgsql';
 
 CREATE TABLE users
 (
-    id         bigserial PRIMARY KEY,
-    username   varchar(255) UNIQUE,
-    email      varchar(320) UNIQUE,
-    created_at timestamp DEFAULT current_timestamp NOT NULL,
-    updated_at timestamp DEFAULT current_timestamp NOT NULL
+    id           bigserial PRIMARY KEY,
+    display_name varchar(255) UNIQUE,
+    email        varchar(320) UNIQUE,
+    created_at   timestamp DEFAULT current_timestamp NOT NULL,
+    updated_at   timestamp DEFAULT current_timestamp NOT NULL
 );
 
 CREATE TRIGGER set_updated_at
