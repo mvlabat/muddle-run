@@ -1,6 +1,6 @@
 on:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
       - '.github/workflows/**'
       - 'bins/**'
@@ -10,7 +10,7 @@ on:
       - '.rustfmt.toml'
       - '.cargo/config'
   pull_request:
-    branches: [main]
+    branches: [ main ]
     paths:
       - '.github/workflows/**'
       - 'bins/**'
@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -81,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -112,7 +112,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -142,7 +142,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -166,13 +166,64 @@ jobs:
           command: clippy
           args: -p mr_matchmaker --release -- -D warnings
 
+  mr_persistence:
+    name: Check mr_persistence
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest ]
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_DB: mr_persistence_test
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: clippy
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cache-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cache-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            cache-${{ runner.os }}-cargo
+      - name: Migrate database
+        run: |
+          sudo apt-get install libpq-dev -y
+          cargo install sqlx-cli
+          cd bins/persistence
+          sqlx migrate run --database-url postgres://postgres:postgres@localhost:5432/mr_persistence_test
+      - uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -p mr_persistence --release -- -D warnings
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/mr_persistence_test
+
   mr_shared_lib:
     name: Test mr_shared_lib
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -200,7 +251,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
