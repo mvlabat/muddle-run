@@ -5,12 +5,15 @@ authors = ["mvlabat <mvlabat@gmail.com>"]
 edition = "2018"
 
 [features]
-jwks = ["anyhow", "headers", "jsonwebtoken", "reqwest", "tokio"]
+jwks = ["anyhow", "headers", "jwt-compact", "reqwest", "tokio"]
+bevy_logging = ["bevy"]
 
 [dependencies]
 anyhow = { version = "1.0.52", optional = true }
+bevy = { version = "0.5.0", optional = true, default-features = false }
 headers = { version = "0.3.5", optional = true }
-jsonwebtoken = { version = "8.0.0-beta.7", optional = true }
+jwt-compact = { version = "0.5.0", optional = true, features = ["std", "clock", "with_rsa"], default-features = false }
 log = "0.4.14"
 reqwest = { version = "0.11.8", optional = true }
+serde = "1.0.133"
 tokio = { version = "1.15.0", optional = true }

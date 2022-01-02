@@ -93,6 +93,7 @@ pub struct MatchmakerState {
 
 pub struct MainMenuUiChannels {
     pub auth_request_tx: UnboundedSender<AuthRequest>,
+    pub auth_message_tx: UnboundedSender<AuthMessage>,
     pub auth_message_rx: UnboundedReceiver<AuthMessage>,
     pub connection_request_tx: UnboundedSender<bool>,
     pub status_rx: UnboundedReceiver<TcpConnectionStatus>,
@@ -136,6 +137,7 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
     let url = url::Url::parse(&format!("ws://{}", url)).unwrap();
 
     let auth_request_tx_clone = auth_request_tx.clone();
+    let auth_message_tx_clone = auth_message_tx.clone();
     run_async(async move {
         #[cfg(not(target_arch = "wasm32"))]
         let mut serve_redirect_uri_future =
@@ -148,7 +150,7 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
         let mut serve_auth_future = tokio::task::spawn_local(auth::serve_auth_requests(
             auth_config,
             auth_request_rx,
-            auth_message_tx,
+            auth_message_tx_clone,
         ))
         .fuse();
         let mut serve_matchmaker_future = tokio::task::spawn_local(serve_matchmaker_connection(
@@ -174,6 +176,7 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
     connection_request_tx.send(true).unwrap();
     commands.insert_resource(MainMenuUiChannels {
         auth_request_tx,
+        auth_message_tx,
         auth_message_rx,
         connection_request_tx,
         status_rx,
@@ -339,13 +342,20 @@ async fn handle_matchmaker_connection(
     disconnect_tx.send(()).unwrap();
 }
 
+#[derive(SystemParam)]
+pub struct MatchmakerParams<'a> {
+    matchmaker_state: Option<ResMut<'a, MatchmakerState>>,
+    server_to_connect: ResMut<'a, Option<ServerToConnect>>,
+    main_menu_ui_channels: Option<Res<'a, MainMenuUiChannels>>,
+}
+
 pub fn process_network_events(
     mut network_params: NetworkParams,
     mut network_events: EventReader<NetworkEvent>,
     mut current_player_net_id: ResMut<CurrentPlayerNetId>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut update_params: UpdateParams,
-    matchmaker_state: Option<Res<MatchmakerState>>,
+    mut matchmaker_params: MatchmakerParams,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -438,7 +448,8 @@ pub fn process_network_events(
                         .connection_state
                         .set_status(ConnectionStatus::Handshaking);
                     update_params.initial_rtt.received_at = Some(Utc::now());
-                    let id_token = matchmaker_state
+                    let id_token = matchmaker_params
+                        .matchmaker_state
                         .as_ref()
                         .and_then(|state| state.id_token.clone());
                     handshake_message_to_send = Some((
@@ -680,6 +691,20 @@ pub fn process_network_events(
                     }
                 }
                 ReliableServerMessage::Disconnect(reason) => {
+                    log::info!("Server closed the connection: {:?}", reason);
+                    if let DisconnectReason::InvalidJwt = reason {
+                        if let Some(matchmaker_state) = matchmaker_params.matchmaker_state.as_mut()
+                        {
+                            matchmaker_state.id_token = None;
+                            *matchmaker_params.server_to_connect = None;
+                            matchmaker_params
+                                .main_menu_ui_channels
+                                .unwrap()
+                                .auth_message_tx
+                                .send(AuthMessage::InvalidOrExpiredAuthError)
+                                .expect("Failed to send an auth update");
+                        }
+                    }
                     network_params
                         .connection_state
                         .set_status(ConnectionStatus::Disconnecting(reason));

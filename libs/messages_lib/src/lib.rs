@@ -21,14 +21,6 @@ pub struct Server {
     pub player_count: u16,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-pub struct JwtAuthClaims {
-    pub iss: String,
-    pub sub: String,
-    pub email: Option<String>,
-    pub exp: i64,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RegisteredUser {
     pub id: i64,

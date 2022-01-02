@@ -1,6 +1,6 @@
 use crate::utils::parse_jwt;
-use jsonwebtoken::TokenData;
-use mr_messages_lib::JwtAuthClaims;
+use jwt_compact::Claims;
+use mr_utils_lib::JwtAuthClaims;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 
@@ -51,7 +51,7 @@ impl OfflineAuthConfig {
             && !self.id_token.is_empty()
     }
 
-    pub fn parse_token_data(&self) -> jsonwebtoken::errors::Result<TokenData<JwtAuthClaims>> {
+    pub fn parse_token_data(&self) -> Result<Claims<JwtAuthClaims>, jwt_compact::ParseError> {
         parse_jwt(&self.id_token)
     }
 }

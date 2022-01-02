@@ -151,7 +151,10 @@ pub fn process_network_events(
                     let Some(user) = user else {
                         disconnect_messages_to_send.push((
                             *handle,
-                            ReliableServerMessage::Disconnect(DisconnectReason::InvalidJwt)
+                            Message {
+                                session_id: SessionId::new(0),
+                                message: ReliableServerMessage::Disconnect(DisconnectReason::InvalidJwt),
+                            },
                         ));
                         continue;
                     };
@@ -164,6 +167,7 @@ pub fn process_network_events(
                             user.display_name.unwrap_or_else(random_name),
                         )
                     };
+                    log::debug!("Registering a player: {}", player.nickname);
                     let deps = RegisterPlayerDeps {
                         players: &mut players,
                         player_connections: &mut network_params.player_connections,
@@ -394,7 +398,10 @@ pub fn process_network_events(
                         let Some(req_tx) = network_params.persistence_req_tx.as_ref() else {
                             disconnect_messages_to_send.push((
                                 *handle,
-                                ReliableServerMessage::Disconnect(DisconnectReason::InvalidJwt)
+                                Message {
+                                    session_id: SessionId::new(0),
+                                    message: ReliableServerMessage::Disconnect(DisconnectReason::InvalidJwt),
+                                },
                             ));
                             break;
                         };
@@ -417,6 +424,7 @@ pub fn process_network_events(
                         uuid,
                         ..Player::new_with_nickname(PlayerRole::Runner, nickname)
                     };
+                    log::debug!("Registering an anonymous player: {}", player.nickname);
                     let deps = RegisterPlayerDeps {
                         players: &mut players,
                         player_connections: &mut network_params.player_connections,

@@ -4,10 +4,10 @@ use crate::{
     utils::parse_jwt,
 };
 use bevy::{ecs::system::ResMut, log};
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{Duration, Utc};
 use core::slice::SlicePattern;
 use mr_messages_lib::{
-    ErrorKind, ErrorResponse, JwtAuthClaims, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
+    ErrorKind, ErrorResponse, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
     LinkAccountRequest, PatchUserRequest, RegisterAccountError, RegisteredUser,
 };
 use mr_shared_lib::try_parse_from_env;
@@ -421,11 +421,9 @@ impl AuthRequestsHandler {
     async fn refresh_auth(&mut self, offline_auth_config: OfflineAuthConfig) {
         let token_data = offline_auth_config.parse_token_data();
         let is_actual = token_data.as_ref().map_or(false, |token_data| {
-            let expires_at = DateTime::<Utc>::from_utc(
-                NaiveDateTime::from_timestamp(token_data.claims.exp, 0),
-                Utc,
-            );
-            expires_at > Utc::now() - Duration::minutes(1)
+            token_data
+                .expiration
+                .map_or(false, |exp| exp > Utc::now() - Duration::minutes(1))
         });
         if is_actual {
             self.finish_auth(offline_auth_config.id_token).await;
@@ -589,7 +587,7 @@ impl AuthRequestsHandler {
 
         match response {
             Ok(response) => {
-                if let Err(err) = parse_jwt::<JwtAuthClaims>(&response.id_token) {
+                if let Err(err) = parse_jwt(&response.id_token) {
                     log::warn!("Failed to parse id_token from the response: {:?}", err);
                     self.send_auth_message(AuthMessage::UnavailableError);
                     return;
@@ -638,7 +636,7 @@ impl AuthRequestsHandler {
             return false;
         };
 
-        if let Err(err) = parse_jwt::<JwtAuthClaims>(&response.id_token) {
+        if let Err(err) = parse_jwt(&response.id_token) {
             log::warn!("Failed to parse id_token from the response: {:?}", err);
             self.send_auth_message(AuthMessage::UnavailableError);
             return false;
@@ -686,7 +684,7 @@ impl AuthRequestsHandler {
             return false;
         };
 
-        let Ok(token_data) = parse_jwt::<JwtAuthClaims>(&response.id_token) else {
+        let Ok(token_data) = parse_jwt(&response.id_token) else {
             log::error!("Failed to parse id_token from the response");
             self.send_auth_message(AuthMessage::UnavailableError);
             return false;
@@ -700,7 +698,7 @@ impl AuthRequestsHandler {
         let username = request
             .username
             .clone()
-            .or(token_data.claims.email)
+            .or(token_data.custom.email)
             .expect("Expected username in either request or id_token");
 
         if let Some(refresh_token) = response.refresh_token {

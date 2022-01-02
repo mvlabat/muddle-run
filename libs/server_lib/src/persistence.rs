@@ -3,10 +3,7 @@ use bevy::{
     ecs::system::{Res, ResMut},
     log,
 };
-use jsonwebtoken::{
-    decode, decode_header, jwk::AlgorithmParameters, DecodingKey, TokenData, Validation,
-};
-use mr_messages_lib::{GetUserRequest, JwtAuthClaims, RegisteredUser};
+use mr_messages_lib::{GetUserRequest, RegisteredUser};
 use mr_shared_lib::net::MessageId;
 use mr_utils_lib::jwks::{poll_jwks, Jwks};
 use reqwest::{Client, Url};
@@ -37,6 +34,7 @@ pub fn init_jwks_polling(config: Option<Res<PersistenceConfig>>, jwks: Res<Jwks>
     if config.is_none() {
         return;
     }
+    log::info!("Start JWKs polling");
     let client = reqwest::Client::new();
 
     let google_certs_url: Url = "https://www.googleapis.com/oauth2/v3/certs"
@@ -70,12 +68,25 @@ pub fn handle_persistence_requests(
         loop {
             match request_rx.recv().await {
                 Some(PersistenceRequest::GetUser { id, id_token }) => {
-                    let Some(jwt) = decode_token(&jwks, &config, &id_token).await else {
-                        response_tx.send(PersistenceMessage::UserInfoResponse {
-                            id,
-                            user: None,
-                        }).expect("Failed to send a persistence message");
-                        continue;
+                    let jwt = match jwks
+                        .decode(
+                            &id_token,
+                            &[
+                                &config.google_web_client_id,
+                                &config.google_desktop_client_id,
+                                &config.auth0_client_id,
+                            ],
+                        )
+                        .await
+                    {
+                        Ok(jwt) => jwt,
+                        Err(err) => {
+                            log::warn!("Invalid JWT: {:?}", err);
+                            response_tx
+                                .send(PersistenceMessage::UserInfoResponse { id, user: None })
+                                .expect("Failed to send a persistence message");
+                            continue;
+                        }
                     };
 
                     tokio::spawn(get_user(
@@ -84,8 +95,8 @@ pub fn handle_persistence_requests(
                         response_tx.clone(),
                         id,
                         GetUserRequest {
-                            subject: jwt.claims.sub,
-                            issuer: jwt.claims.iss,
+                            subject: jwt.claims().custom.sub.clone(),
+                            issuer: jwt.claims().custom.iss.clone(),
                         },
                     ));
                 }
@@ -145,39 +156,4 @@ async fn get_user(
             user: Some(registered_user),
         })
         .expect("Failed to send a persistence message");
-}
-
-async fn decode_token(
-    jwks: &Jwks,
-    config: &PersistenceConfig,
-    token: &str,
-) -> Option<TokenData<JwtAuthClaims>> {
-    let kid = decode_header(token).ok().and_then(|header| header.kid)?;
-
-    if let Some(key) = jwks.get(&kid).await {
-        match key.algorithm {
-            AlgorithmParameters::RSA(ref rsa) => {
-                let decoding_key = DecodingKey::from_rsa_components(&rsa.n, &rsa.e).unwrap();
-                let mut validation = Validation::new(key.common.algorithm.unwrap());
-                validation.set_audience(&[
-                    config.google_web_client_id.clone(),
-                    config.google_desktop_client_id.clone(),
-                    config.auth0_client_id.clone(),
-                ]);
-                decode::<JwtAuthClaims>(token, &decoding_key, &validation)
-                    .map_err(|err| {
-                        log::warn!("Invalid or expired JWT: {:?}", err);
-                        err
-                    })
-                    .ok()
-            }
-            _ => {
-                log::error!("Non-RSA JWK: {}", kid);
-                None
-            }
-        }
-    } else {
-        log::warn!("No matching JWK found for the given kid: {}", &kid);
-        None
-    }
 }

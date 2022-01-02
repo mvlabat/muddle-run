@@ -6,11 +6,12 @@ mod public;
 
 use actix_web::{web, App, HttpResponse, HttpServer};
 use futures::{select, FutureExt};
-use jsonwebtoken::{
-    decode, decode_header, jwk::AlgorithmParameters, DecodingKey, TokenData, Validation,
+use jwt_compact::Token;
+use mr_messages_lib::{ErrorKind, ErrorResponse};
+use mr_utils_lib::{
+    jwks::{poll_jwks, InvalidTokenError, Jwks},
+    JwtAuthClaims,
 };
-use mr_messages_lib::{ErrorKind, ErrorResponse, JwtAuthClaims};
-use mr_utils_lib::jwks::{poll_jwks, Jwks};
 use reqwest::Url;
 use sqlx::postgres::PgPoolOptions;
 
@@ -34,52 +35,54 @@ async fn decode_token_helper(
     data: &Data,
     token: &str,
     kind: &str,
-) -> Result<TokenData<JwtAuthClaims>, HttpResponse> {
-    let kid = match decode_header(token).ok().and_then(|header| header.kid) {
-        Some(k) => k,
-        None => {
-            return Err(HttpResponse::BadRequest().json(ErrorResponse::<()> {
-                message: format!("Token doesn't have a `kid` header field (kind: {})", kind),
-                error_kind: ErrorKind::Unauthorized,
-            }))
-        }
-    };
-
-    if let Some(key) = data.jwks.get(&kid).await {
-        match key.algorithm {
-            AlgorithmParameters::RSA(ref rsa) => {
-                let decoding_key = DecodingKey::from_rsa_components(&rsa.n, &rsa.e).unwrap();
-                let mut validation = Validation::new(key.common.algorithm.unwrap());
-                validation.set_audience(&[
-                    data.config.google_web_client_id.clone(),
-                    data.config.google_desktop_client_id.clone(),
-                    data.config.auth0_client_id.clone(),
-                ]);
-                decode::<JwtAuthClaims>(token, &decoding_key, &validation).map_err(|err| {
-                    log::warn!("Invalid or expired JWT (kind: {}): {:?}", kind, err);
-                    HttpResponse::BadRequest().json(ErrorResponse::<()> {
-                        message: format!("Invalid or expired JWT (kind: {})", kind),
-                        error_kind: ErrorKind::BadRequest,
-                    })
+) -> Result<Token<JwtAuthClaims>, HttpResponse> {
+    data.jwks
+        .decode(
+            token,
+            &[
+                &data.config.google_web_client_id,
+                &data.config.google_desktop_client_id,
+                &data.config.auth0_client_id,
+            ],
+        )
+        .await
+        .map_err(|err| match err {
+            InvalidTokenError::Malformed(err) => {
+                log::warn!("Failed to parse JWT (kind: {}): {:?}", kind, err);
+                HttpResponse::BadRequest().json(ErrorResponse::<()> {
+                    message: format!("Failed to parse JWT (kind: {})", kind),
+                    error_kind: ErrorKind::Unauthorized,
                 })
             }
-            _ => {
-                // TODO: sentry error.
-                log::error!("Non-RSA JWK: {}", kid);
-                Err(HttpResponse::InternalServerError().finish())
+            InvalidTokenError::KeyIdMissing => {
+                log::warn!("Token doesn't have a `kid` header field (kind: {})", kind);
+                HttpResponse::BadRequest().json(ErrorResponse::<()> {
+                    message: format!("Token doesn't have a `kid` header field (kind: {})", kind),
+                    error_kind: ErrorKind::Unauthorized,
+                })
             }
-        }
-    } else {
-        log::warn!(
-            "No matching JWK found for the given kid (kind: {}): {}",
-            kind,
-            &kid
-        );
-        Err(HttpResponse::BadRequest().json(ErrorResponse::<()> {
-            message: "No matching JWK found for the given kid".to_owned(),
-            error_kind: ErrorKind::BadRequest,
-        }))
-    }
+            InvalidTokenError::Invalid(err) => {
+                log::warn!("Invalid or expired JWT (kind: {}): {:?}", kind, err);
+                HttpResponse::BadRequest().json(ErrorResponse::<()> {
+                    message: format!("Invalid or expired JWT (kind: {})", kind),
+                    error_kind: ErrorKind::BadRequest,
+                })
+            }
+            InvalidTokenError::InvalidAudience => {
+                log::warn!("Invalid audience (kind: {})", kind);
+                HttpResponse::BadRequest().json(ErrorResponse::<()> {
+                    message: format!("Invalid audience (kind: {})", kind),
+                    error_kind: ErrorKind::BadRequest,
+                })
+            }
+            InvalidTokenError::UnknownSigner => {
+                log::warn!("Unknown signer (kind: {})", kind);
+                HttpResponse::BadRequest().json(ErrorResponse::<()> {
+                    message: format!("Unknown signer (kind: {})", kind),
+                    error_kind: ErrorKind::BadRequest,
+                })
+            }
+        })
 }
 
 #[actix_web::main]

@@ -1,11 +1,12 @@
 use crate::Data;
 use actix_web::{http::header, patch, post, web, HttpRequest, HttpResponse};
 use headers::{authorization::Bearer, Authorization, Header};
-use jsonwebtoken::TokenData;
+use jwt_compact::Token;
 use mr_messages_lib::{
-    ErrorKind, ErrorResponse, JwtAuthClaims, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
+    ErrorKind, ErrorResponse, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
     LinkAccountRequest, PatchUserRequest, RegisterAccountError, RegisteredUser,
 };
+use mr_utils_lib::JwtAuthClaims;
 use sqlx::{types::chrono, Connection};
 
 #[post("/users/auth")]
@@ -93,8 +94,12 @@ pub async fn link_account(
             }
         };
 
-    if decoded_bearer_token.claims.email.is_none()
-        || decoded_existing_account_token.claims.email.is_none()
+    if decoded_bearer_token.claims().custom.email.is_none()
+        || decoded_existing_account_token
+            .claims()
+            .custom
+            .email
+            .is_none()
     {
         return HttpResponse::BadRequest().json(ErrorResponse::<()> {
             message: "JWTs of connected accounts must contain email claims".to_owned(),
@@ -227,7 +232,8 @@ WHERE u.id = $1
     }
 
     let oidc_found = user_oidcs.iter().any(|oidc| {
-        oidc.issuer == decoded_token.claims.iss && oidc.subject == decoded_token.claims.sub
+        oidc.issuer == decoded_token.claims().custom.iss
+            && oidc.subject == decoded_token.claims().custom.sub
     });
     if !oidc_found {
         log::debug!("Existing user claims mismatch");
@@ -269,8 +275,8 @@ impl From<sqlx::Error> for InsertOidcError {
 async fn insert_oidc(
     mut connection: sqlx::pool::PoolConnection<sqlx::Postgres>,
     user_id: i64,
-    existing_account: &TokenData<JwtAuthClaims>,
-    new_oidc: &TokenData<JwtAuthClaims>,
+    existing_account: &Token<JwtAuthClaims>,
+    new_oidc: &Token<JwtAuthClaims>,
 ) -> Result<(), InsertOidcError> {
     struct UserOidcDto {
         id: i64,
@@ -298,21 +304,22 @@ WHERE u.id = $1
     }
 
     let user_oidc = user_oidcs.iter().find(|oidc| {
-        oidc.issuer == existing_account.claims.iss && oidc.subject == existing_account.claims.sub
+        oidc.issuer == existing_account.claims().custom.iss
+            && oidc.subject == existing_account.claims().custom.sub
     });
     let Some(user_oidc) = user_oidc else {
         log::debug!("Existing user claims mismatch");
         return Err(InsertOidcError::Forbidden);
     };
 
-    if user_oidc.email != new_oidc.claims.email {
+    if user_oidc.email != new_oidc.claims().custom.email {
         log::debug!("Email mismatch");
         return Err(InsertOidcError::ClaimsMismatch);
     }
 
-    let already_linked = user_oidcs
-        .iter()
-        .any(|oidc| oidc.issuer == new_oidc.claims.iss && oidc.subject == new_oidc.claims.sub);
+    let already_linked = user_oidcs.iter().any(|oidc| {
+        oidc.issuer == new_oidc.claims().custom.iss && oidc.subject == new_oidc.claims().custom.sub
+    });
     if already_linked {
         return Err(InsertOidcError::AlreadyLinked);
     }
@@ -324,9 +331,9 @@ INSERT INTO openids
 VALUES ($1, $2, $3, $4)
         ",
         user_oidc.id,
-        new_oidc.claims.iss,
-        new_oidc.claims.sub,
-        new_oidc.claims.email,
+        new_oidc.claims().custom.iss,
+        new_oidc.claims().custom.sub,
+        new_oidc.claims().custom.email,
     )
     .execute(&mut connection)
     .await?;
@@ -350,7 +357,7 @@ impl From<sqlx::Error> for InsertUserError {
 
 async fn insert_user(
     mut connection: sqlx::pool::PoolConnection<sqlx::Postgres>,
-    user_data: TokenData<JwtAuthClaims>,
+    user_data: Token<JwtAuthClaims>,
 ) -> Result<RegisteredUser, InsertUserError> {
     // Wrapping everything into optionals shouldn't be needed.
     // TODO: track https://github.com/launchbadge/sqlx/issues/1266.
@@ -383,16 +390,16 @@ FROM users u
 JOIN openids AS o ON u.id = o.user_id
 WHERE u.email = $3 AND $3 IS NOT NULL
         ",
-        user_data.claims.iss.clone(),
-        user_data.claims.sub.clone(),
-        user_data.claims.email,
+        user_data.claims().custom.iss.clone(),
+        user_data.claims().custom.sub.clone(),
+        user_data.claims().custom.email,
     )
     .fetch_all(&mut connection)
     .await?;
 
     let already_registered_user = user_oidcs.iter().find(|user| {
-        user.issuer.as_ref() == Some(&user_data.claims.iss)
-            && user.subject.as_ref() == Some(&user_data.claims.sub)
+        user.issuer.as_ref() == Some(&user_data.claims().custom.iss)
+            && user.subject.as_ref() == Some(&user_data.claims().custom.sub)
     });
     if let Some(user) = already_registered_user {
         return Ok(RegisteredUser {
@@ -424,13 +431,13 @@ WHERE u.email = $3 AND $3 IS NOT NULL
         });
     }
 
-    let email = user_data.claims.email.clone();
+    let email = user_data.claims().custom.email.clone();
 
     let mut transaction = connection.begin().await?;
     let NewUserDto { id, created_at } = sqlx::query_as!(
         NewUserDto,
         "INSERT INTO users (email) VALUES ($1) RETURNING id, created_at",
-        user_data.claims.email.clone(),
+        user_data.claims().custom.email.clone(),
     )
     .fetch_one(&mut transaction)
     .await?;
@@ -441,9 +448,9 @@ INSERT INTO openids
 VALUES ($1, $2, $3, $4)
         ",
         id,
-        user_data.claims.iss,
-        user_data.claims.sub,
-        user_data.claims.email,
+        user_data.claims().custom.iss,
+        user_data.claims().custom.sub,
+        user_data.claims().custom.email,
     )
     .execute(&mut transaction)
     .await?;
