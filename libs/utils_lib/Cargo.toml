@@ -5,7 +5,12 @@ authors = ["mvlabat <mvlabat@gmail.com>"]
 edition = "2018"
 
 [features]
-jwt = ["reqwest"]
+jwks = ["anyhow", "headers", "jsonwebtoken", "reqwest", "tokio"]
 
 [dependencies]
+anyhow = { version = "1.0.52", optional = true }
+headers = { version = "0.3.5", optional = true }
+jsonwebtoken = { version = "8.0.0-beta.7", optional = true }
+log = "0.4.14"
 reqwest = { version = "0.11.8", optional = true }
+tokio = { version = "1.15.0", optional = true }

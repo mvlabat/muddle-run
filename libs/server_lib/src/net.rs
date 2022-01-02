@@ -1,11 +1,11 @@
-use crate::{Agones, LastPlayerDisconnectedAt};
+use crate::{Agones, LastPlayerDisconnectedAt, PersistenceMessage, PersistenceRequest};
 use bevy::{
     ecs::system::SystemParam,
     log,
     prelude::*,
     utils::{HashMap, HashSet},
 };
-use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
+use bevy_networking_turbulence::{ConnectionHandle, NetworkEvent, NetworkResource};
 use chrono::Utc;
 use mr_shared_lib::{
     game::{
@@ -14,12 +14,13 @@ use mr_shared_lib::{
         level::{LevelObject, LevelState},
     },
     messages::{
-        DeferredMessagesQueue, DeltaUpdate, DisconnectedPlayer, EntityNetId, Message, PlayerInputs,
-        PlayerNetId, PlayerState, ReliableClientMessage, ReliableServerMessage, RespawnPlayer,
-        RunnerInput, SpawnLevelObject, SpawnLevelObjectRequest, StartGame, SwitchRole,
-        UnreliableClientMessage, UnreliableServerMessage,
+        DeferredMessagesQueue, DeltaUpdate, DisconnectReason, DisconnectedPlayer, EntityNetId,
+        Message, PlayerInputs, PlayerNetId, PlayerState, ReliableClientMessage,
+        ReliableServerMessage, RespawnPlayer, RunnerInput, SpawnLevelObject,
+        SpawnLevelObjectRequest, StartGame, SwitchRole, UnreliableClientMessage,
+        UnreliableServerMessage,
     },
-    net::{ConnectionState, ConnectionStatus, SessionId, CONNECTION_TIMEOUT_MILLIS},
+    net::{ConnectionState, ConnectionStatus, MessageId, SessionId, CONNECTION_TIMEOUT_MILLIS},
     player::{random_name, Player, PlayerEvent, PlayerRole},
     registry::{EntityRegistry, Registry},
     server::level_spawn_location_service::LevelSpawnLocationService,
@@ -30,6 +31,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::Instant,
 };
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 pub fn startup(mut net: ResMut<NetworkResource>, agones: Option<Res<Agones>>) {
     log::info!("Starting the server");
@@ -67,6 +69,9 @@ pub struct NetworkParams<'a> {
     new_player_connections: ResMut<'a, Vec<(PlayerNetId, u32)>>,
     last_player_disconnected_at: ResMut<'a, LastPlayerDisconnectedAt>,
     players_tracking_channel: Option<ResMut<'a, tokio::sync::mpsc::UnboundedSender<PlayerEvent>>>,
+    pending_requests: Local<'a, HashMap<MessageId, ConnectionHandle>>,
+    persistence_req_tx: Option<Res<'a, UnboundedSender<PersistenceRequest>>>,
+    persistence_msg_rx: Option<ResMut<'a, UnboundedReceiver<PersistenceMessage>>>,
 }
 
 pub fn process_network_events(
@@ -91,12 +96,12 @@ pub fn process_network_events(
 
                 if matches!(
                     connection_state.status(),
-                    ConnectionStatus::Connected | ConnectionStatus::Disconnecting
+                    ConnectionStatus::Connected | ConnectionStatus::Disconnecting(_)
                 ) {
                     log::warn!("Received a Connected event from a connection that is already connected (or being disconnected). That probably means that the clean-up wasn't properly finished");
                 }
                 match connection_state.status() {
-                    ConnectionStatus::Disconnecting | ConnectionStatus::Disconnected => {
+                    ConnectionStatus::Disconnecting(_) | ConnectionStatus::Disconnected => {
                         connection_state.set_status(ConnectionStatus::Uninitialized);
                         connection_state.session_id += SessionId::new(1);
                     }
@@ -111,12 +116,13 @@ pub fn process_network_events(
                     .expect("Expected a connection when receiving a Disconnect event");
                 if matches!(
                     connection_state.status(),
-                    ConnectionStatus::Disconnecting | ConnectionStatus::Disconnected
+                    ConnectionStatus::Disconnecting(_) | ConnectionStatus::Disconnected
                 ) {
                     log::info!("Received a Disconnected event for a player that's already disconnected, skipped");
                     continue;
                 }
-                connection_state.set_status(ConnectionStatus::Disconnecting);
+                connection_state
+                    .set_status(ConnectionStatus::Disconnecting(DisconnectReason::Closed));
             }
             NetworkEvent::Error(handle, err) => {
                 log::error!("Network error ({}): {:?}", handle, err);
@@ -127,6 +133,59 @@ pub fn process_network_events(
 
     let mut initialize_messages_to_send = Vec::new();
     let mut handshake_messages_to_send = Vec::new();
+    let mut disconnect_messages_to_send = Vec::new();
+
+    if let Some(msg_rx) = network_params.persistence_msg_rx.as_mut() {
+        while let Ok(persistence_message) = msg_rx.try_recv() {
+            match persistence_message {
+                PersistenceMessage::UserInfoResponse { id, user } => {
+                    let handle = network_params
+                        .pending_requests
+                        .get(&id)
+                        .expect("Expected a pending persistence request on a response message");
+                    let connection_state = network_params
+                        .connection_states
+                        .get_mut(handle)
+                        .expect("Expected a connection state for an existing connection");
+
+                    let Some(user) = user else {
+                        disconnect_messages_to_send.push((
+                            *handle,
+                            ReliableServerMessage::Disconnect(DisconnectReason::InvalidJwt)
+                        ));
+                        continue;
+                    };
+
+                    let uuid = uuid::Uuid::new_v4().to_string();
+                    let player = Player {
+                        uuid,
+                        ..Player::new_with_nickname(
+                            PlayerRole::Runner,
+                            user.display_name.unwrap_or_else(random_name),
+                        )
+                    };
+                    let deps = RegisterPlayerDeps {
+                        players: &mut players,
+                        player_connections: &mut network_params.player_connections,
+                        new_player_connections: &mut network_params.new_player_connections,
+                        players_tracking_channel: network_params
+                            .players_tracking_channel
+                            .as_deref_mut(),
+                    };
+                    register_player(
+                        &time,
+                        deps,
+                        player,
+                        &mut update_params,
+                        &level_spawn_location_service,
+                        *handle,
+                    );
+                    connection_state.set_status(ConnectionStatus::Handshaking);
+                    connection_state.last_message_received_at = Utc::now();
+                }
+            }
+        }
+    }
 
     // Reading message channels.
     for (handle, connection) in network_params.net.connections.iter_mut() {
@@ -175,7 +234,7 @@ pub fn process_network_events(
                     }
                     ConnectionStatus::Connected
                     | ConnectionStatus::Handshaking
-                    | ConnectionStatus::Disconnecting => {
+                    | ConnectionStatus::Disconnecting(_) => {
                         log::warn!("Skipping Connect message for a connected client");
                         continue;
                     }
@@ -233,7 +292,9 @@ pub fn process_network_events(
                 UnreliableClientMessage::PlayerUpdate(update) => {
                     log::trace!("Incoming update message: {:?}", update);
                     if let Err(err) = connection_state.acknowledge_incoming(update.frame_number) {
-                        connection_state.set_status(ConnectionStatus::Disconnecting);
+                        connection_state.set_status(ConnectionStatus::Disconnecting(
+                            DisconnectReason::InvalidUpdate,
+                        ));
                         log::error!(
                             "Failed to acknowledge an incoming packet (player: {}, update frame: {}, current frame: {}), disconnecting: {:?}",
                             player_net_id.0,
@@ -247,7 +308,9 @@ pub fn process_network_events(
                         if let Err(err) = connection_state
                             .apply_outgoing_acknowledgements(frame_number, ack_bit_set)
                         {
-                            connection_state.set_status(ConnectionStatus::Disconnecting);
+                            connection_state.set_status(ConnectionStatus::Disconnecting(
+                                DisconnectReason::InvalidUpdate,
+                            ));
                             log::error!(
                                 "Failed to apply outgoing packet acknowledgments (player: {}, update frame: {}, current frame: {}), disconnecting: {:?}",
                                 player_net_id.0,
@@ -269,7 +332,9 @@ pub fn process_network_events(
                                     input.frame_number,
                                     time.frame_number
                                 );
-                                connection_state.set_status(ConnectionStatus::Disconnecting);
+                                connection_state.set_status(ConnectionStatus::Disconnecting(
+                                    DisconnectReason::InvalidUpdate,
+                                ));
                                 break 'channel;
                             }
                             update_params
@@ -302,7 +367,10 @@ pub fn process_network_events(
                 }
                 // NOTE: before adding new messages, make sure to ignore them if connection status
                 // is not `Connected`.
-                ReliableClientMessage::Handshake(handshake_id) => {
+                ReliableClientMessage::Handshake {
+                    message_id: handshake_id,
+                    id_token,
+                } => {
                     log::info!("Client ({}) handshake: {}", handle, handshake_id);
                     let connection_state = network_params
                         .connection_states
@@ -322,53 +390,51 @@ pub fn process_network_events(
                         break;
                     }
 
-                    let player_net_id = network_params.player_connections.register(*handle);
-                    connection_state.set_status(ConnectionStatus::Handshaking);
-                    connection_state.last_message_received_at = Utc::now();
+                    if let Some(id_token) = id_token {
+                        let Some(req_tx) = network_params.persistence_req_tx.as_ref() else {
+                            disconnect_messages_to_send.push((
+                                *handle,
+                                ReliableServerMessage::Disconnect(DisconnectReason::InvalidJwt)
+                            ));
+                            break;
+                        };
 
-                    log::trace!(
-                        "Add new player ({:?}) connection to broadcast: {}",
-                        player_net_id,
-                        handle
-                    );
-                    network_params
-                        .new_player_connections
-                        .push((player_net_id, *handle));
+                        req_tx
+                            .send(PersistenceRequest::GetUser {
+                                id: handshake_id,
+                                id_token,
+                            })
+                            .expect("Failed to send a persistence request");
+                        network_params
+                            .pending_requests
+                            .insert(handshake_id, *handle);
+                        break;
+                    }
 
                     let nickname = random_name();
                     let uuid = uuid::Uuid::new_v4().to_string();
-                    if let Some(players_tracking_channel) =
-                        network_params.players_tracking_channel.as_mut()
-                    {
-                        if let Err(err) =
-                            players_tracking_channel.send(PlayerEvent::Connected(uuid.clone()))
-                        {
-                            log::error!("Failed to send PlayerEvent: {:?}", err);
-                        }
-                    }
-                    players.insert(
-                        player_net_id,
-                        Player {
-                            uuid,
-                            ..Player::new_with_nickname(PlayerRole::Runner, nickname)
-                        },
+                    let player = Player {
+                        uuid,
+                        ..Player::new_with_nickname(PlayerRole::Runner, nickname)
+                    };
+                    let deps = RegisterPlayerDeps {
+                        players: &mut players,
+                        player_connections: &mut network_params.player_connections,
+                        new_player_connections: &mut network_params.new_player_connections,
+                        players_tracking_channel: network_params
+                            .players_tracking_channel
+                            .as_deref_mut(),
+                    };
+                    register_player(
+                        &time,
+                        deps,
+                        player,
+                        &mut update_params,
+                        &level_spawn_location_service,
+                        *handle,
                     );
-                    update_params
-                        .spawn_player_commands
-                        .push(commands::SpawnPlayer {
-                            net_id: player_net_id,
-                            start_position: level_spawn_location_service
-                                .spawn_position(time.frame_number),
-                            is_player_frame_simulated: false,
-                        });
-                    // Add an initial update to have something to extrapolate from.
-                    update_params.deferred_player_updates.push(
-                        player_net_id,
-                        RunnerInput {
-                            frame_number: time.frame_number,
-                            direction: Vec2::ZERO,
-                        },
-                    );
+                    connection_state.set_status(ConnectionStatus::Handshaking);
+                    connection_state.last_message_received_at = Utc::now();
                 }
                 ReliableClientMessage::SwitchRole(role) => {
                     log::info!("Client ({}) requests to switch role to {:?}", handle, role);
@@ -475,6 +541,11 @@ pub fn process_network_events(
             log::error!("Failed to send Handshake message: {:?}", err);
         }
     }
+    for (handle, message) in disconnect_messages_to_send {
+        if let Err(err) = network_params.net.send_message(handle, message) {
+            log::error!("Failed to send Disconnect message: {:?}", err);
+        }
+    }
 
     disconnect_players(
         &mut despawned_players_for_handles,
@@ -482,6 +553,56 @@ pub fn process_network_events(
         &mut network_params,
         &mut update_params,
         &mut players,
+    );
+}
+
+struct RegisterPlayerDeps<'a> {
+    players: &'a mut HashMap<PlayerNetId, Player>,
+    player_connections: &'a mut PlayerConnections,
+    new_player_connections: &'a mut Vec<(PlayerNetId, u32)>,
+    players_tracking_channel: Option<&'a mut tokio::sync::mpsc::UnboundedSender<PlayerEvent>>,
+}
+
+fn register_player(
+    time: &GameTime,
+    mut register_player_deps: RegisterPlayerDeps,
+    player: Player,
+    update_params: &mut UpdateParams,
+    level_spawn_location_service: &LevelSpawnLocationService,
+    handle: ConnectionHandle,
+) {
+    let player_net_id = register_player_deps.player_connections.register(handle);
+
+    log::trace!(
+        "Add new player ({:?}) connection to broadcast: {}",
+        player_net_id,
+        handle
+    );
+    register_player_deps
+        .new_player_connections
+        .push((player_net_id, handle));
+
+    if let Some(players_tracking_channel) = register_player_deps.players_tracking_channel.as_mut() {
+        if let Err(err) = players_tracking_channel.send(PlayerEvent::Connected(player.uuid.clone()))
+        {
+            log::error!("Failed to send PlayerEvent: {:?}", err);
+        }
+    }
+    register_player_deps.players.insert(player_net_id, player);
+    update_params
+        .spawn_player_commands
+        .push(commands::SpawnPlayer {
+            net_id: player_net_id,
+            start_position: level_spawn_location_service.spawn_position(time.frame_number),
+            is_player_frame_simulated: false,
+        });
+    // Add an initial update to have something to extrapolate from.
+    update_params.deferred_player_updates.push(
+        player_net_id,
+        RunnerInput {
+            frame_number: time.frame_number,
+            direction: Vec2::ZERO,
+        },
     );
 }
 
@@ -495,7 +616,7 @@ fn disconnect_players(
     // Disconnecting players that have been failing to deliver updates for some time.
     for (handle, connection_state) in network_params.connection_states.iter_mut() {
         // We might have marked a client as `Disconnecting` when processing connection events.
-        if let ConnectionStatus::Disconnected | ConnectionStatus::Disconnecting =
+        if let ConnectionStatus::Disconnected | ConnectionStatus::Disconnecting(_) =
             connection_state.status()
         {
             continue;
@@ -510,7 +631,8 @@ fn disconnect_players(
                 > COMPONENT_FRAMEBUFFER_LIMIT / 2
             {
                 log::warn!("Disconnecting {}: lagging or falling behind", handle);
-                connection_state.set_status(ConnectionStatus::Disconnecting);
+                connection_state
+                    .set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
             }
         } else if Utc::now()
             .signed_duration_since(connection_state.status_updated_at())
@@ -522,7 +644,7 @@ fn disconnect_players(
             // in the `Connecting` or `Handshaking` status) if they are staying in this state
             // for 5 seconds.
             log::warn!("Disconnecting {}: handshake timeout", handle);
-            connection_state.set_status(ConnectionStatus::Disconnecting);
+            connection_state.set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
         }
 
         // Disconnecting players that haven't sent any message for `CONNECTION_TIMEOUT_MILLIS`.
@@ -533,7 +655,7 @@ fn disconnect_players(
             > std::time::Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
         {
             log::warn!("Disconnecting {}: idle", handle);
-            connection_state.set_status(ConnectionStatus::Disconnecting);
+            connection_state.set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
         }
     }
 
@@ -545,7 +667,7 @@ fn disconnect_players(
     for (connection_handle, connection_state) in network_params.connection_states.iter() {
         // We expect that this status lives only during this frame so despawning will be queued
         // only once. The status MUST be changed to `Disconnected` when broadcasting the updates.
-        if let ConnectionStatus::Disconnecting = connection_state.status() {
+        if let ConnectionStatus::Disconnecting(_) = connection_state.status() {
             if !despawned_players_for_handles.insert(*connection_handle) {
                 continue;
             }
@@ -720,9 +842,9 @@ pub fn send_network_updates(
 fn broadcast_disconnected_players(network_params: &mut NetworkParams) {
     let mut disconnected_players = Vec::new();
     for (&connection_handle, connection_state) in network_params.connection_states.iter_mut() {
-        if !matches!(connection_state.status(), ConnectionStatus::Disconnecting) {
+        let ConnectionStatus::Disconnecting(reason) = connection_state.status() else {
             continue;
-        }
+        };
 
         if let Some(connection_player_net_id) =
             network_params.player_connections.get_id(connection_handle)
@@ -734,7 +856,7 @@ fn broadcast_disconnected_players(network_params: &mut NetworkParams) {
             connection_handle,
             Message {
                 session_id: connection_state.session_id,
-                message: ReliableServerMessage::Disconnect,
+                message: ReliableServerMessage::Disconnect(reason),
             },
         ) {
             log::error!("Failed to send a message: {:?}", err);

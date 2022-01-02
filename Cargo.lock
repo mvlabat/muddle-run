@@ -3954,10 +3954,13 @@ dependencies = [
  "bevy_rapier2d",
  "chrono",
  "env_logger 0.8.4",
+ "jsonwebtoken",
  "mr_messages_lib",
  "mr_shared_lib",
+ "mr_utils_lib",
  "puffin",
  "rand 0.8.4",
+ "reqwest",
  "rymder",
  "tokio",
  "uuid 1.0.0-alpha.1",
@@ -3990,7 +3993,12 @@ dependencies = [
 name = "mr_utils_lib"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "headers",
+ "jsonwebtoken",
+ "log",
  "reqwest",
+ "tokio",
 ]
 
 [[package]]

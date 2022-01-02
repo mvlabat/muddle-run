@@ -1,7 +1,8 @@
 use crate::{
     net::{
         auth::{AuthMessage, AuthRequest},
-        MainMenuUiChannels, MatchmakerState, ServerToConnect, TcpConnectionStatus,
+        server_addr_optional, MainMenuUiChannels, MatchmakerState, ServerToConnect,
+        TcpConnectionStatus,
     },
     OfflineAuthConfig,
 };
@@ -264,7 +265,7 @@ pub fn main_menu_ui(
                 main_menu_ui_state.screen = MainMenuUiScreen::Matchmaker;
                 main_menu_ui_state.auth.pending_request = false;
                 main_menu_ui_state.auth.reset_form();
-                matchmaker_state.id_token = id_token;
+                matchmaker_state.id_token = Some(id_token);
             }
             #[cfg(feature = "unstoppable_resolution")]
             Ok(AuthMessage::InvalidDomainError) => {
@@ -336,7 +337,16 @@ pub fn main_menu_ui(
 
     loop {
         match main_menu_ui_channels.matchmaker_message_rx.try_recv() {
-            Ok(MatchmakerMessage::Init(init_list)) => {
+            Ok(MatchmakerMessage::Init(mut init_list)) => {
+                if let Some(server_addr) = server_addr_optional() {
+                    init_list.push(Server {
+                        name: "localhost".to_string(),
+                        addr: server_addr,
+                        player_capacity: 0,
+                        player_count: 0,
+                    })
+                }
+
                 log::debug!("Initialize servers list: {:?}", init_list);
                 main_menu_ui_state.matchmaker.servers = init_list
                     .into_iter()

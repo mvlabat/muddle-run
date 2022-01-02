@@ -73,6 +73,12 @@ pub struct PatchUserRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetUserRequest {
+    pub subject: String,
+    pub issuer: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ErrorResponse<T: Clone + Serialize + DeserializeOwned = ()> {
     pub message: String,
     #[serde(

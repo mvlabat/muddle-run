@@ -1,5 +1,6 @@
 #![feature(bool_to_option)]
 #![feature(hash_drain_filter)]
+#![feature(let_else)]
 #![feature(once_cell)]
 
 pub use mr_shared_lib::try_parse_from_env;
@@ -35,9 +36,11 @@ use std::{
     lazy::SyncLazy,
     time::{Duration, Instant},
 };
+use tokio::sync::mpsc::UnboundedReceiver;
 
 mod game_events;
 mod net;
+mod persistence;
 mod player_updates;
 
 pub struct Agones {
@@ -45,7 +48,12 @@ pub struct Agones {
     pub game_server: rymder::GameServer,
 }
 
+use crate::persistence::{
+    handle_persistence_requests, init_jwks_polling, PersistenceConfig, PersistenceMessage,
+    PersistenceRequest,
+};
 pub use mr_shared_lib::player::PlayerEvent;
+use mr_utils_lib::jwks::Jwks;
 
 pub struct LastPlayerDisconnectedAt(pub Instant);
 
@@ -75,6 +83,32 @@ impl Plugin for MuddleServerPlugin {
 
         builder.add_startup_system(init_level.system());
         builder.add_startup_system(startup.system());
+
+        if let Some(url) = try_parse_from_env!("MUDDLE_PERSISTENCE_URL") {
+            let config = PersistenceConfig {
+                url,
+                google_web_client_id: std::env::var("MUDDLE_GOOGLE_WEB_CLIENT_ID")
+                    .expect("Expected MUDDLE_WEB_GOOGLE_CLIENT_ID"),
+                google_desktop_client_id: std::env::var("MUDDLE_GOOGLE_DESKTOP_CLIENT_ID")
+                    .expect("Expected MUDDLE_DESKTOP_GOOGLE_CLIENT_ID"),
+                auth0_client_id: std::env::var("MUDDLE_AUTH0_CLIENT_ID")
+                    .expect("Expected MUDDLE_AUTH0_CLIENT_ID"),
+            };
+            builder.insert_resource(config);
+            let (persistence_req_tx, persistence_req_rx) =
+                tokio::sync::mpsc::unbounded_channel::<PersistenceRequest>();
+            let (persistence_msg_tx, persistence_msg_rx) =
+                tokio::sync::mpsc::unbounded_channel::<PersistenceMessage>();
+            builder.insert_resource(persistence_req_tx);
+            builder.insert_resource(Some(persistence_req_rx));
+            builder.insert_resource(persistence_msg_tx);
+            builder.insert_resource(persistence_msg_rx);
+        } else {
+            builder.insert_resource::<Option<UnboundedReceiver<PersistenceRequest>>>(None);
+        }
+        builder.add_startup_system(init_jwks_polling.system());
+        builder.add_startup_system(handle_persistence_requests.system());
+
         builder.add_system(process_idle_timeout.system());
 
         let input_stage = SystemStage::parallel()
@@ -122,6 +156,7 @@ impl Plugin for MuddleServerPlugin {
         resources.get_resource_or_insert_with(DeferredMessagesQueue::<DespawnLevelObject>::default);
         resources.get_resource_or_insert_with(|| LastPlayerDisconnectedAt(Instant::now()));
         resources.get_resource_or_insert_with(|| IdleTimeout(idle_timeout()));
+        resources.get_resource_or_insert_with(Jwks::default);
     }
 }
 

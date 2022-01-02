@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 mr_messages_lib = { path = "../../libs/messages_lib" }
-mr_utils_lib = { path = "../../libs/utils_lib" }
+mr_utils_lib = { path = "../../libs/utils_lib", features = ["jwks"] }
 
 actix-web = "4.0.0-beta.15"
 anyhow = "1.0.47"

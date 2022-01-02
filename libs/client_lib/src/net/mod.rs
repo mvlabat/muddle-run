@@ -21,9 +21,9 @@ use mr_shared_lib::{
         components::{PlayerDirection, Spawned},
     },
     messages::{
-        DeltaUpdate, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId, PlayerUpdate,
-        ReliableClientMessage, ReliableServerMessage, RespawnPlayerReason, RunnerInput, StartGame,
-        UnreliableClientMessage, UnreliableServerMessage,
+        DeltaUpdate, DisconnectReason, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId,
+        PlayerUpdate, ReliableClientMessage, ReliableServerMessage, RespawnPlayerReason,
+        RunnerInput, StartGame, UnreliableClientMessage, UnreliableServerMessage,
     },
     net::{
         AcknowledgeError, ConnectionState, ConnectionStatus, MessageId, SessionId,
@@ -88,7 +88,7 @@ pub enum TcpConnectionStatus {
 
 pub struct MatchmakerState {
     pub status: TcpConnectionStatus,
-    pub id_token: String,
+    pub id_token: Option<String>,
 }
 
 pub struct MainMenuUiChannels {
@@ -181,7 +181,7 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
     });
     commands.insert_resource(MatchmakerState {
         status: TcpConnectionStatus::Disconnected,
-        id_token: String::new(),
+        id_token: None,
     });
 }
 
@@ -345,6 +345,7 @@ pub fn process_network_events(
     mut current_player_net_id: ResMut<CurrentPlayerNetId>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut update_params: UpdateParams,
+    matchmaker_state: Option<Res<MatchmakerState>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -437,11 +438,17 @@ pub fn process_network_events(
                         .connection_state
                         .set_status(ConnectionStatus::Handshaking);
                     update_params.initial_rtt.received_at = Some(Utc::now());
+                    let id_token = matchmaker_state
+                        .as_ref()
+                        .and_then(|state| state.id_token.clone());
                     handshake_message_to_send = Some((
                         *handle,
                         Message {
                             session_id: MessageId::new(0),
-                            message: ReliableClientMessage::Handshake(message_id),
+                            message: ReliableClientMessage::Handshake {
+                                message_id,
+                                id_token,
+                            },
                         },
                     ));
 
@@ -487,9 +494,11 @@ pub fn process_network_events(
                                     update_params.game_time.frame_number,
                                     err
                                 );
-                                network_params
-                                    .connection_state
-                                    .set_status(ConnectionStatus::Disconnecting);
+                                network_params.connection_state.set_status(
+                                    ConnectionStatus::Disconnecting(
+                                        DisconnectReason::InvalidUpdate,
+                                    ),
+                                );
                                 return;
                             }
                             _ => {}
@@ -503,9 +512,9 @@ pub fn process_network_events(
                                 update.frame_number,
                                 update_params.game_time.frame_number
                             );
-                            network_params
-                                .connection_state
-                                .set_status(ConnectionStatus::Disconnecting);
+                            network_params.connection_state.set_status(
+                                ConnectionStatus::Disconnecting(DisconnectReason::InvalidUpdate),
+                            );
                             return;
                         }
 
@@ -670,10 +679,10 @@ pub fn process_network_events(
                         );
                     }
                 }
-                ReliableServerMessage::Disconnect => {
+                ReliableServerMessage::Disconnect(reason) => {
                     network_params
                         .connection_state
-                        .set_status(ConnectionStatus::Disconnecting);
+                        .set_status(ConnectionStatus::Disconnecting(reason));
                     return;
                 }
             }
@@ -789,7 +798,7 @@ pub fn maintain_connection(
         || is_falling_behind
         || matches!(
             network_params.connection_state.status(),
-            ConnectionStatus::Disconnecting | ConnectionStatus::Disconnected
+            ConnectionStatus::Disconnecting(_) | ConnectionStatus::Disconnected
         )
     {
         network_params.net.connections.clear();
@@ -1346,4 +1355,9 @@ fn server_addr() -> SocketAddr {
     let ip_addr: IpAddr =
         try_parse_from_env!("MUDDLE_SERVER_IP_ADDR").unwrap_or(DEFAULT_SERVER_IP_ADDR);
     SocketAddr::new(ip_addr, port)
+}
+
+pub fn server_addr_optional() -> Option<SocketAddr> {
+    let port: u16 = try_parse_from_env!("MUDDLE_SERVER_PORT").unwrap_or(DEFAULT_SERVER_PORT);
+    try_parse_from_env!("MUDDLE_SERVER_IP_ADDR").map(|ip_addr| SocketAddr::new(ip_addr, port))
 }
