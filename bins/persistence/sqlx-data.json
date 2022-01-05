@@ -1,0 +1,230 @@
+{
+  "db": "PostgreSQL",
+  "1f06a1824a6a427ba07f07b8f54595d438c2ac42f56e4d1f54ad7d1fc44ab73c": {
+    "query": "INSERT INTO users (email) VALUES ($1) RETURNING id, created_at",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "created_at",
+          "type_info": "Timestamp"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Varchar"
+        ]
+      },
+      "nullable": [
+        false,
+        false
+      ]
+    }
+  },
+  "6385d89ed928f27750d1b3ed9cba1f18d874052eef6b325fcfd5216d86dd3a8f": {
+    "query": "\nSELECT o.issuer, o.subject\nFROM users u\nJOIN openids AS o ON u.id = o.user_id\nWHERE u.id = $1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "issuer",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 1,
+          "name": "subject",
+          "type_info": "Varchar"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": [
+        false,
+        false
+      ]
+    }
+  },
+  "6a6bec68b35012df41e6bb99b5afc11a90e3404fa29698fb04fa3ad18ad2025b": {
+    "query": "UPDATE users SET display_name = $1 WHERE id = $2",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Varchar",
+          "Int8"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "82b3c6c1c5da9441c1abc1c201056871bb8ca2b2a766a10961582a45c2a817df": {
+    "query": "\nSELECT u.id, u.email, o.issuer, o.subject\nFROM users u\nJOIN openids AS o ON u.id = o.user_id\nWHERE u.id = $1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "email",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 2,
+          "name": "issuer",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 3,
+          "name": "subject",
+          "type_info": "Varchar"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": [
+        false,
+        true,
+        false,
+        false
+      ]
+    }
+  },
+  "b4f1605b41092a174cc31f6c9729993e667007c5823e1c4a5275b915cf791292": {
+    "query": "\nSELECT u.id, u.email, u.display_name, u.created_at, u.updated_at\nFROM users u\nJOIN openids AS o ON u.id = o.user_id\nWHERE o.subject = $1 AND o.issuer = $2\n        ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "email",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 2,
+          "name": "display_name",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 3,
+          "name": "created_at",
+          "type_info": "Timestamp"
+        },
+        {
+          "ordinal": 4,
+          "name": "updated_at",
+          "type_info": "Timestamp"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Text"
+        ]
+      },
+      "nullable": [
+        false,
+        true,
+        true,
+        false,
+        false
+      ]
+    }
+  },
+  "d83464ddb226af774edc8fe9e33bf8bfc869ab0eacdbaca55526af62434412db": {
+    "query": "\nSELECT u.id, u.email, u.display_name, o.email AS oidc_email, o.issuer, o.subject, o.created_at, o.updated_at\nFROM users u\nJOIN openids AS o ON u.id = o.user_id\nWHERE o.issuer = $1 AND o.subject = $2\nUNION\nSELECT u.id, u.email, u.display_name, o.email AS oidc_email, o.issuer, o.subject, o.created_at, o.updated_at\nFROM users u\nJOIN openids AS o ON u.id = o.user_id\nWHERE u.email = $3 AND $3 IS NOT NULL\n        ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "email",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 2,
+          "name": "display_name",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 3,
+          "name": "oidc_email",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 4,
+          "name": "issuer",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 5,
+          "name": "subject",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 6,
+          "name": "created_at",
+          "type_info": "Timestamp"
+        },
+        {
+          "ordinal": 7,
+          "name": "updated_at",
+          "type_info": "Timestamp"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Text",
+          "Text"
+        ]
+      },
+      "nullable": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    }
+  },
+  "df8f6e5a37edf47e9bf896ccf8a74e2377bd12cddab66fbfb3b66d372e152bf1": {
+    "query": "\nINSERT INTO openids\n(user_id, issuer, subject, email)\nVALUES ($1, $2, $3, $4)\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Varchar",
+          "Varchar",
+          "Varchar"
+        ]
+      },
+      "nullable": []
+    }
+  }
+}

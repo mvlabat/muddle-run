@@ -127,6 +127,8 @@ async fn main() -> anyhow::Result<()> {
         .connect(&std::env::var("DATABASE_URL").expect("Expected DATABASE_URL"))
         .await?;
 
+    sqlx::migrate!().run(&pool).await?;
+
     let jwks = Jwks::new();
     let client = reqwest::Client::new();
     tokio::spawn(poll_jwks(
