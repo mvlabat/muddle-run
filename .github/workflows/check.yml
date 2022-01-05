@@ -205,11 +205,16 @@ jobs:
             cache-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             cache-${{ runner.os }}-cargo
       - name: Migrate database
+        working-directory: ./bins/persistence
         run: |
           sudo apt-get install libpq-dev -y
           cargo install sqlx-cli
-          cd bins/persistence
           sqlx migrate run --database-url postgres://postgres:postgres@localhost:5432/mr_persistence_test
+      - name: Check sqlx-data.json consistency
+        working-directory: ./bins/persistence
+        run: cargo sqlx prepare --check
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/mr_persistence_test
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
