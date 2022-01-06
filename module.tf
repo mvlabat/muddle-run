@@ -75,6 +75,17 @@ variable "sentry_dsn_matchmaker" {
   sensitive = true
 }
 
+variable "sentry_dsn_persistence" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "persistence_db_password" {
+  type      = string
+  sensitive = true
+}
+
 provider "aws" {
   profile = "default"
   region  = var.region
@@ -117,8 +128,9 @@ resource "kubernetes_secret" "sentry_dsn" {
     name = "sentry-dsn"
   }
   data = {
-    server     = var.sentry_dsn_server
-    matchmaker = var.sentry_dsn_matchmaker
+    server      = var.sentry_dsn_server
+    matchmaker  = var.sentry_dsn_matchmaker
+    persistence = var.sentry_dsn_persistence
   }
 }
 
@@ -145,6 +157,16 @@ module "aws_autoscaler" {
   depends_on   = [module.eks_cluster]
 }
 
+module "persistence" {
+  source     = "./k8s/persistence"
+  depends_on = [module.aws_load_balancer_controller, module.helm_agones, kubernetes_secret.sentry_dsn]
+
+  persistence_db_password     = var.persistence_db_password
+  vpc_id                      = module.eks_cluster.vpc_id
+  vpc_public_subnets          = module.eks_cluster.vpc_public_subnets
+  worker_group_mgmt_one_sg_id = module.eks_cluster.worker_group_mgmt_one_sg_id
+}
+
 module "matchmaker" {
   source     = "./k8s/matchmaker"
   depends_on = [module.aws_load_balancer_controller, module.helm_agones, kubernetes_secret.sentry_dsn]
@@ -157,7 +179,7 @@ module "web_client" {
 
 module "service" {
   source     = "./k8s/service"
-  depends_on = [module.matchmaker, module.web_client]
+  depends_on = [module.matchmaker, module.persistence, module.web_client]
 }
 
 module "route53" {

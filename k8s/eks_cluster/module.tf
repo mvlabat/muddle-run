@@ -130,12 +130,13 @@ module "eks" {
   worker_groups_launch_template = [
     {
       name                          = "default"
-      override_instance_types       = ["t3a.micro", "t3.micro", "t2.micro"]
-      asg_desired_capacity          = 4
-      asg_min_size                  = 4
-      asg_max_size                  = 4
+      override_instance_types       = ["t3a.small", "t3.small", "t2.small"]
+      asg_desired_capacity          = 3
+      asg_min_size                  = 3
+      asg_max_size                  = 3
       additional_security_group_ids = [aws_security_group.worker_group_mgmt_one.id]
       public_ip                     = true
+      root_volume_size              = 5
 
       kubelet_extra_args = "--node-labels=node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle`"
     },
@@ -147,6 +148,7 @@ module "eks" {
       asg_max_size                  = 3
       additional_security_group_ids = [aws_security_group.game_server_worker_group.id]
       public_ip                     = true
+      root_volume_size              = 5
 
       tags = [
         {
@@ -171,17 +173,33 @@ module "eks" {
     // Node Pools with taints for metrics and system
     {
       name                 = "agones-system"
-      instance_type        = "t3a.small"
+      instance_type        = "t3a.micro"
       asg_desired_capacity = 1
-      kubelet_extra_args   = "--node-labels=agones.dev/agones-system=true,node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle` --register-with-taints=agones.dev/agones-system=true:NoExecute"
       public_ip            = true
+      root_volume_size     = 5
+
+      kubelet_extra_args   = "--node-labels=agones.dev/agones-system=true,node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle` --register-with-taints=agones.dev/agones-system=true:NoExecute"
     },
     {
       name                 = "agones-metrics"
-      instance_type        = "t3a.small"
+      instance_type        = "t3a.micro"
       asg_desired_capacity = 1
-      kubelet_extra_args   = "--node-labels=agones.dev/agones-metrics=true,node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle` --register-with-taints=agones.dev/agones-metrics=true:NoExecute"
       public_ip            = true
+      root_volume_size     = 5
+
+      kubelet_extra_args   = "--node-labels=agones.dev/agones-metrics=true,node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle` --register-with-taints=agones.dev/agones-metrics=true:NoExecute"
     }
   ]
+}
+
+output "vpc_id" {
+  value = module.vpc.vpc_id
+}
+
+output "vpc_public_subnets" {
+  value = module.vpc.public_subnets
+}
+
+output "worker_group_mgmt_one_sg_id" {
+  value = aws_security_group.worker_group_mgmt_one.id
 }
