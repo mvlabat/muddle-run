@@ -40,6 +40,31 @@ jobs:
           cache-from: type=registry,ref=mvlabat/mr_matchmaker:buildcache
           cache-to: type=registry,ref=mvlabat/mr_matchmaker:buildcache,mode=max
 
+  mr_persistence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: mr_persistence.dockerfile
+          push: true
+          tags: mvlabat/mr_persistence:latest,mvlabat/mr_persistence:${{ github.sha }}
+          cache-from: type=registry,ref=mvlabat/mr_persistence:buildcache
+          cache-to: type=registry,ref=mvlabat/mr_persistence:buildcache,mode=max
+
   mr_server:
     runs-on: ubuntu-latest
     steps:
@@ -64,6 +89,11 @@ jobs:
           tags: mvlabat/mr_server:latest,mvlabat/mr_server:${{ github.sha }}
           cache-from: type=registry,ref=mvlabat/mr_server:buildcache
           cache-to: type=registry,ref=mvlabat/mr_server:buildcache,mode=max
+          build-args: |
+            sentry_dsn=${{ secrets.SENTRY_DSN_CLIENT }} # a client secret is not a secret really, but nvm :)
+            muddle_auth0_client_id=${{ secrets.MUDDLE_AUTH0_CLIENT_ID }}
+            muddle_google_web_client_id=${{ secrets.MUDDLE_GOOGLE_WEB_CLIENT_ID }}
+            muddle_google_desktop_client_id=${{ secrets.MUDDLE_GOOGLE_DESKTOP_CLIENT_ID }}
 
   mr_web_client:
     runs-on: ubuntu-latest
@@ -91,8 +121,10 @@ jobs:
           cache-to: type=registry,ref=mvlabat/mr_web_client:buildcache,mode=max
           build-args: |
             muddle_matchmaker_url=muddle.run:8080
+            muddle_persistence_url=http://muddle.run:8082
             sentry_dsn=${{ secrets.SENTRY_DSN_CLIENT }} # a client secret is not a secret really, but nvm :)
-            muddle_google_client_id=${{ secrets.MUDDLE_GOOGLE_CLIENT_ID }}
+            muddle_auth0_client_id=${{ secrets.MUDDLE_AUTH0_CLIENT_ID }}
+            muddle_google_client_id=${{ secrets.MUDDLE_GOOGLE_WEB_CLIENT_ID }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -113,6 +145,11 @@ jobs:
         env:
           KUBECONFIG: /tmp/kube_config
         run: kubectl set image deployment mr-matchmaker mr-matchmaker=mvlabat/mr_matchmaker:${{ github.sha }}
+
+      - name: Deploy mr_persistence
+        env:
+          KUBECONFIG: /tmp/kube_config
+        run: kubectl set image deployment mr-persistence mr-persistence=mvlabat/mr_persistence:${{ github.sha }}
 
       - name: Deploy mr_web_client
         env:

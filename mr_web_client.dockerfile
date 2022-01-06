@@ -47,9 +47,13 @@ COPY --from=deps-builder /usr/src/muddle-run/target/ target
 
 ARG sentry_dsn
 ARG muddle_matchmaker_url
+ARG muddle_persistence_url
+ARG muddle_auth0_client_id
 ARG muddle_google_client_id
 ENV SENTRY_DSN=${sentry_dsn}
 ENV MUDDLE_MATCHMAKER_URL=${muddle_matchmaker_url}
+ENV MUDDLE_PERSISTENCE_URL=${muddle_persistence_url}
+ENV MUDDLE_AUTH0_CLIENT_ID=${muddle_auth0_client_id}
 ENV MUDDLE_GOOGLE_CLIENT_ID=${muddle_google_client_id}
 
 RUN find /usr/src/muddle-run/bins -type f -exec touch {} +

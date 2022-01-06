@@ -57,9 +57,15 @@ COPY --from=builder /usr/src/muddle-run/target/release/mr_server /usr/local/bin/
 ARG muddle_public_ip_addr
 ARG muddle_listen_ip_addr
 ARG muddle_listen_port
+ARG muddle_auth0_client_id
+ARG muddle_google_web_client_id
+ARG muddle_google_desktop_client_id
 ENV MUDDLE_PUBLIC_IP_ADDR=${muddle_public_ip_addr}
 ENV MUDDLE_LISTEN_IP_ADDR=${muddle_listen_ip_addr}
 ENV MUDDLE_LISTEN_PORT=${muddle_listen_port}
+ENV MUDDLE_AUTH0_CLIENT_ID=${muddle_auth0_client_id}
+ENV MUDDLE_GOOGLE_WEB_CLIENT_ID=${muddle_google_web_client_id}
+ENV MUDDLE_GOOGLE_DESKTOP_CLIENT_ID=${muddle_google_desktop_client_id}
 
 EXPOSE ${muddle_listen_port}
 
