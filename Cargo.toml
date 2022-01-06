@@ -5,11 +5,13 @@ members = [
     "libs/client_lib",
     "libs/server_lib",
     "libs/shared_lib",
+    "libs/unstoppable_resolution",
     "libs/utils_lib",
     "bins/desktop_client",
     "bins/web_client",
     "bins/server",
     "bins/matchmaker",
+    "bins/persistence",
 ]
 resolver = "2"
 
@@ -34,8 +36,8 @@ parry2d = { git = "https://github.com/dimforge/parry", rev = "5c957b9" }
 #bevy_tasks = { path = "../bevy/crates/bevy_tasks" }
 
 #bevy_networking_turbulence = { git = "https://github.com/mvlabat/bevy_networking_turbulence.git", branch = "muddle-run" }
-#naia-client-socket = { git = "https://github.com/mvlabat/naia-socket.git", branch = "muddle-run" }
-#naia-server-socket = { git = "https://github.com/mvlabat/naia-socket.git", branch = "muddle-run" }
+naia-client-socket = { git = "https://github.com/mvlabat/naia-socket.git", branch = "muddle-run" }
+naia-server-socket = { git = "https://github.com/mvlabat/naia-socket.git", branch = "muddle-run" }
 #bevy_networking_turbulence = { path = "../bevy_networking_turbulence" }
 #naia-client-socket = { path = "../naia-socket/client" }
 #naia-server-socket = { path = "../naia-socket/server" }

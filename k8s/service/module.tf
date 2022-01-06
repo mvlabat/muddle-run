@@ -24,6 +24,10 @@ resource "kubernetes_service" "muddle_run_service" {
       name = "ws"
       port = 8080
     }
+    port {
+      name = "persistence-pub"
+      port = 8082
+    }
   }
 }
 
@@ -45,6 +49,10 @@ resource "kubernetes_service" "muddle_run_autoscaler_webhook" {
     port {
       name = "webhook"
       port = 8081
+    }
+    port {
+      name = "persistence"
+      port = 8083
     }
   }
 }

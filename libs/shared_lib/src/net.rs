@@ -1,8 +1,8 @@
 use crate::{
     framebuffer::FrameNumber,
     messages::{
-        Message, ReliableClientMessage, ReliableServerMessage, UnreliableClientMessage,
-        UnreliableServerMessage,
+        DisconnectReason, Message, ReliableClientMessage, ReliableServerMessage,
+        UnreliableClientMessage, UnreliableServerMessage,
     },
     wrapped_counter::WrappedCounter,
     TICKS_PER_NETWORK_BROADCAST,
@@ -33,7 +33,7 @@ pub enum ConnectionStatus {
     Connected,
     /// We've received a `Disconnect` event or triggered the process manually. After we finish
     /// the needed clean-up, we switch the status to `Disconnected`.
-    Disconnecting,
+    Disconnecting(DisconnectReason),
     Disconnected,
 }
 

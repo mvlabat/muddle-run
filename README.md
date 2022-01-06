@@ -80,21 +80,39 @@ a binary take higher priority.
 - `MUDDLE_LISTEN_PORT` (mandatory if outside Agones cluster)
 - `MUDDLE_IDLE_TIMEOUT` (defaults to 300)
   - Specifies the time in milliseconds after which a server will be closed if there are no connected players.
+- `MUDDLE_PERSISTENCE_URL` (optional)
+- `MUDDLE_GOOGLE_WEB_CLIENT_ID` (mandatory if `MUDDLE_PERSISTENCE_URL` is set)
+- `MUDDLE_GOOGLE_DESKTOP_CLIENT_ID` (mandatory if `MUDDLE_PERSISTENCE_URL` is set)
+- `MUDDLE_AUTH0_CLIENT_ID` (mandatory if `MUDDLE_PERSISTENCE_URL` is set)
 
 #### `mr_desktop_client` and `mr_web_client`
 
-- `MUDDLE_MATCHMAKER_URL` (optional)
-  - If this variable is passed, `MUDDLE_SERVER_IP_ADDR` and `MUDDLE_SERVER_PORT` are ignored.
 - `MUDDLE_SERVER_IP_ADDR` (defaults to `127.0.0.1`)
 - `MUDDLE_SERVER_PORT` (defaults to `3455`)
+- `MUDDLE_MATCHMAKER_URL` (optional)
+  - If this variable is passed, `MUDDLE_SERVER_IP_ADDR` and `MUDDLE_SERVER_PORT` are still read,
+  but the server is displayed in the list only if `MUDDLE_SERVER_IP_ADDR` is passed explicitly
+  (the default value is ignored).
+- `MUDDLE_PERSISTENCE_URL` (mandatory if `MUDDLE_MATCHMAKER_URL` is set)
+- `MUDDLE_GOOGLE_CLIENT_ID` (mandatory if `MUDDLE_MATCHMAKER_URL` is set)
+- `MUDDLE_GOOGLE_CLIENT_SECRET` (mandatory for the desktop client if `MUDDLE_MATCHMAKER_URL` is set)
+  - Google only considers Desktop clients as public ones, also requiring client secrets in the requests.
+  **Don't set the secret for the web clients.**
+- `MUDDLE_AUTH0_CLIENT_ID` (mandatory if `MUDDLE_MATCHMAKER_URL` is set)
 
-#### Common
+#### Both client and server
 
 - `SIMULATIONS_PER_SECOND` (defaults to `120`, **compile-time only**)
   - Is expected to work with the following values: `30`, `60`, `120`. You may want to set a lower value than the
     default one if your device can't handle 120 simulations per second.
   - **Note** that both the server and the client
     must be compiled with the same value.
+
+#### `mr_persistence`
+
+- `MUDDLE_GOOGLE_WEB_CLIENT_ID` (mandatory)
+- `MUDDLE_GOOGLE_DESKTOP_CLIENT_ID` (mandatory)
+- `MUDDLE_AUTH0_CLIENT_ID` (mandatory)
 
 ## Building docker images
 
@@ -150,3 +168,12 @@ For example:
 - `kubectl set image deployment mr-matchmaker mr-matchmaker=mvlabat/mr_matchmaker`
   - You can also alternate appending and removing `:latest` tag suffix, to trick kubernetes into redeploying
     (otherwise it might think that the image is the same and won't pull its updated version).
+
+### Troubleshooting
+
+- **Error: Kubernetes cluster unreachable: invalid configuration: no configuration has been provided, try setting KUBERNETES_MASTER environment variable**
+  
+  To fix this error, run `export KUBE_CONFIG_PATH=~/.kube/config` (or add it to your shell rc).
+
+  - Also, make sure you ran `aws eks --region <region-code> update-kubeconfig --name <cluster_name>` before.
+  

@@ -63,7 +63,7 @@ impl WebSocketStream {
         let mut connection_callback = Box::new(|accept: Function, reject: Function| {
             // Connection
             let websocket =
-                web_sys::WebSocket::new(&url.to_string()).expect("Couldn't create WebSocket.");
+                web_sys::WebSocket::new(url.as_ref()).expect("Couldn't create WebSocket.");
             {
                 let js_value = websocket
                     .clone()

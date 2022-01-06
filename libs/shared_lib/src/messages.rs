@@ -75,7 +75,10 @@ pub enum ReliableClientMessage {
     /// A kludge message basically, to let our networking stack to initialize properly for webrtc.
     Initialize,
     /// Is sent as a response to server's `UnreliableServerMessage::Handshake`.
-    Handshake(MessageId),
+    Handshake {
+        message_id: MessageId,
+        id_token: Option<String>,
+    },
     SwitchRole(PlayerRole),
     SpawnLevelObject(SpawnLevelObjectRequest),
     UpdateLevelObject(LevelObject),
@@ -107,7 +110,15 @@ pub enum ReliableServerMessage {
     DespawnLevelObject(commands::DespawnLevelObject),
     SwitchRole(SwitchRole),
     RespawnPlayer(RespawnPlayer),
-    Disconnect,
+    Disconnect(DisconnectReason),
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub enum DisconnectReason {
+    InvalidJwt,
+    InvalidUpdate,
+    Timeout,
+    Closed,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

@@ -92,6 +92,7 @@ jobs:
           build-args: |
             muddle_matchmaker_url=muddle.run:8080
             sentry_dsn=${{ secrets.SENTRY_DSN_CLIENT }} # a client secret is not a secret really, but nvm :)
+            muddle_google_client_id=${{ secrets.MUDDLE_GOOGLE_CLIENT_ID }}
 
   deploy:
     runs-on: ubuntu-latest

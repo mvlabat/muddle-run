@@ -3,6 +3,7 @@
 #![feature(hash_drain_filter)]
 #![feature(step_trait)]
 #![feature(trait_alias)]
+#![allow(clippy::return_self_not_must_use)]
 
 use crate::{
     framebuffer::FrameNumber,

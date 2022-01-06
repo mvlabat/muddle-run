@@ -1,9 +1,11 @@
 use crate::{
     input::{LevelObjectRequestsQueue, PlayerRequestsQueue},
+    net::auth::persistence_url,
     websocket::WebSocketStream,
     CurrentPlayerNetId, EstimatedServerTime, InitialRtt, LevelObjectCorrelations, PlayerDelay,
     TargetFramesAhead,
 };
+use auth::{AuthConfig, AuthMessage, AuthRequest};
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashMap};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
@@ -19,9 +21,9 @@ use mr_shared_lib::{
         components::{PlayerDirection, Spawned},
     },
     messages::{
-        DeltaUpdate, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId, PlayerUpdate,
-        ReliableClientMessage, ReliableServerMessage, RespawnPlayerReason, RunnerInput, StartGame,
-        UnreliableClientMessage, UnreliableServerMessage,
+        DeltaUpdate, DisconnectReason, DisconnectedPlayer, Message, PlayerInputs, PlayerNetId,
+        PlayerUpdate, ReliableClientMessage, ReliableServerMessage, RespawnPlayerReason,
+        RunnerInput, StartGame, UnreliableClientMessage, UnreliableServerMessage,
     },
     net::{
         AcknowledgeError, ConnectionState, ConnectionStatus, MessageId, SessionId,
@@ -40,6 +42,13 @@ use tokio::sync::mpsc::{
     error::TryRecvError, unbounded_channel, UnboundedReceiver, UnboundedSender,
 };
 use url::Url;
+
+pub mod auth;
+
+#[cfg(target_arch = "wasm32")]
+mod listen_local_storage;
+#[cfg(not(target_arch = "wasm32"))]
+mod redirect_uri_server;
 
 const DEFAULT_SERVER_PORT: u16 = 3455;
 const DEFAULT_SERVER_IP_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
@@ -79,12 +88,16 @@ pub enum TcpConnectionStatus {
 
 pub struct MatchmakerState {
     pub status: TcpConnectionStatus,
+    pub id_token: Option<String>,
 }
 
-pub struct MatchmakerChannels {
+pub struct MainMenuUiChannels {
+    pub auth_request_tx: UnboundedSender<AuthRequest>,
+    pub auth_message_tx: UnboundedSender<AuthMessage>,
+    pub auth_message_rx: UnboundedReceiver<AuthMessage>,
     pub connection_request_tx: UnboundedSender<bool>,
     pub status_rx: UnboundedReceiver<TcpConnectionStatus>,
-    pub message_rx: UnboundedReceiver<MatchmakerMessage>,
+    pub matchmaker_message_rx: UnboundedReceiver<MatchmakerMessage>,
 }
 
 pub struct ServerToConnect(pub Server);
@@ -97,25 +110,81 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
         }
     };
 
+    let auth_config = AuthConfig {
+        persistence_url: persistence_url().expect("Expected MUDDLE_PERSISTENCE_URL"),
+        google_client_id: auth::google_client_id().expect("Expected MUDDLE_GOOGLE_CLIENT_ID"),
+        google_client_secret: auth::google_client_secret(),
+        auth0_client_id: auth::auth0_client_id().expect("Expected MUDDLE_AUTH0_CLIENT_ID"),
+        #[cfg(feature = "unstoppable_resolution")]
+        ud_client_id: auth::ud_client_id().expect("Expected MUDDLE_UD_CLIENT_ID"),
+        #[cfg(feature = "unstoppable_resolution")]
+        ud_secret_id: auth::ud_client_secret().expect("Expected MUDDLE_UD_CLIENT_SECRET"),
+    };
+    if cfg!(not(target_arch = "wasm32")) {
+        auth_config
+            .google_client_secret
+            .as_ref()
+            .expect("Expected MUDDLE_GOOGLE_CLIENT_SECRET");
+    }
+
     log::info!("Matchmaker address: {}", url);
 
+    let (auth_request_tx, auth_request_rx) = unbounded_channel();
+    let (auth_message_tx, auth_message_rx) = unbounded_channel();
     let (connection_request_tx, connection_request_rx) = unbounded_channel();
     let (status_tx, status_rx) = unbounded_channel();
-    let (message_tx, message_rx) = unbounded_channel();
+    let (matchmaker_message_tx, matchmaker_message_rx) = unbounded_channel();
     let url = url::Url::parse(&format!("ws://{}", url)).unwrap();
 
-    run_async(
-        async move { serve_connection(&url, connection_request_rx, status_tx, message_tx).await },
-    );
+    let auth_request_tx_clone = auth_request_tx.clone();
+    let auth_message_tx_clone = auth_message_tx.clone();
+    run_async(async move {
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut serve_redirect_uri_future =
+            tokio::task::spawn_local(redirect_uri_server::serve(auth_request_tx_clone.clone()))
+                .fuse();
+        #[cfg(target_arch = "wasm32")]
+        let mut serve_redirect_uri_future =
+            tokio::task::spawn_local(listen_local_storage::serve(auth_request_tx_clone.clone()))
+                .fuse();
+        let mut serve_auth_future = tokio::task::spawn_local(auth::serve_auth_requests(
+            auth_config,
+            auth_request_rx,
+            auth_message_tx_clone,
+        ))
+        .fuse();
+        let mut serve_matchmaker_future = tokio::task::spawn_local(serve_matchmaker_connection(
+            url,
+            connection_request_rx,
+            status_tx,
+            matchmaker_message_tx,
+        ))
+        .fuse();
+        select! {
+            _ = serve_redirect_uri_future => {
+                log::warn!("Redirect uri server task finished");
+            },
+            _ = serve_auth_future => {
+                log::warn!("Auth task finished");
+            },
+            _ = serve_matchmaker_future => {
+                log::warn!("Matchmaker task finished");
+            },
+        }
+    });
 
     connection_request_tx.send(true).unwrap();
-    commands.insert_resource(MatchmakerChannels {
+    commands.insert_resource(MainMenuUiChannels {
+        auth_request_tx,
+        auth_message_tx,
+        auth_message_rx,
         connection_request_tx,
         status_rx,
-        message_rx,
+        matchmaker_message_rx,
     });
     commands.insert_resource(MatchmakerState {
         status: TcpConnectionStatus::Disconnected,
+        id_token: None,
     });
 }
 
@@ -156,11 +225,11 @@ where
     });
 }
 
-async fn serve_connection(
-    url: &Url,
+async fn serve_matchmaker_connection(
+    url: Url,
     mut connection_request_rx: UnboundedReceiver<bool>,
     status_tx: UnboundedSender<TcpConnectionStatus>,
-    message_tx: UnboundedSender<MatchmakerMessage>,
+    matchmaker_message_tx: UnboundedSender<MatchmakerMessage>,
 ) {
     let mut current_state = false;
 
@@ -183,7 +252,7 @@ async fn serve_connection(
         if connect {
             log::info!("Connecting to the matchmaker service...");
             let _ = status_tx.send(TcpConnectionStatus::Connecting);
-            let message_tx = message_tx.clone();
+            let message_tx = matchmaker_message_tx.clone();
             let url = url.clone();
             let ws_status_tx = status_tx.clone();
             let disconnect_request_channel = tokio::sync::oneshot::channel();
@@ -273,12 +342,20 @@ async fn handle_matchmaker_connection(
     disconnect_tx.send(()).unwrap();
 }
 
+#[derive(SystemParam)]
+pub struct MatchmakerParams<'a> {
+    matchmaker_state: Option<ResMut<'a, MatchmakerState>>,
+    server_to_connect: ResMut<'a, Option<ServerToConnect>>,
+    main_menu_ui_channels: Option<Res<'a, MainMenuUiChannels>>,
+}
+
 pub fn process_network_events(
     mut network_params: NetworkParams,
     mut network_events: EventReader<NetworkEvent>,
     mut current_player_net_id: ResMut<CurrentPlayerNetId>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
     mut update_params: UpdateParams,
+    mut matchmaker_params: MatchmakerParams,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -371,11 +448,18 @@ pub fn process_network_events(
                         .connection_state
                         .set_status(ConnectionStatus::Handshaking);
                     update_params.initial_rtt.received_at = Some(Utc::now());
+                    let id_token = matchmaker_params
+                        .matchmaker_state
+                        .as_ref()
+                        .and_then(|state| state.id_token.clone());
                     handshake_message_to_send = Some((
                         *handle,
                         Message {
                             session_id: MessageId::new(0),
-                            message: ReliableClientMessage::Handshake(message_id),
+                            message: ReliableClientMessage::Handshake {
+                                message_id,
+                                id_token,
+                            },
                         },
                     ));
 
@@ -421,9 +505,11 @@ pub fn process_network_events(
                                     update_params.game_time.frame_number,
                                     err
                                 );
-                                network_params
-                                    .connection_state
-                                    .set_status(ConnectionStatus::Disconnecting);
+                                network_params.connection_state.set_status(
+                                    ConnectionStatus::Disconnecting(
+                                        DisconnectReason::InvalidUpdate,
+                                    ),
+                                );
                                 return;
                             }
                             _ => {}
@@ -437,9 +523,9 @@ pub fn process_network_events(
                                 update.frame_number,
                                 update_params.game_time.frame_number
                             );
-                            network_params
-                                .connection_state
-                                .set_status(ConnectionStatus::Disconnecting);
+                            network_params.connection_state.set_status(
+                                ConnectionStatus::Disconnecting(DisconnectReason::InvalidUpdate),
+                            );
                             return;
                         }
 
@@ -604,10 +690,24 @@ pub fn process_network_events(
                         );
                     }
                 }
-                ReliableServerMessage::Disconnect => {
+                ReliableServerMessage::Disconnect(reason) => {
+                    log::info!("Server closed the connection: {:?}", reason);
+                    if let DisconnectReason::InvalidJwt = reason {
+                        if let Some(matchmaker_state) = matchmaker_params.matchmaker_state.as_mut()
+                        {
+                            matchmaker_state.id_token = None;
+                            *matchmaker_params.server_to_connect = None;
+                            matchmaker_params
+                                .main_menu_ui_channels
+                                .unwrap()
+                                .auth_message_tx
+                                .send(AuthMessage::InvalidOrExpiredAuthError)
+                                .expect("Failed to send an auth update");
+                        }
+                    }
                     network_params
                         .connection_state
-                        .set_status(ConnectionStatus::Disconnecting);
+                        .set_status(ConnectionStatus::Disconnecting(reason));
                     return;
                 }
             }
@@ -642,7 +742,7 @@ pub fn process_network_events(
 pub fn maintain_connection(
     time: Res<GameTime>,
     matchmaker_state: Option<ResMut<MatchmakerState>>,
-    matchmaker_channels: Option<ResMut<MatchmakerChannels>>,
+    matchmaker_channels: Option<ResMut<MainMenuUiChannels>>,
     mut server_to_connect: ResMut<Option<ServerToConnect>>,
     mut network_params: NetworkParams,
     mut initial_rtt: ResMut<InitialRtt>,
@@ -723,7 +823,7 @@ pub fn maintain_connection(
         || is_falling_behind
         || matches!(
             network_params.connection_state.status(),
-            ConnectionStatus::Disconnecting | ConnectionStatus::Disconnected
+            ConnectionStatus::Disconnecting(_) | ConnectionStatus::Disconnected
         )
     {
         network_params.net.connections.clear();
@@ -1280,4 +1380,9 @@ fn server_addr() -> SocketAddr {
     let ip_addr: IpAddr =
         try_parse_from_env!("MUDDLE_SERVER_IP_ADDR").unwrap_or(DEFAULT_SERVER_IP_ADDR);
     SocketAddr::new(ip_addr, port)
+}
+
+pub fn server_addr_optional() -> Option<SocketAddr> {
+    let port: u16 = try_parse_from_env!("MUDDLE_SERVER_PORT").unwrap_or(DEFAULT_SERVER_PORT);
+    try_parse_from_env!("MUDDLE_SERVER_IP_ADDR").map(|ip_addr| SocketAddr::new(ip_addr, port))
 }

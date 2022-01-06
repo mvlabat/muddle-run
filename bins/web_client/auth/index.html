@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8"/>
+    <title>muddle.run</title>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #161616;
+        }
+
+        body > div {
+            position: absolute;
+            top: 50%;
+            width: 100%;
+            text-align: center;
+            color: #8c8c8c;
+            font-size: 1.1em;
+            font-family: "Ubuntu Light", sans-serif;
+        }
+    </style>
+</head>
+
+<body>
+<div>The authentication is complete. You may close the window.</div>
+<script type="module">
+    const urlSearchParams = new URLSearchParams(window.location.search);
+    const state = urlSearchParams.get('state');
+    const code = urlSearchParams.get('code');
+    if (state && code) {
+        window.localStorage.setItem('oauth_code', `${state} ${code}`);
+    }
+    window.close();
+</script>
+</body>
+
+</html>

@@ -16,8 +16,12 @@ profiler = ["puffin", "mr_shared_lib/profiler"]
 bevy_rapier2d = { version = "0.11" }
 chrono = "0.4.19"
 env_logger = "0.8.1"
+jwt-compact = { version = "0.5.0", features = ["std", "clock", "with_rsa"], default-features = false }
+kube = "0.60.0"
+k8s-openapi = { version = "0.13.1", default-features = false, features = ["v1_20"] }
 puffin = { version = "0.8.1", optional = true }
 rand = "0.8.4"
+reqwest = "0.11.8"
 rymder = "0.2.2"
 tokio = "1.12.0"
 uuid = { version = "1.0.0-alpha.1", features = ["v4", "fast-rng"] }
@@ -37,3 +41,8 @@ path = "../messages_lib"
 [dependencies.mr_shared_lib]
 version = "*"
 path = "../shared_lib"
+
+[dependencies.mr_utils_lib]
+version = "*"
+path = "../utils_lib"
+features = ["bevy_logging", "jwks"]

@@ -1,6 +1,6 @@
 on:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
       - '.github/workflows/**'
       - 'bins/**'
@@ -10,7 +10,7 @@ on:
       - '.rustfmt.toml'
       - '.cargo/config'
   pull_request:
-    branches: [main]
+    branches: [ main ]
     paths:
       - '.github/workflows/**'
       - 'bins/**'
@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -81,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -104,7 +104,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -p mr_web_client --release --target wasm32-unknown-unknown -- -D warnings
+          args: -p mr_web_client --release --target wasm32-unknown-unknown --features "ud-login" -- -D warnings
 
   mr_server:
     name: Check mr_server
@@ -112,7 +112,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -142,7 +142,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -166,13 +166,69 @@ jobs:
           command: clippy
           args: -p mr_matchmaker --release -- -D warnings
 
-  mr_lib_shared:
-    name: Test mr_lib_shared
+  mr_persistence:
+    name: Check mr_persistence
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-latest ]
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_DB: mr_persistence_test
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: clippy
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cache-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cache-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            cache-${{ runner.os }}-cargo
+      - name: Migrate database
+        working-directory: ./bins/persistence
+        run: |
+          sudo apt-get install libpq-dev -y
+          cargo install sqlx-cli
+          sqlx migrate run --database-url postgres://postgres:postgres@localhost:5432/mr_persistence_test
+      - name: Check sqlx-data.json consistency
+        working-directory: ./bins/persistence
+        run: cargo sqlx prepare --check
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/mr_persistence_test
+      - uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -p mr_persistence --release -- -D warnings
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/mr_persistence_test
+
+  mr_shared_lib:
+    name: Test mr_shared_lib
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -193,3 +249,34 @@ jobs:
         with:
           command: test
           args: -p mr_shared_lib
+
+  mr_client_lib:
+    name: Test mr_client_lib
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest ]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cache-${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cache-${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
+            cache-${{ runner.os }}-cargo-debug
+      - name: Install dependencies
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+        if: ${{ runner.os == 'Linux' }}
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p mr_client_lib --features "use-udp"

@@ -17,5 +17,5 @@ mr_server_lib = { path = "../../libs/server_lib" }
 bevy = { version = "0.5", default-features = false }
 env_logger = "0.8.1"
 rymder = { version = "0.2.2", features = ["player-tracking"] }
-sentry = "0.21.0"
+sentry = "0.23.0"
 tokio = { version = "1.12.0", features = ["sync"] }
