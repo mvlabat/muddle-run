@@ -32,6 +32,7 @@ use mr_shared_lib::{
     registry::IncrementId,
     simulations_per_second, MuddleSharedPlugin,
 };
+use reqwest::Url;
 use std::{
     lazy::SyncLazy,
     time::{Duration, Instant},
@@ -39,6 +40,7 @@ use std::{
 use tokio::sync::mpsc::UnboundedReceiver;
 
 mod game_events;
+mod kube_discovery;
 mod net;
 mod persistence;
 mod player_updates;
@@ -84,7 +86,9 @@ impl Plugin for MuddleServerPlugin {
         builder.add_startup_system(init_level.system());
         builder.add_startup_system(startup.system());
 
-        if let Some(url) = try_parse_from_env!("MUDDLE_PERSISTENCE_URL") {
+        let persistence_url: Option<Url> = try_parse_from_env!("MUDDLE_PERSISTENCE_URL")
+            .or_else(|| TOKIO.block_on(kube_discovery::discover_persistence()));
+        if let Some(url) = persistence_url {
             let config = PersistenceConfig {
                 url,
                 google_web_client_id: std::env::var("MUDDLE_GOOGLE_WEB_CLIENT_ID")
