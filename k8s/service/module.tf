@@ -8,6 +8,7 @@ resource "kubernetes_service" "muddle_run_service" {
       "service.beta.kubernetes.io/aws-load-balancer-type" : "external"
       "service.beta.kubernetes.io/aws-load-balancer-scheme" : "internet-facing"
       "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" : "ip"
+      "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" : "true"
     }
   }
 
