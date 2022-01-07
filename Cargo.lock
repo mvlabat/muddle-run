@@ -4066,7 +4066,7 @@ dependencies = [
 [[package]]
 name = "naia-client-socket"
 version = "0.6.1"
-source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#d6f6606a35138fcf8b13d84f0ad6e898c5ac4c84"
+source = "git+https://github.com/mvlabat/naia-socket.git?branch=muddle-run#dc0530b95d99edb436b6e4f78b99cde4472aad10"
 dependencies = [
  "cfg-if 0.1.10",
  "js-sys",

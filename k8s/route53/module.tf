@@ -12,8 +12,9 @@ data "aws_route53_zone" "current" {
 }
 
 data "aws_lb" "public" {
+
   tags = {
-    "ingress.k8s.aws/stack" = "default/mr-service"
+    "service.k8s.aws/stack" = "default/mr-service"
   }
 }
 

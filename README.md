@@ -4,7 +4,7 @@
 [![Help wanted](https://img.shields.io/github/issues/mvlabat/muddle-run/help%20wanted?label=help%20wanted&color=008672)](https://github.com/mvlabat/muddle-run/issues)
 [![CI](https://github.com/mvlabat/muddle-run/workflows/CI/badge.svg)](https://github.com/mvlabat/muddle-run/actions)
 
-A home for experiments for [muddle.run](https://muddle.run).
+A home for experiments for [muddle.run](http://muddle.run).
 
 https://user-images.githubusercontent.com/2943388/125176134-cb4e6f00-e1d9-11eb-8fc8-6d9aa5c09583.mp4
 

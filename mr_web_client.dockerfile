@@ -64,8 +64,6 @@ RUN /usr/local/cargo/bin/wasm-pack build --target web
 FROM nginx
 EXPOSE 80
 
-COPY mr_web_client.nginx.conf /etc/nginx/conf.d/default.conf
-
 COPY --from=builder /usr/src/muddle-run/bins/web_client/index.html /usr/share/nginx/html/
 COPY --from=builder /usr/src/muddle-run/bins/web_client/auth/ /usr/share/nginx/html/auth/
 COPY --from=builder /usr/src/muddle-run/bins/web_client/pkg/ /usr/share/nginx/html/pkg/

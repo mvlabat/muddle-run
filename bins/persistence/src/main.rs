@@ -147,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
     let public_data = data.clone();
     let public = move || {
         let cors = actix_cors::Cors::default()
-            .allowed_origin("https://muddle.run")
+            .allowed_origin("http://muddle.run")
             .allow_any_header();
         let data = public_data.clone();
         App::new()
