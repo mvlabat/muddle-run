@@ -4,7 +4,10 @@ use kube::{api::ListParams, Api, Client};
 use reqwest::Url;
 
 pub async fn discover_persistence() -> Option<Url> {
-    let client = Client::try_default().await.ok()?;
+    let client = Client::try_default().await.map_err(|err| {
+        log::warn!("Unable to detect kubernetes environment: {:?}", err);
+        err
+    }).ok()?;
     log::info!("Kubernetes environment detected, trying to fetch mr-persistence pods...");
 
     let pods: Api<Pod> = Api::namespaced(client, "default");
