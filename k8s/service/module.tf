@@ -38,6 +38,7 @@ resource "kubernetes_service" "muddle_run_autoscaler_webhook" {
       "service.beta.kubernetes.io/aws-load-balancer-type" : "external"
       "service.beta.kubernetes.io/aws-load-balancer-scheme" : "internal"
       "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" : "ip"
+      "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" : "true"
     }
   }
 
