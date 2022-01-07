@@ -53,14 +53,16 @@ pub fn handle_persistence_requests(
     config: Option<Res<PersistenceConfig>>,
     jwks: Res<Jwks>,
     mut request_rx: ResMut<Option<UnboundedReceiver<PersistenceRequest>>>,
-    response_tx: Res<UnboundedSender<PersistenceMessage>>,
+    response_tx: Option<Res<UnboundedSender<PersistenceMessage>>>,
 ) {
     let Some(config) = config.map(|config| config.clone()) else {
         return;
     };
     let jwks = jwks.clone();
     let mut request_rx = request_rx.take().unwrap();
-    let response_tx = response_tx.clone();
+    let response_tx = response_tx
+        .expect("Expected PersistenceMessage sender when persistence config is available")
+        .clone();
 
     let client = reqwest::Client::new();
 

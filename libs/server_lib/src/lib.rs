@@ -108,6 +108,7 @@ impl Plugin for MuddleServerPlugin {
             builder.insert_resource(persistence_msg_tx);
             builder.insert_resource(persistence_msg_rx);
         } else {
+            log::info!("Persistence service isn't available");
             builder.insert_resource::<Option<UnboundedReceiver<PersistenceRequest>>>(None);
         }
         builder.add_startup_system(init_jwks_polling.system());
