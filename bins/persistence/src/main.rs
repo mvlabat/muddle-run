@@ -143,10 +143,13 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     let data = Data { pool, jwks, config };
+
     let public_data = data.clone();
     let public = move || {
+        let cors = actix_cors::Cors::default().allowed_origin("http://muddle.run").allow_any_header();
         let data = public_data.clone();
         App::new()
+            .wrap(cors)
             .app_data(web::Data::new(data))
             .service(public::register)
             .service(public::link_account)
