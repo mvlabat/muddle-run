@@ -119,6 +119,11 @@ impl AuthUiState {
     }
 
     pub fn login_method_is_available(&self, method: &str) -> bool {
+        // Temporarily disables any login method except for auth0.
+        if method != "auth0" {
+            return false;
+        }
+
         if self.linked_account.is_none() {
             return true;
         }
