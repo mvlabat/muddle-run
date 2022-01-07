@@ -64,6 +64,10 @@ jobs:
           tags: mvlabat/mr_persistence:latest,mvlabat/mr_persistence:${{ github.sha }}
           cache-from: type=registry,ref=mvlabat/mr_persistence:buildcache
           cache-to: type=registry,ref=mvlabat/mr_persistence:buildcache,mode=max
+          build-args: |
+            muddle_auth0_client_id=${{ secrets.MUDDLE_AUTH0_CLIENT_ID }}
+            muddle_google_web_client_id=${{ secrets.MUDDLE_GOOGLE_WEB_CLIENT_ID }}
+            muddle_google_desktop_client_id=${{ secrets.MUDDLE_GOOGLE_DESKTOP_CLIENT_ID }}
 
   mr_server:
     runs-on: ubuntu-latest
@@ -90,7 +94,6 @@ jobs:
           cache-from: type=registry,ref=mvlabat/mr_server:buildcache
           cache-to: type=registry,ref=mvlabat/mr_server:buildcache,mode=max
           build-args: |
-            sentry_dsn=${{ secrets.SENTRY_DSN_CLIENT }} # a client secret is not a secret really, but nvm :)
             muddle_auth0_client_id=${{ secrets.MUDDLE_AUTH0_CLIENT_ID }}
             muddle_google_web_client_id=${{ secrets.MUDDLE_GOOGLE_WEB_CLIENT_ID }}
             muddle_google_desktop_client_id=${{ secrets.MUDDLE_GOOGLE_DESKTOP_CLIENT_ID }}
