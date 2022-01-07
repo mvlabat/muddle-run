@@ -178,7 +178,7 @@ module "eks" {
       public_ip            = true
       root_volume_size     = 5
 
-      kubelet_extra_args   = "--node-labels=agones.dev/agones-system=true,node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle` --register-with-taints=agones.dev/agones-system=true:NoExecute"
+      kubelet_extra_args = "--node-labels=agones.dev/agones-system=true,node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle` --register-with-taints=agones.dev/agones-system=true:NoExecute"
     },
     {
       name                 = "agones-metrics"
@@ -187,7 +187,7 @@ module "eks" {
       public_ip            = true
       root_volume_size     = 5
 
-      kubelet_extra_args   = "--node-labels=agones.dev/agones-metrics=true,node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle` --register-with-taints=agones.dev/agones-metrics=true:NoExecute"
+      kubelet_extra_args = "--node-labels=agones.dev/agones-metrics=true,node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle` --register-with-taints=agones.dev/agones-metrics=true:NoExecute"
     }
   ]
 }

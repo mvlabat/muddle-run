@@ -160,6 +160,8 @@ module "web_client" {
 module "service" {
   source     = "./k8s/service"
   depends_on = [module.matchmaker, module.persistence, module.web_client]
+
+  hosted_zone_name = var.hosted_zone_name
 }
 
 module "route53" {

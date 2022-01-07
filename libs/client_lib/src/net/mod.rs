@@ -103,7 +103,7 @@ pub struct MainMenuUiChannels {
 pub struct ServerToConnect(pub Server);
 
 pub fn init_matchmaker_connection(mut commands: Commands) {
-    let url = match matchmaker_url() {
+    let matchmaker_url = match matchmaker_url() {
         Some(url) => url,
         None => {
             return;
@@ -127,14 +127,13 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
             .expect("Expected MUDDLE_GOOGLE_CLIENT_SECRET");
     }
 
-    log::info!("Matchmaker address: {}", url);
+    log::info!("Matchmaker address: {}", matchmaker_url);
 
     let (auth_request_tx, auth_request_rx) = unbounded_channel();
     let (auth_message_tx, auth_message_rx) = unbounded_channel();
     let (connection_request_tx, connection_request_rx) = unbounded_channel();
     let (status_tx, status_rx) = unbounded_channel();
     let (matchmaker_message_tx, matchmaker_message_rx) = unbounded_channel();
-    let url = url::Url::parse(&format!("ws://{}", url)).unwrap();
 
     let auth_request_tx_clone = auth_request_tx.clone();
     let auth_message_tx_clone = auth_message_tx.clone();
@@ -154,7 +153,7 @@ pub fn init_matchmaker_connection(mut commands: Commands) {
         ))
         .fuse();
         let mut serve_matchmaker_future = tokio::task::spawn_local(serve_matchmaker_connection(
-            url,
+            matchmaker_url,
             connection_request_rx,
             status_tx,
             matchmaker_message_tx,
@@ -1371,8 +1370,8 @@ fn player_start_position(player_net_id: PlayerNetId, delta_update: &DeltaUpdate)
         .map(|player_state| player_state.position)
 }
 
-fn matchmaker_url() -> Option<String> {
-    std::option_env!("MUDDLE_MATCHMAKER_URL").map(str::to_owned)
+fn matchmaker_url() -> Option<Url> {
+    try_parse_from_env!("MUDDLE_MATCHMAKER_URL")
 }
 
 fn server_addr() -> SocketAddr {

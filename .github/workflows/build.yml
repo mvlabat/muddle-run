@@ -120,8 +120,8 @@ jobs:
           cache-from: type=registry,ref=mvlabat/mr_web_client:buildcache
           cache-to: type=registry,ref=mvlabat/mr_web_client:buildcache,mode=max
           build-args: |
-            muddle_matchmaker_url=muddle.run:8080
-            muddle_persistence_url=http://muddle.run:8082
+            muddle_matchmaker_url=wss://muddle.run/matchmaker
+            muddle_persistence_url=https://muddle.run/persistence/
             sentry_dsn=${{ secrets.SENTRY_DSN_CLIENT }} # a client secret is not a secret really, but nvm :)
             muddle_auth0_client_id=${{ secrets.MUDDLE_AUTH0_CLIENT_ID }}
             muddle_google_client_id=${{ secrets.MUDDLE_GOOGLE_WEB_CLIENT_ID }}
