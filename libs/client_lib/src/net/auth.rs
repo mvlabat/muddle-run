@@ -546,7 +546,7 @@ impl AuthRequestsHandler {
 
     async fn sign_up(&mut self, params: &SignUpRequestParams) {
         let Some(response) = self
-            .request::<(), SignUpErrorResponse, _, _>(
+            .request::<serde_json::Value, SignUpErrorResponse, _, _>(
                 "https://muddle-run.eu.auth0.com/dbconnections/signup",
                 RequestParams::Json(params),
             )
