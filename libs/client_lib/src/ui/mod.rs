@@ -1,6 +1,5 @@
 use bevy::{
-    ecs::system::{Local, Res, ResMut},
-    input::{keyboard::KeyCode, Input},
+    ecs::system::{Res, ResMut},
     window::Windows,
 };
 use bevy_egui::{
@@ -17,22 +16,10 @@ pub mod player_ui;
 
 mod widgets;
 
-pub fn update_ui_scale_factor(
-    keyboard_input: Res<Input<KeyCode>>,
-    mut toggle_scale_factor: Local<Option<bool>>,
-    mut egui_settings: ResMut<EguiSettings>,
-    windows: Res<Windows>,
-) {
-    if keyboard_input.just_pressed(KeyCode::Slash) || toggle_scale_factor.is_none() {
-        *toggle_scale_factor = Some(!toggle_scale_factor.unwrap_or(true));
-
-        if let Some(window) = windows.get_primary() {
-            let scale_factor = if toggle_scale_factor.unwrap() {
-                1.0
-            } else {
-                1.0 / window.scale_factor()
-            };
-            egui_settings.scale_factor = scale_factor;
+pub fn set_ui_scale_factor(mut egui_settings: ResMut<EguiSettings>, windows: Res<Windows>) {
+    if let Some(window) = windows.get_primary() {
+        if window.scale_factor() % 2.0 > 0.0 {
+            egui_settings.scale_factor = 1.0 / window.scale_factor();
         }
     }
 }

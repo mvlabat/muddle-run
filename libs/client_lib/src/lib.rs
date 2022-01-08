@@ -130,7 +130,7 @@ impl Plugin for MuddleClientPlugin {
             ))
             .add_system(process_scheduled_spawns.system())
             // Egui.
-            .add_system(ui::update_ui_scale_factor.system())
+            .add_startup_system(ui::set_ui_scale_factor.system())
             .add_system(ui::debug_ui::update_debug_visibility.system())
             .add_system(ui::debug_ui::debug_ui.system())
             .add_system(ui::debug_ui::profiler_ui.system())
