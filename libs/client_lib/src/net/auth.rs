@@ -8,7 +8,7 @@ use chrono::{Duration, Utc};
 use core::slice::SlicePattern;
 use mr_messages_lib::{
     ErrorKind, ErrorResponse, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
-    LinkAccountRequest, PatchUserRequest, RegisterAccountError, RegisteredUser,
+    LinkAccountRequest, PatchUserError, PatchUserRequest, RegisterAccountError, RegisteredUser,
 };
 use mr_shared_lib::try_parse_from_env;
 use reqwest::IntoUrl;
@@ -191,6 +191,7 @@ pub enum AuthMessage {
     SignUpFailedError,
     #[cfg(feature = "unstoppable_resolution")]
     InvalidDomainError,
+    DisplayNameTakenError,
     UnavailableError,
     InvalidOrExpiredAuthError,
     LinkAccount {
@@ -762,7 +763,7 @@ impl AuthRequestsHandler {
 
     async fn set_display_name(&mut self, display_name: String) {
         match self
-            .persistence_request::<(), (), _>(
+            .persistence_request::<(), PatchUserError, _>(
                 reqwest::Method::PATCH,
                 &format!("users/{}", self.registered_user.as_ref().unwrap().id),
                 &PatchUserRequest { display_name },
@@ -772,6 +773,12 @@ impl AuthRequestsHandler {
             Some(Ok(())) => {
                 let id_token = self.id_token.clone().unwrap();
                 self.send_auth_message(AuthMessage::Success { id_token });
+            }
+            Some(Err(ErrorResponse {
+                error_kind: ErrorKind::RouteSpecific(PatchUserError::DisplayNameTaken),
+                ..
+            })) => {
+                self.send_auth_message(AuthMessage::DisplayNameTakenError);
             }
             Some(Err(ErrorResponse {
                 error_kind: ErrorKind::Unauthorized | ErrorKind::NotFound | ErrorKind::Forbidden,

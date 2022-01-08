@@ -65,6 +65,11 @@ pub struct PatchUserRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum PatchUserError {
+    DisplayNameTaken,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetUserRequest {
     pub subject: String,
     pub issuer: String,

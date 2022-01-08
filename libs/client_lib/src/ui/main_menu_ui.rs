@@ -278,6 +278,12 @@ pub fn main_menu_ui(
                     .auth
                     .respond_with_error("The requested domain isn't registered");
             }
+            Ok(AuthMessage::DisplayNameTakenError) => {
+                log::debug!("Display name is already taken");
+                main_menu_ui_state
+                    .auth
+                    .respond_with_error("Display name is already taken");
+            }
             Ok(AuthMessage::UnavailableError) => {
                 log::debug!("Authentication unavailable");
                 main_menu_ui_state
@@ -695,15 +701,26 @@ fn authentication_screen(
             ui.with_layout(
                 egui::Layout::top_down_justified(egui::Align::Center),
                 |ui| {
-                    if !auth_ui_state.display_name.is_valid() {
+                    if !auth_ui_state.display_name.is_valid() || auth_ui_state.pending_request {
                         ui.set_enabled(false);
                     }
                     if ui.button("Continue").clicked() {
+                        auth_ui_state.pending_request = true;
                         auth_request_tx
                             .send(AuthRequest::SetDisplayName(
                                 auth_ui_state.display_name.value.clone(),
                             ))
                             .expect("Failed to write to a channel (auth request)");
+                    }
+
+                    if !auth_ui_state.error_message.is_empty() {
+                        ui.style_mut()
+                            .visuals
+                            .widgets
+                            .noninteractive
+                            .fg_stroke
+                            .color = ERROR_COLOR;
+                        ui.label(&auth_ui_state.error_message);
                     }
                 },
             );

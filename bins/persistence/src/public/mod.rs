@@ -4,7 +4,7 @@ use headers::{authorization::Bearer, Authorization, Header};
 use jwt_compact::Token;
 use mr_messages_lib::{
     ErrorKind, ErrorResponse, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
-    LinkAccountRequest, PatchUserRequest, RegisterAccountError, RegisteredUser,
+    LinkAccountRequest, PatchUserError, PatchUserRequest, RegisterAccountError, RegisteredUser,
 };
 use mr_utils_lib::JwtAuthClaims;
 use sqlx::{types::chrono, Connection};
@@ -251,6 +251,16 @@ WHERE u.id = $1
     .execute(&mut connection)
     .await
     {
+        let err: sqlx::Error = err;
+        if let Some("users_display_name_key") =
+            err.as_database_error().and_then(|err| err.constraint())
+        {
+            return HttpResponse::BadRequest().json(ErrorResponse::<PatchUserError> {
+                message: "Display name is already taken".to_owned(),
+                error_kind: ErrorKind::RouteSpecific(PatchUserError::DisplayNameTaken),
+            });
+        }
+
         log::error!("Failed to patch user: {:?}", err);
         return HttpResponse::InternalServerError().finish();
     }

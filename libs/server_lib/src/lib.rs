@@ -181,7 +181,10 @@ pub fn init_level(
                 );
                 std::process::exit(1);
             }
-            log::info!("Setting GameServer player capacity to {}...", PLAYER_CAPACITY);
+            log::info!(
+                "Setting GameServer player capacity to {}...",
+                PLAYER_CAPACITY
+            );
             if let Err(err) = sdk.set_player_capacity(PLAYER_CAPACITY as u64).await {
                 log::error!(
                     "Failed to set Game Server player capacity, exiting: {:?}",
