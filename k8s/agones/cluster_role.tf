@@ -21,7 +21,7 @@ resource "kubernetes_cluster_role_binding" "server_role_binding" {
   }
   subject {
     kind = "ServiceAccount"
-    name = "default"
+    name = "agones-sdk"
   }
 
   depends_on = [kubernetes_cluster_role.server_role]

@@ -81,7 +81,7 @@ resource "kubernetes_manifest" "mr_server_fleet" {
               nodeSelector = {
                 app = "mr_server"
               }
-              serviceAccountName = "default"
+              serviceAccountName = "agones-sdk"
               tolerations = [
                 {
                   key      = "app"
