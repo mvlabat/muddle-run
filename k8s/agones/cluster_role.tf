@@ -5,7 +5,7 @@ resource "kubernetes_cluster_role" "server_role" {
 
   rule {
     api_groups = [""]
-    resources  = ["deployments"]
+    resources  = ["pods"]
     verbs      = ["get", "list"]
   }
 }
