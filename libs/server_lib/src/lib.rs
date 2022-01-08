@@ -173,6 +173,7 @@ pub fn init_level(
     if let Some(agones) = agones {
         let mut sdk = agones.sdk.clone();
         TOKIO.spawn(async move {
+            log::info!("Marking the GameServer as Allocated...");
             if let Err(err) = sdk.allocate().await {
                 log::error!(
                     "Failed to mark the Game Server as ready, exiting: {:?}",
@@ -180,6 +181,7 @@ pub fn init_level(
                 );
                 std::process::exit(1);
             }
+            log::info!("Setting GameServer player capacity to {}...", PLAYER_CAPACITY);
             if let Err(err) = sdk.set_player_capacity(PLAYER_CAPACITY as u64).await {
                 log::error!(
                     "Failed to set Game Server player capacity, exiting: {:?}",
@@ -215,6 +217,7 @@ pub fn init_level(
 }
 
 pub fn process_idle_timeout(
+    mut is_shutting_down: Local<bool>,
     idle_timeout: Res<IdleTimeout>,
     last_player_disconnected_at: Res<LastPlayerDisconnectedAt>,
     players: Res<HashMap<PlayerNetId, Player>>,
@@ -222,8 +225,10 @@ pub fn process_idle_timeout(
 ) {
     if players.is_empty()
         && Instant::now().duration_since(last_player_disconnected_at.0) > idle_timeout.0
+        && !*is_shutting_down
     {
         log::info!("Shutting down due to being idle...");
+        *is_shutting_down = true;
         if let Some(agones) = agones {
             let mut sdk = agones.sdk.clone();
             TOKIO.spawn(async move {
