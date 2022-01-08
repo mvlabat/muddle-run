@@ -52,6 +52,11 @@ RUN cargo build --release --features "use-webrtc"
 
 FROM debian:stable-slim
 
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates
+
+RUN update-ca-certificates
+
 COPY --from=builder /usr/src/muddle-run/target/release/mr_server /usr/local/bin/
 
 ARG muddle_public_ip_addr
