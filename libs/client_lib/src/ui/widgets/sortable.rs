@@ -40,7 +40,6 @@ struct PaintItemJob {
     item_visuals: egui::style::WidgetVisuals,
     label_galley: std::sync::Arc<egui::epaint::Galley>,
     cross_galley: std::sync::Arc<egui::epaint::Galley>,
-    cross_color: egui::Color32,
 }
 
 impl PaintItemJob {
@@ -48,15 +47,15 @@ impl PaintItemJob {
         let shrank_rect = self.rect.shrink2(self.padding);
         let cross_rect = egui::Rect::from_min_size(
             egui::Pos2::new(
-                shrank_rect.max.x - self.cross_galley.size.x - self.padding.x,
+                shrank_rect.max.x - self.cross_galley.size().x - self.padding.x,
                 shrank_rect.min.y,
             ),
-            self.cross_galley.size,
+            self.cross_galley.size(),
         );
 
         let label_cursor = ui
             .layout()
-            .align_size_within_rect(self.label_galley.size, shrank_rect)
+            .align_size_within_rect(self.label_galley.size(), shrank_rect)
             .min;
 
         ui.painter().rect(
@@ -65,14 +64,12 @@ impl PaintItemJob {
             self.item_visuals.bg_fill,
             self.item_visuals.bg_stroke,
         );
-        ui.painter()
-            .galley(label_cursor, self.label_galley, ui.visuals().text_color());
+        ui.painter().galley(label_cursor, self.label_galley);
         let cross_cursor = ui
             .layout()
-            .align_size_within_rect(self.cross_galley.size, cross_rect)
+            .align_size_within_rect(self.cross_galley.size(), cross_rect)
             .min;
-        ui.painter()
-            .galley(cross_cursor, self.cross_galley, self.cross_color);
+        ui.painter().galley(cross_cursor, self.cross_galley);
     }
 }
 
@@ -109,8 +106,8 @@ pub fn sortable_list<
     let list_id = Id::new(list_id);
     let mut memory = ui.memory();
     let sortable_list_data = memory
-        .id_data_temp
-        .get_mut_or_default::<SortableListData<T>>(list_id);
+        .data
+        .get_temp_mut_or_default::<SortableListData<T>>(list_id);
 
     let current_list_set = sortable_list_data
         .list
@@ -132,13 +129,15 @@ pub fn sortable_list<
     let padding = ui.spacing().button_padding;
     let available_width = ui.available_width();
 
-    let cross_galley = ui
-        .fonts()
-        .layout_no_wrap(egui::TextStyle::Button, cross_text.to_owned());
-    let total_extra = egui::Vec2::new(cross_galley.size.x, 0.0)
+    let cross_galley = ui.fonts().layout_no_wrap(
+        cross_text.to_owned(),
+        egui::TextStyle::Button,
+        ui.visuals().text_color(),
+    );
+    let total_extra = egui::Vec2::new(cross_galley.size().x, 0.0)
         + padding * 2.0
         + egui::Vec2::new(padding.x, 0.0) * 2.0;
-    let desired_size = egui::Vec2::new(available_width, cross_galley.size.y + total_extra.y);
+    let desired_size = egui::Vec2::new(available_width, cross_galley.size().y + total_extra.y);
 
     let mut item_to_remove: Option<usize> = None;
     let mut draggable_current_index: Option<usize> = None;
@@ -169,19 +168,20 @@ pub fn sortable_list<
                 egui::Sense::hover()
             };
 
-            let label_galley = ui.fonts().layout_multiline(
-                egui::TextStyle::Button,
+            let label_galley = ui.fonts().layout(
                 list_item.label.clone(),
+                egui::TextStyle::Button,
+                ui.visuals().text_color(),
                 available_width - total_extra.x,
             );
 
             let shrank_rect = rect.shrink2(padding);
             let cross_rect = egui::Rect::from_min_size(
                 egui::Pos2::new(
-                    shrank_rect.max.x - cross_galley.size.x - padding.x,
+                    shrank_rect.max.x - cross_galley.size().x - padding.x,
                     shrank_rect.min.y,
                 ),
-                cross_galley.size,
+                cross_galley.size(),
             );
             let cross_response = ui.interact(cross_rect, list_item.id.with("remove"), sense);
             if cross_response.clicked() {
@@ -225,13 +225,18 @@ pub fn sortable_list<
                 egui::Color32::from_rgb(140, 30, 30)
             };
 
+            let cross_galley = ui.fonts().layout_no_wrap(
+                cross_text.to_owned(),
+                egui::TextStyle::Button,
+                cross_color,
+            );
+
             let paint_item_job = PaintItemJob {
                 rect,
                 padding,
                 item_visuals,
                 label_galley,
                 cross_galley: cross_galley.clone(),
-                cross_color,
             };
             if is_dragged_item {
                 draggable_current_index = Some(i);
@@ -280,10 +285,9 @@ pub fn sortable_list<
         edited = true;
     }
 
-    *ui.memory()
-        .id_data_temp
-        .get_mut::<SortableListData<T>>(&list_id)
-        .unwrap() = sortable_list_data;
+    ui.memory()
+        .data
+        .insert_temp::<SortableListData<T>>(list_id, sortable_list_data);
 
     edited
 }

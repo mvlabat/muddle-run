@@ -6,7 +6,7 @@ use bevy::{
     math::{Vec2, Vec3},
     render::{
         mesh::{Indices, Mesh},
-        pipeline::PrimitiveTopology,
+        render_resource::PrimitiveTopology,
     },
 };
 

@@ -3,8 +3,6 @@ use mr_server_lib::{try_parse_from_env, Agones, MuddleServerPlugin, PlayerEvent,
 use std::{ops::Deref, time::Duration};
 
 fn main() {
-    env_logger::init();
-
     // We want to exit the process on any panic (in any thread), so this is why the custom hook.
     let orig_hook = std::panic::take_hook();
 
@@ -118,10 +116,10 @@ fn main() {
             .unwrap()
     });
 
-    let mut app_builder = App::build();
+    let mut app = App::new();
     if let Some(agones) = agones {
-        app_builder.insert_resource(agones);
-        app_builder.insert_resource(player_tracking_tx);
+        app.insert_resource(agones);
+        app.insert_resource(player_tracking_tx);
     }
-    app_builder.add_plugin(MuddleServerPlugin).run();
+    app.add_plugin(MuddleServerPlugin).run();
 }

@@ -2,7 +2,7 @@
 name = "mr_server_lib"
 version = "0.1.0"
 authors = ["mvlabat <mvlabat@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -13,26 +13,19 @@ use-webrtc = ["bevy_networking_turbulence/use-webrtc"]
 profiler = ["puffin", "mr_shared_lib/profiler"]
 
 [dependencies]
-bevy_rapier2d = { version = "0.11" }
+bevy = { version = "0.6", default-features = false }
+bevy_networking_turbulence = { version = "0.4", default-features = false }
+bevy_rapier2d = "0.12"
 chrono = "0.4.19"
-env_logger = "0.8.1"
 jwt-compact = { version = "0.5.0", features = ["std", "clock", "with_rsa"], default-features = false }
-kube = "0.60.0"
+kube = "0.65.0"
 k8s-openapi = { version = "0.13.1", default-features = false, features = ["v1_20"] }
-puffin = { version = "0.8.1", optional = true }
+puffin = { version = "0.12.1", optional = true }
 rand = "0.8.4"
-reqwest = "0.11.8"
-rymder = "0.2.2"
-tokio = "1.12.0"
-uuid = { version = "1.0.0-alpha.1", features = ["v4", "fast-rng"] }
-
-[dependencies.bevy]
-version = "0.5"
-default-features = false
-
-[dependencies.bevy_networking_turbulence]
-version = "0.3.3"
-default-features = false
+reqwest = "0.11.9"
+rymder = "0.3.0"
+tokio = "1.15.0"
+uuid = "0.8.2"
 
 [dependencies.mr_messages_lib]
 version = "*"

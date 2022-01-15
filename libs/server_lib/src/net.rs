@@ -28,6 +28,7 @@ use mr_shared_lib::{
 };
 use std::{
     collections::hash_map::Entry,
+    marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::Instant,
 };
@@ -51,27 +52,29 @@ pub fn startup(mut net: ResMut<NetworkResource>, agones: Option<Res<Agones>>) {
 pub type PlayerConnections = Registry<PlayerNetId, u32>;
 
 #[derive(SystemParam)]
-pub struct UpdateParams<'a> {
-    deferred_player_updates: ResMut<'a, DeferredPlayerQueues<RunnerInput>>,
-    switch_role_requests: ResMut<'a, DeferredPlayerQueues<PlayerRole>>,
-    spawn_level_object_requests: ResMut<'a, DeferredPlayerQueues<SpawnLevelObjectRequest>>,
-    update_level_object_requests: ResMut<'a, DeferredPlayerQueues<LevelObject>>,
-    despawn_level_object_requests: ResMut<'a, DeferredPlayerQueues<EntityNetId>>,
-    spawn_player_commands: ResMut<'a, DeferredQueue<commands::SpawnPlayer>>,
-    despawn_player_commands: ResMut<'a, DeferredQueue<commands::DespawnPlayer>>,
+pub struct UpdateParams<'w, 's> {
+    deferred_player_updates: ResMut<'w, DeferredPlayerQueues<RunnerInput>>,
+    switch_role_requests: ResMut<'w, DeferredPlayerQueues<PlayerRole>>,
+    spawn_level_object_requests: ResMut<'w, DeferredPlayerQueues<SpawnLevelObjectRequest>>,
+    update_level_object_requests: ResMut<'w, DeferredPlayerQueues<LevelObject>>,
+    despawn_level_object_requests: ResMut<'w, DeferredPlayerQueues<EntityNetId>>,
+    spawn_player_commands: ResMut<'w, DeferredQueue<commands::SpawnPlayer>>,
+    despawn_player_commands: ResMut<'w, DeferredQueue<commands::DespawnPlayer>>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
 #[derive(SystemParam)]
-pub struct NetworkParams<'a> {
-    net: ResMut<'a, NetworkResource>,
-    connection_states: ResMut<'a, HashMap<u32, ConnectionState>>,
-    player_connections: ResMut<'a, PlayerConnections>,
-    new_player_connections: ResMut<'a, Vec<(PlayerNetId, u32)>>,
-    last_player_disconnected_at: ResMut<'a, LastPlayerDisconnectedAt>,
-    players_tracking_channel: Option<ResMut<'a, tokio::sync::mpsc::UnboundedSender<PlayerEvent>>>,
-    pending_requests: Local<'a, HashMap<MessageId, ConnectionHandle>>,
-    persistence_req_tx: Option<Res<'a, UnboundedSender<PersistenceRequest>>>,
-    persistence_msg_rx: Option<ResMut<'a, UnboundedReceiver<PersistenceMessage>>>,
+pub struct NetworkParams<'w, 's> {
+    net: ResMut<'w, NetworkResource>,
+    connection_states: ResMut<'w, HashMap<u32, ConnectionState>>,
+    player_connections: ResMut<'w, PlayerConnections>,
+    new_player_connections: ResMut<'w, Vec<(PlayerNetId, u32)>>,
+    last_player_disconnected_at: ResMut<'w, LastPlayerDisconnectedAt>,
+    players_tracking_channel: Option<ResMut<'w, tokio::sync::mpsc::UnboundedSender<PlayerEvent>>>,
+    pending_requests: Local<'s, HashMap<MessageId, ConnectionHandle>>,
+    persistence_req_tx: Option<Res<'w, UnboundedSender<PersistenceRequest>>>,
+    persistence_msg_rx: Option<ResMut<'w, UnboundedReceiver<PersistenceMessage>>>,
 }
 
 pub fn process_network_events(
@@ -723,12 +726,14 @@ fn disconnect_players(
 }
 
 #[derive(SystemParam)]
-pub struct DeferredMessageQueues<'a> {
-    switch_role_messages: ResMut<'a, DeferredMessagesQueue<SwitchRole>>,
-    respawn_player_messages: ResMut<'a, DeferredMessagesQueue<RespawnPlayer>>,
-    spawn_level_object_messages: ResMut<'a, DeferredMessagesQueue<SpawnLevelObject>>,
-    update_level_object_messages: ResMut<'a, DeferredMessagesQueue<commands::UpdateLevelObject>>,
-    despawn_level_object_messages: ResMut<'a, DeferredMessagesQueue<commands::DespawnLevelObject>>,
+pub struct DeferredMessageQueues<'w, 's> {
+    switch_role_messages: ResMut<'w, DeferredMessagesQueue<SwitchRole>>,
+    respawn_player_messages: ResMut<'w, DeferredMessagesQueue<RespawnPlayer>>,
+    spawn_level_object_messages: ResMut<'w, DeferredMessagesQueue<SpawnLevelObject>>,
+    update_level_object_messages: ResMut<'w, DeferredMessagesQueue<commands::UpdateLevelObject>>,
+    despawn_level_object_messages: ResMut<'w, DeferredMessagesQueue<commands::DespawnLevelObject>>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
 pub fn send_network_updates(

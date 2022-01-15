@@ -31,11 +31,12 @@ use bevy::{
     tasks::AsyncComputeTaskPool,
 };
 use bevy_rapier2d::{
-    physics::{ColliderBundle, ColliderPositionSync, IntoHandle, RigidBodyBundle},
+    physics::{
+        wrapper::{ColliderFlagsComponent, ColliderParentComponent, RigidBodyPositionComponent},
+        ColliderBundle, ColliderPositionSync, IntoHandle, RigidBodyBundle,
+    },
     rapier::{
-        dynamics::{
-            RigidBodyHandle, RigidBodyMassProps, RigidBodyMassPropsFlags, RigidBodyPosition,
-        },
+        dynamics::{RigidBodyHandle, RigidBodyMassProps, RigidBodyMassPropsFlags},
         geometry::{ColliderFlags, ColliderParent, ColliderShape, ColliderType, InteractionGroups},
         pipeline::ActiveEvents,
     },
@@ -45,14 +46,15 @@ pub type ColliderShapePromiseResult = (Entity, Option<ColliderShape>);
 pub type ColliderShapeSender = crossbeam_channel::Sender<ColliderShapePromiseResult>;
 pub type ColliderShapeReceiver = crossbeam_channel::Receiver<ColliderShapePromiseResult>;
 
-pub type PlayersQuery<'s> = Query<
+pub type PlayersQuery<'w, 's> = Query<
+    'w,
     's,
     (
         Entity,
         &'static mut Spawned,
         &'static mut Position,
         &'static mut PlayerDirection,
-        &'static mut ColliderFlags,
+        &'static mut ColliderFlagsComponent,
         &'static PlayerSensors,
     ),
     Without<PlayerSensor>,
@@ -65,7 +67,7 @@ pub fn spawn_players(
     mut spawn_player_commands: ResMut<DeferredQueue<SpawnPlayer>>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
     mut players: PlayersQuery,
-    mut player_sensors: Query<&mut ColliderFlags, With<PlayerSensor>>,
+    mut player_sensors: Query<&mut ColliderFlagsComponent, With<PlayerSensor>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -131,20 +133,21 @@ pub fn spawn_players(
             let mut sensor_commands = entity_commands.commands().spawn();
             sensor_commands
                 .insert_bundle(ColliderBundle {
-                    shape: ColliderShape::ball(PLAYER_SENSOR_RADIUS),
-                    collider_type: ColliderType::Sensor,
+                    shape: ColliderShape::ball(PLAYER_SENSOR_RADIUS).into(),
+                    collider_type: ColliderType::Sensor.into(),
                     flags: ColliderFlags {
                         collision_groups: player_sensor_interaction_groups(),
                         solver_groups: InteractionGroups::none(),
                         active_events: ActiveEvents::INTERSECTION_EVENTS,
                         ..ColliderFlags::default()
-                    },
+                    }
+                    .into(),
                     ..ColliderBundle::default()
                 })
-                .insert(ColliderParent {
+                .insert(ColliderParentComponent(ColliderParent {
                     handle: RigidBodyHandle(player_entity.handle()),
                     pos_wrt_parent: sensor_position.into(),
-                })
+                }))
                 .insert(ColliderPositionSync::Discrete)
                 .insert(PlayerSensor(player_entity));
             PlayerSensorClientFactory::insert_components(
@@ -167,17 +170,19 @@ pub fn spawn_players(
                 mass_properties: RigidBodyMassProps {
                     flags: RigidBodyMassPropsFlags::ROTATION_LOCKED,
                     ..RigidBodyMassProps::default()
-                },
+                }
+                .into(),
                 ..RigidBodyBundle::default()
             })
             .insert_bundle(ColliderBundle {
-                shape: ColliderShape::ball(PLAYER_RADIUS),
+                shape: ColliderShape::ball(PLAYER_RADIUS).into(),
                 flags: ColliderFlags {
                     collision_groups: player_interaction_groups(),
                     solver_groups: player_interaction_groups(),
                     active_events: ActiveEvents::all(),
                     ..ColliderFlags::default()
-                },
+                }
+                .into(),
                 ..ColliderBundle::default()
             })
             .insert(Position::new(
@@ -220,10 +225,15 @@ pub fn despawn_players(
     mut despawn_player_commands: ResMut<DeferredQueue<DespawnPlayer>>,
     player_entities: Res<EntityRegistry<PlayerNetId>>,
     mut players: Query<
-        (Entity, &mut Spawned, &mut ColliderFlags, &mut PlayerSensors),
+        (
+            Entity,
+            &mut Spawned,
+            &mut ColliderFlagsComponent,
+            &mut PlayerSensors,
+        ),
         Without<PlayerSensor>,
     >,
-    mut player_sensors: Query<&mut ColliderFlags, With<PlayerSensor>>,
+    mut player_sensors: Query<&mut ColliderFlagsComponent, With<PlayerSensor>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -275,8 +285,9 @@ pub fn despawn_players(
     }
 }
 
-type UpdateLevelObjectsQuery<'a> = Query<
-    'a,
+type UpdateLevelObjectsQuery<'w, 's> = Query<
+    'w,
+    's,
     (
         Entity,
         Option<&'static mut Position>,
@@ -287,10 +298,10 @@ type UpdateLevelObjectsQuery<'a> = Query<
 >;
 
 #[derive(SystemParam)]
-pub struct LevelObjectsParams<'a> {
-    object_entities: ResMut<'a, EntityRegistry<EntityNetId>>,
-    level_state: ResMut<'a, LevelState>,
-    level_objects: UpdateLevelObjectsQuery<'a>,
+pub struct LevelObjectsParams<'w, 's> {
+    object_entities: ResMut<'w, EntityRegistry<EntityNetId>>,
+    level_state: ResMut<'w, LevelState>,
+    level_objects: UpdateLevelObjectsQuery<'w, 's>,
 }
 
 pub fn update_level_objects(
@@ -405,7 +416,7 @@ pub fn update_level_objects(
             .insert(command.object.net_id)
             .insert(LevelObjectTag)
             .insert(LevelObjectLabel(command.object.label.clone()))
-            .insert(RigidBodyPosition::from(
+            .insert(RigidBodyPositionComponent::from(
                 command.object.desc.position().unwrap(),
             ))
             .insert(spawned_component);
@@ -433,7 +444,7 @@ pub fn update_level_objects(
                         .unwrap_or_default()
                         .extend(0.0),
                 ))
-                .insert(RigidBodyPosition::from(
+                .insert(RigidBodyPositionComponent::from(
                     command.object.desc.position().unwrap(),
                 ));
             if let Some(shape) = shape {
@@ -592,7 +603,7 @@ pub fn despawn_level_objects(
     mut level_objects: Query<
         (
             &mut Spawned,
-            &mut ColliderFlags,
+            &mut ColliderFlagsComponent,
             Option<&LevelObjectStaticGhostParent>,
         ),
         With<LevelObjectTag>,

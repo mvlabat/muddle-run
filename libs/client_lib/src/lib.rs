@@ -22,7 +22,7 @@ use crate::{
     },
 };
 use bevy::{
-    app::{AppBuilder, Plugin},
+    app::{App, Plugin},
     core::Time,
     diagnostic::FrameTimeDiagnosticsPlugin,
     ecs::{
@@ -31,13 +31,13 @@ use bevy::{
         entity::Entity,
         query::Access,
         schedule::{ParallelSystemDescriptorCoercion, ShouldRun, State, StateError, SystemStage},
-        system::{Commands, IntoSystem, Local, Res, ResMut, System, SystemId, SystemParam},
+        system::{Commands, IntoSystem, Local, Res, ResMut, System, SystemParam},
         world::World,
     },
     log,
     math::{Vec2, Vec3},
-    pbr::{Light, LightBundle},
-    render::entity::PerspectiveCameraBundle,
+    pbr::{PointLight, PointLightBundle},
+    render::camera::PerspectiveCameraBundle,
     transform::components::{GlobalTransform, Parent, Transform},
     utils::HashMap,
 };
@@ -52,7 +52,7 @@ use mr_shared_lib::{
     simulations_per_second, GameState, GameTime, MuddleSharedPlugin, SimulationTime,
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
-use std::borrow::Cow;
+use std::{borrow::Cow, marker::PhantomData};
 
 mod camera;
 mod components;
@@ -71,7 +71,7 @@ const TICKING_SPEED_FACTOR: u16 = 10;
 pub struct MuddleClientPlugin;
 
 impl Plugin for MuddleClientPlugin {
-    fn build(&self, builder: &mut AppBuilder) {
+    fn build(&self, app: &mut App) {
         let input_stage = SystemStage::parallel()
             // Processing network events should happen before tracking input
             // because we reset current's player inputs on each delta update.
@@ -106,8 +106,7 @@ impl Plugin for MuddleClientPlugin {
             )
             .with_system(update_debug_ui_state.system().after("pause_simulation"));
 
-        builder
-            .add_plugin(bevy_mod_picking::PickingPlugin)
+        app.add_plugin(bevy_mod_picking::PickingPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(EguiPlugin)
             .add_plugin(WorldInspectorPlugin::new())
@@ -150,9 +149,9 @@ impl Plugin for MuddleClientPlugin {
             .add_system(spawn_control_points.system().after("builder_system_set"));
 
         #[cfg(feature = "profiler")]
-        mr_shared_lib::util::profile_schedule(&mut builder.app.schedule);
+        mr_shared_lib::util::profile_schedule(&mut app.schedule);
 
-        let world = builder.world_mut();
+        let world = &mut app.world;
         world
             .get_resource_mut::<WorldInspectorParams>()
             .unwrap()
@@ -332,10 +331,10 @@ fn pause_simulation(
 
 fn basic_scene(mut commands: Commands) {
     // Add entities to the scene.
-    commands.spawn_bundle(LightBundle {
-        light: Light {
-            range: 16000.0,
-            intensity: 64000.0,
+    commands.spawn_bundle(PointLightBundle {
+        point_light: PointLight {
+            range: 256.0,
+            intensity: 1280000.0,
             ..Default::default()
         },
         transform: Transform::from_translation(Vec3::new(-64.0, -92.0, 144.0)),
@@ -363,13 +362,15 @@ fn basic_scene(mut commands: Commands) {
 }
 
 #[derive(SystemParam)]
-pub struct ControlTickingSpeedParams<'a> {
-    tick_rate: ResMut<'a, GameTicksPerSecond>,
-    simulation_time: ResMut<'a, SimulationTime>,
-    time: ResMut<'a, GameTime>,
-    target_frames_ahead: Res<'a, TargetFramesAhead>,
-    player_delay: ResMut<'a, PlayerDelay>,
-    adjusted_speed_reason: ResMut<'a, AdjustedSpeedReason>,
+pub struct ControlTickingSpeedParams<'w, 's> {
+    tick_rate: ResMut<'w, GameTicksPerSecond>,
+    simulation_time: ResMut<'w, SimulationTime>,
+    time: ResMut<'w, GameTime>,
+    target_frames_ahead: Res<'w, TargetFramesAhead>,
+    player_delay: ResMut<'w, PlayerDelay>,
+    adjusted_speed_reason: ResMut<'w, AdjustedSpeedReason>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -538,10 +539,6 @@ impl System for NetAdaptiveTimestemp {
 
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed(std::any::type_name::<NetAdaptiveTimestemp>())
-    }
-
-    fn id(&self) -> SystemId {
-        self.internal_system.id()
     }
 
     fn new_archetype(&mut self, archetype: &Archetype) {

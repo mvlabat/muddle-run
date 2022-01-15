@@ -103,7 +103,7 @@ pub fn leaderboard_ui(
                             };
                         ui.label(player_status_icon);
                         if player_params.current_player_net_id.0 == Some(*net_id) {
-                            ui.add(egui::Label::new(&player.nickname).strong());
+                            ui.add(egui::Label::new(egui::RichText::new(&player.nickname)));
                         } else {
                             ui.label(&player.nickname);
                         }

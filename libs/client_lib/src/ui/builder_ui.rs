@@ -18,7 +18,7 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_egui::{
-    egui::{self, Ui, Widget},
+    egui::{self, Ui},
     EguiContext,
 };
 use mr_shared_lib::{
@@ -70,8 +70,9 @@ impl EditedLevelObject {
     }
 }
 
-pub type LevelObjectsQuery<'a> = Query<
-    'a,
+pub type LevelObjectsQuery<'w, 's> = Query<
+    'w,
+    's,
     (
         Entity,
         &'static LevelObjectLabel,
@@ -82,23 +83,23 @@ pub type LevelObjectsQuery<'a> = Query<
 >;
 
 #[derive(SystemParam)]
-pub struct LevelObjects<'a> {
-    time: Res<'a, GameTime>,
-    pending_correlation: Local<'a, Option<MessageId>>,
-    edited_level_object: ResMut<'a, EditedLevelObject>,
-    requests_queue: ResMut<'a, LevelObjectRequestsQueue>,
-    level_state: Res<'a, LevelState>,
-    entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
-    query: LevelObjectsQuery<'a>,
-    ghosts_query: Query<'a, (&'static LevelObjectStaticGhost, &'static Transform)>,
+pub struct LevelObjects<'w, 's> {
+    time: Res<'w, GameTime>,
+    pending_correlation: Local<'s, Option<MessageId>>,
+    edited_level_object: ResMut<'w, EditedLevelObject>,
+    requests_queue: ResMut<'w, LevelObjectRequestsQueue>,
+    level_state: Res<'w, LevelState>,
+    entity_registry: Res<'w, EntityRegistry<EntityNetId>>,
+    query: LevelObjectsQuery<'w, 's>,
+    ghosts_query: Query<'w, 's, (&'static LevelObjectStaticGhost, &'static Transform)>,
 }
 
 #[derive(SystemParam)]
-pub struct MouseInput<'a, Q: Send + Sync + 'static, F: Send + Sync + 'static> {
-    pub mouse_screen_position: Res<'a, MouseScreenPosition>,
-    pub mouse_world_position: Res<'a, MouseWorldPosition>,
-    pub mouse_entity_picker: MouseEntityPicker<'a, Q, F>,
-    pub mouse_button_input: Res<'a, Input<MouseButton>>,
+pub struct MouseInput<'w, 's, Q: Send + Sync + 'static, F: Send + Sync + 'static> {
+    pub mouse_screen_position: Res<'w, MouseScreenPosition>,
+    pub mouse_world_position: Res<'w, MouseWorldPosition>,
+    pub mouse_entity_picker: MouseEntityPicker<'w, 's, Q, F>,
+    pub mouse_button_input: Res<'w, Input<MouseButton>>,
 }
 
 #[derive(Default)]
@@ -631,28 +632,29 @@ fn plane_form(ui: &mut egui::Ui, dirty_plane_form_desc: &mut PlaneFormDesc) {
             ui.label("Points");
             ui.vertical(|ui| {
                 ui.group(|ui| {
-                    egui::ScrollArea::from_max_height(200.0).show(ui, |ui| {
-                        let removing_enabled = points.len() > 3;
-                        let mut point_to_remove = None;
-                        for (i, point) in points.iter_mut().enumerate() {
-                            ui.horizontal(|ui| {
-                                ui.label("X:");
-                                ui.add(egui::widgets::DragValue::new(&mut point.x).speed(0.1));
-                                ui.label("Y:");
-                                ui.add(egui::widgets::DragValue::new(&mut point.y).speed(0.1));
-                                if egui::Button::new("❌")
-                                    .enabled(removing_enabled)
-                                    .ui(ui)
-                                    .clicked()
-                                {
-                                    point_to_remove = Some(i);
-                                }
-                            });
-                        }
-                        if let Some(point_to_remove) = point_to_remove {
-                            points.remove(point_to_remove);
-                        }
-                    });
+                    egui::ScrollArea::vertical()
+                        .max_height(200.0)
+                        .show(ui, |ui| {
+                            let removing_enabled = points.len() > 3;
+                            let mut point_to_remove = None;
+                            for (i, point) in points.iter_mut().enumerate() {
+                                ui.horizontal(|ui| {
+                                    ui.label("X:");
+                                    ui.add(egui::widgets::DragValue::new(&mut point.x).speed(0.1));
+                                    ui.label("Y:");
+                                    ui.add(egui::widgets::DragValue::new(&mut point.y).speed(0.1));
+                                    if ui
+                                        .add_enabled(removing_enabled, egui::Button::new("❌"))
+                                        .clicked()
+                                    {
+                                        point_to_remove = Some(i);
+                                    }
+                                });
+                            }
+                            if let Some(point_to_remove) = point_to_remove {
+                                points.remove(point_to_remove);
+                            }
+                        });
                     if ui.button("Add").clicked() {
                         points.push(Vec2::new(1.0, 1.0));
                     }
@@ -824,7 +826,7 @@ fn level_objects_filter(
         }
     });
     let mut result = None;
-    egui::ScrollArea::auto_sized().show(ui, |ui| {
+    egui::ScrollArea::vertical().show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
             for (entity, label, _, _, spawned) in objects_query.iter() {
                 if !spawned.is_spawned(time.frame_number) {

@@ -8,11 +8,14 @@ use bevy::{
         mesh::{shape::Icosphere, Mesh},
     },
 };
+use std::marker::PhantomData;
 
 #[derive(SystemParam)]
-pub struct MuddleAssets<'a> {
-    pub materials: Res<'a, MuddleMaterials>,
-    pub meshes: Res<'a, MuddleMeshes>,
+pub struct MuddleAssets<'w, 's> {
+    pub materials: Res<'w, MuddleMaterials>,
+    pub meshes: Res<'w, MuddleMeshes>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
 pub struct MuddleMaterials {

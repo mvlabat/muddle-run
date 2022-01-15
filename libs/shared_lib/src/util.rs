@@ -37,7 +37,7 @@ pub fn random_point_inside_shape(shape: TypedShape, object_radius: f32) -> Vec2 
             Vec2::new(
                 rng.gen::<f32>() * (cuboid.half_extents.x * 2.0 - object_radius).max(0.0),
                 rng.gen::<f32>() * (cuboid.half_extents.y * 2.0 - object_radius).max(0.0),
-            ) - cuboid.half_extents.into()
+            ) - Vec2::from(cuboid.half_extents)
         }
         _ => unimplemented!(),
     }

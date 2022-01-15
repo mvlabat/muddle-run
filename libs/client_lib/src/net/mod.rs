@@ -36,6 +36,7 @@ use mr_shared_lib::{
 };
 use std::{
     future::Future,
+    marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 use tokio::sync::mpsc::{
@@ -54,29 +55,31 @@ const DEFAULT_SERVER_PORT: u16 = 3455;
 const DEFAULT_SERVER_IP_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
 #[derive(SystemParam)]
-pub struct UpdateParams<'a> {
-    simulation_time: ResMut<'a, SimulationTime>,
-    game_time: ResMut<'a, GameTime>,
-    player_entities: Res<'a, EntityRegistry<PlayerNetId>>,
-    estimated_server_time: ResMut<'a, EstimatedServerTime>,
-    target_frames_ahead: ResMut<'a, TargetFramesAhead>,
-    player_delay: ResMut<'a, PlayerDelay>,
-    initial_rtt: ResMut<'a, InitialRtt>,
-    player_updates: ResMut<'a, PlayerUpdates>,
-    restart_game_commands: ResMut<'a, DeferredQueue<RestartGame>>,
-    level_object_correlations: ResMut<'a, LevelObjectCorrelations>,
-    spawn_level_object_commands: ResMut<'a, DeferredQueue<UpdateLevelObject>>,
-    despawn_level_object_commands: ResMut<'a, DeferredQueue<DespawnLevelObject>>,
-    spawn_player_commands: ResMut<'a, DeferredQueue<SpawnPlayer>>,
-    despawn_player_commands: ResMut<'a, DeferredQueue<DespawnPlayer>>,
-    switch_role_commands: ResMut<'a, DeferredQueue<SwitchPlayerRole>>,
-    spawned_query: Query<'a, &'static Spawned>,
+pub struct UpdateParams<'w, 's> {
+    simulation_time: ResMut<'w, SimulationTime>,
+    game_time: ResMut<'w, GameTime>,
+    player_entities: Res<'w, EntityRegistry<PlayerNetId>>,
+    estimated_server_time: ResMut<'w, EstimatedServerTime>,
+    target_frames_ahead: ResMut<'w, TargetFramesAhead>,
+    player_delay: ResMut<'w, PlayerDelay>,
+    initial_rtt: ResMut<'w, InitialRtt>,
+    player_updates: ResMut<'w, PlayerUpdates>,
+    restart_game_commands: ResMut<'w, DeferredQueue<RestartGame>>,
+    level_object_correlations: ResMut<'w, LevelObjectCorrelations>,
+    spawn_level_object_commands: ResMut<'w, DeferredQueue<UpdateLevelObject>>,
+    despawn_level_object_commands: ResMut<'w, DeferredQueue<DespawnLevelObject>>,
+    spawn_player_commands: ResMut<'w, DeferredQueue<SpawnPlayer>>,
+    despawn_player_commands: ResMut<'w, DeferredQueue<DespawnPlayer>>,
+    switch_role_commands: ResMut<'w, DeferredQueue<SwitchPlayerRole>>,
+    spawned_query: Query<'w, 's, &'static Spawned>,
 }
 
 #[derive(SystemParam)]
-pub struct NetworkParams<'a> {
-    net: ResMut<'a, NetworkResource>,
-    connection_state: ResMut<'a, ConnectionState>,
+pub struct NetworkParams<'w, 's> {
+    net: ResMut<'w, NetworkResource>,
+    connection_state: ResMut<'w, ConnectionState>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
 #[derive(Debug)]
@@ -342,10 +345,12 @@ async fn handle_matchmaker_connection(
 }
 
 #[derive(SystemParam)]
-pub struct MatchmakerParams<'a> {
-    matchmaker_state: Option<ResMut<'a, MatchmakerState>>,
-    server_to_connect: ResMut<'a, Option<ServerToConnect>>,
-    main_menu_ui_channels: Option<Res<'a, MainMenuUiChannels>>,
+pub struct MatchmakerParams<'w, 's> {
+    matchmaker_state: Option<ResMut<'w, MatchmakerState>>,
+    server_to_connect: ResMut<'w, Option<ServerToConnect>>,
+    main_menu_ui_channels: Option<Res<'w, MainMenuUiChannels>>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
 pub fn process_network_events(
@@ -857,8 +862,8 @@ pub fn maintain_connection(
 }
 
 #[derive(SystemParam)]
-pub struct PlayerUpdateParams<'a> {
-    player_directions: Query<'a, &'static PlayerDirection>,
+pub struct PlayerUpdateParams<'w, 's> {
+    player_directions: Query<'w, 's, &'static PlayerDirection>,
 }
 
 pub fn send_network_updates(

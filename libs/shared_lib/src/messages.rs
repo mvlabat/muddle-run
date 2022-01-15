@@ -9,7 +9,7 @@ use crate::{
     player::{Player, PlayerRole},
     registry::IncrementId,
 };
-use bevy::math::Vec2;
+use bevy::{ecs::component::Component, math::Vec2};
 use serde::{Deserialize, Serialize};
 
 pub struct DeferredMessagesQueue<T: Serialize> {
@@ -35,7 +35,7 @@ impl<T: Serialize> DeferredMessagesQueue<T> {
 }
 
 // TODO: refactor to be a part of entity registry, implement reclaiming ids of removed entities.
-#[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Component, Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct EntityNetId(pub u16);
 
 impl IncrementId for EntityNetId {

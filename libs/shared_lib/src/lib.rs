@@ -38,7 +38,7 @@ use bevy::{
         component::ComponentId,
         query::Access,
         schedule::{ParallelSystemDescriptorCoercion, ShouldRun},
-        system::{IntoSystem, SystemId},
+        system::IntoSystem,
     },
     log,
     prelude::*,
@@ -52,7 +52,9 @@ use bevy_rapier2d::{
         RapierConfiguration, SimulationToRenderTime, TimestepMode,
     },
     rapier::{
-        dynamics::{CCDSolver, IntegrationParameters, IslandManager, JointSet},
+        dynamics::{
+            CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet,
+        },
         geometry::{BroadPhase, ContactEvent, IntersectionEvent, NarrowPhase},
         math::Vector,
         pipeline::{PhysicsPipeline, QueryPipeline},
@@ -143,9 +145,9 @@ impl<S: System<In = (), Out = ShouldRun>> MuddleSharedPlugin<S> {
 }
 
 impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
-    fn build(&self, builder: &mut AppBuilder) {
-        builder.add_plugin(RapierResourcesPlugin);
-        builder.add_plugin(NetworkingPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugin(RapierResourcesPlugin);
+        app.add_plugin(NetworkingPlugin {
             link_conditioner: self.link_conditioner.clone(),
             ..NetworkingPlugin::default()
         });
@@ -305,12 +307,12 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         #[cfg(feature = "profiler")]
         crate::util::profile_schedule(&mut main_schedule);
 
-        builder.add_stage_before(
+        app.add_stage_before(
             bevy::app::CoreStage::Update,
             stage::MAIN_SCHEDULE,
             main_schedule,
         );
-        builder.add_stage_before(
+        app.add_stage_before(
             stage::MAIN_SCHEDULE,
             stage::READ_INPUT_UPDATES,
             SystemStage::parallel()
@@ -321,7 +323,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                         .with_system(read_movement_updates.system()),
                 ),
         );
-        builder.add_stage_before(
+        app.add_stage_before(
             stage::READ_INPUT_UPDATES,
             stage::WRITE_INPUT_UPDATES,
             input_stage
@@ -330,16 +332,16 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         );
 
         // Is `GameState::Paused` for client (see `init_state`).
-        builder.add_state(GameState::Playing);
-        builder.add_state_to_stage(stage::READ_INPUT_UPDATES, GameState::Playing);
+        app.add_state(GameState::Playing);
+        app.add_state_to_stage(stage::READ_INPUT_UPDATES, GameState::Playing);
 
-        builder.add_startup_system(network_setup.system());
+        app.add_startup_system(network_setup.system());
 
         #[cfg(feature = "client")]
-        builder.add_startup_system(crate::client::assets::init_muddle_assets.system());
+        app.add_startup_system(crate::client::assets::init_muddle_assets.system());
 
         #[cfg(feature = "profiler")]
-        builder.add_system_to_stage(
+        app.add_system_to_stage(
             bevy::app::CoreStage::First,
             (|| {
                 puffin::GlobalProfiler::lock().new_frame();
@@ -348,37 +350,37 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .at_start(),
         );
 
-        let resources = builder.world_mut();
-        resources.get_resource_or_insert_with(GameTime::default);
-        resources.get_resource_or_insert_with(SimulationTime::default);
-        resources.get_resource_or_insert_with(LevelState::default);
-        resources.get_resource_or_insert_with(PlayerUpdates::default);
-        resources.get_resource_or_insert_with(DeferredQueue::<RestartGame>::default);
-        resources.get_resource_or_insert_with(DeferredQueue::<SpawnPlayer>::default);
-        resources.get_resource_or_insert_with(DeferredQueue::<DespawnPlayer>::default);
-        resources.get_resource_or_insert_with(DeferredQueue::<UpdateLevelObject>::default);
-        resources.get_resource_or_insert_with(DeferredQueue::<DespawnLevelObject>::default);
-        resources.get_resource_or_insert_with(DeferredQueue::<SwitchPlayerRole>::default);
-        resources.get_resource_or_insert_with(EntityRegistry::<PlayerNetId>::default);
-        resources.get_resource_or_insert_with(EntityRegistry::<EntityNetId>::default);
-        resources.get_resource_or_insert_with(HashMap::<PlayerNetId, Player>::default);
-        resources.get_resource_or_insert_with(Events::<CollisionLogicChanged>::default);
-        resources.get_resource_or_insert_with(Events::<PlayerDeath>::default);
-        resources.get_resource_or_insert_with(Events::<PlayerFinish>::default);
+        let world = &mut app.world;
+        world.get_resource_or_insert_with(GameTime::default);
+        world.get_resource_or_insert_with(SimulationTime::default);
+        world.get_resource_or_insert_with(LevelState::default);
+        world.get_resource_or_insert_with(PlayerUpdates::default);
+        world.get_resource_or_insert_with(DeferredQueue::<RestartGame>::default);
+        world.get_resource_or_insert_with(DeferredQueue::<SpawnPlayer>::default);
+        world.get_resource_or_insert_with(DeferredQueue::<DespawnPlayer>::default);
+        world.get_resource_or_insert_with(DeferredQueue::<UpdateLevelObject>::default);
+        world.get_resource_or_insert_with(DeferredQueue::<DespawnLevelObject>::default);
+        world.get_resource_or_insert_with(DeferredQueue::<SwitchPlayerRole>::default);
+        world.get_resource_or_insert_with(EntityRegistry::<PlayerNetId>::default);
+        world.get_resource_or_insert_with(EntityRegistry::<EntityNetId>::default);
+        world.get_resource_or_insert_with(HashMap::<PlayerNetId, Player>::default);
+        world.get_resource_or_insert_with(Events::<CollisionLogicChanged>::default);
+        world.get_resource_or_insert_with(Events::<PlayerDeath>::default);
+        world.get_resource_or_insert_with(Events::<PlayerFinish>::default);
         // Is used only on the server side.
-        resources.get_resource_or_insert_with(DeferredMessagesQueue::<SwitchRole>::default);
+        world.get_resource_or_insert_with(DeferredMessagesQueue::<SwitchRole>::default);
 
         let (shape_sender, shape_receiver) =
             crossbeam_channel::unbounded::<ColliderShapePromiseResult>();
-        resources.insert_resource(shape_sender);
-        resources.insert_resource(shape_receiver);
+        world.insert_resource(shape_sender);
+        world.insert_resource(shape_receiver);
     }
 }
 
 pub struct RapierResourcesPlugin;
 
 impl Plugin for RapierResourcesPlugin {
-    fn build(&self, builder: &mut AppBuilder) {
+    fn build(&self, builder: &mut App) {
         builder
             .insert_resource(PhysicsPipeline::new())
             .insert_resource(QueryPipeline::new())
@@ -391,7 +393,8 @@ impl Plugin for RapierResourcesPlugin {
             .insert_resource(BroadPhase::new())
             .insert_resource(NarrowPhase::new())
             .insert_resource(IslandManager::new())
-            .insert_resource(JointSet::new())
+            .insert_resource(ImpulseJointSet::new())
+            .insert_resource(MultibodyJointSet::new())
             .insert_resource(CCDSolver::new())
             .insert_resource(PhysicsHooksWithQueryObject::<NoUserData>(Box::new(())))
             .insert_resource(Events::<IntersectionEvent>::default())
@@ -543,10 +546,6 @@ impl System for GameTickRunCriteria {
         Cow::Borrowed(std::any::type_name::<GameTickRunCriteria>())
     }
 
-    fn id(&self) -> SystemId {
-        self.internal_system.id()
-    }
-
     fn new_archetype(&mut self, archetype: &Archetype) {
         self.internal_system.new_archetype(archetype);
     }
@@ -663,10 +662,6 @@ impl System for SimulationTickRunCriteria {
 
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed(std::any::type_name::<SimulationTickRunCriteria>())
-    }
-
-    fn id(&self) -> SystemId {
-        self.internal_system.id()
     }
 
     fn new_archetype(&mut self, archetype: &Archetype) {

@@ -20,6 +20,7 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
+use std::marker::PhantomData;
 
 const SWITCH_ROLE_COOLDOWN_SECS: i64 = 1;
 
@@ -38,10 +39,10 @@ pub struct LevelObjectRequestsQueue {
 }
 
 #[derive(SystemParam)]
-pub struct InputEvents<'a> {
-    pub keys: EventReader<'a, KeyboardInput>,
-    pub cursor: EventReader<'a, CursorMoved>,
-    pub mouse_button: EventReader<'a, MouseButtonInput>,
+pub struct InputEvents<'w, 's> {
+    pub keys: EventReader<'w, 's, KeyboardInput>,
+    pub cursor: EventReader<'w, 's, CursorMoved>,
+    pub mouse_button: EventReader<'w, 's, MouseButtonInput>,
 }
 
 /// Represents a cursor position in window coordinates (the ones that are coming from Window events).
@@ -67,22 +68,24 @@ impl Default for MouseRay {
 }
 
 #[derive(SystemParam)]
-pub struct PlayerUpdatesParams<'a> {
-    switched_role_at: Local<'a, Option<DateTime<Utc>>>,
-    current_player_net_id: Res<'a, CurrentPlayerNetId>,
-    players: Res<'a, HashMap<PlayerNetId, Player>>,
-    player_registry: Res<'a, EntityRegistry<PlayerNetId>>,
-    players_query: Query<'a, &'static Spawned>,
-    main_camera_pivot_entity: Res<'a, MainCameraPivotEntity>,
-    camera_query: Query<'a, &'static mut CameraPivotDirection>,
-    player_updates: ResMut<'a, PlayerUpdates>,
-    player_requests: ResMut<'a, PlayerRequestsQueue>,
+pub struct PlayerUpdatesParams<'w, 's> {
+    switched_role_at: Local<'s, Option<DateTime<Utc>>>,
+    current_player_net_id: Res<'w, CurrentPlayerNetId>,
+    players: Res<'w, HashMap<PlayerNetId, Player>>,
+    player_registry: Res<'w, EntityRegistry<PlayerNetId>>,
+    players_query: Query<'w, 's, &'static Spawned>,
+    main_camera_pivot_entity: Res<'w, MainCameraPivotEntity>,
+    camera_query: Query<'w, 's, &'static mut CameraPivotDirection>,
+    player_updates: ResMut<'w, PlayerUpdates>,
+    player_requests: ResMut<'w, PlayerRequestsQueue>,
 }
 
 #[derive(SystemParam)]
-pub struct UiParams<'a> {
-    egui_context: Res<'a, EguiContext>,
-    debug_ui_state: ResMut<'a, DebugUiState>,
+pub struct UiParams<'w, 's> {
+    egui_context: Res<'w, EguiContext>,
+    debug_ui_state: ResMut<'w, DebugUiState>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
 pub fn track_input_events(

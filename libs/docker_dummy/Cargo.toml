@@ -2,4 +2,4 @@
 name = "docker_dummy"
 version = "0.1.0"
 authors = ["mvlabat <mvlabat@gmail.com>"]
-edition = "2018"
+edition = "2021"

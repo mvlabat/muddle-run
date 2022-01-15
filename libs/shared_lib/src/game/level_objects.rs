@@ -9,7 +9,7 @@ use crate::{
     },
     messages::EntityNetId,
     registry::EntityRegistry,
-    SimulationTime,
+    QueryState, SimulationTime,
 };
 use bevy::{
     ecs::{
@@ -212,27 +212,29 @@ pub fn update_level_object_movement_route_settings(
     }
 }
 
-type LevelObjectsQuerySet<'a, 'b, 'c> = QuerySet<(
-    Query<
-        'a,
-        (
-            &'b mut Position,
-            Option<&'b mut LevelObjectMovement>,
-            &'b Spawned,
-        ),
-        With<LevelObjectTag>,
-    >,
-    Query<
-        'a,
-        (
-            Entity,
-            &'c Position,
-            Option<&'c LevelObjectMovement>,
-            &'c Spawned,
-        ),
-        With<LevelObjectTag>,
-    >,
-)>;
+type LevelObjectsQuerySet<'w, 's> = QuerySet<
+    'w,
+    's,
+    (
+        QueryState<
+            (
+                &'static mut Position,
+                Option<&'static mut LevelObjectMovement>,
+                &'static Spawned,
+            ),
+            With<LevelObjectTag>,
+        >,
+        QueryState<
+            (
+                Entity,
+                &'static Position,
+                Option<&'static LevelObjectMovement>,
+                &'static Spawned,
+            ),
+            With<LevelObjectTag>,
+        >,
+    ),
+>;
 
 pub fn process_objects_route_graph(
     time: Res<SimulationTime>,
@@ -246,12 +248,12 @@ pub fn process_objects_route_graph(
         resolve_new_path_recursive(
             &time,
             vec![entity],
-            level_objects_readonly,
+            &level_objects_readonly,
             &mut new_positions,
         );
     }
 
-    let level_objects = level_objects.q0_mut();
+    let mut level_objects = level_objects.q0();
     for (entity, (new_position, points_progress)) in new_positions {
         let (mut position, movement, _) = level_objects.get_mut(entity).unwrap();
         position.buffer.insert(time.player_frame, new_position);

@@ -52,14 +52,16 @@ impl MuddleInspectable for PlayerDirection {
         .id_source("player direction buffer")
         .default_open(false)
         .show(ui, |ui| {
-            egui::ScrollArea::from_max_height(200.0).show(ui, |ui| {
-                for (frame_number, value) in self.buffer.iter().rev() {
-                    let value = value
-                        .map(|v| format!("[{: <5.2};{: >5.2}]", v.x, v.y))
-                        .unwrap_or_else(|| "[None]".to_owned());
-                    ui.label(format!("{}: {}", frame_number.value(), value));
-                }
-            });
+            egui::ScrollArea::vertical()
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    for (frame_number, value) in self.buffer.iter().rev() {
+                        let value = value
+                            .map(|v| format!("[{: <5.2};{: >5.2}]", v.x, v.y))
+                            .unwrap_or_else(|| "[None]".to_owned());
+                        ui.label(format!("{}: {}", frame_number.value(), value));
+                    }
+                });
         });
     }
 }
@@ -83,16 +85,18 @@ impl MuddleInspectable for Position {
         .id_source("position buffer")
         .default_open(false)
         .show(ui, |ui| {
-            egui::ScrollArea::from_max_height(200.0).show(ui, |ui| {
-                for (frame_number, value) in self.buffer.iter().rev() {
-                    ui.label(format!(
-                        "{}: [{: <5.2};{: >5.2}]",
-                        frame_number.value(),
-                        value.x,
-                        value.y
-                    ));
-                }
-            });
+            egui::ScrollArea::vertical()
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    for (frame_number, value) in self.buffer.iter().rev() {
+                        ui.label(format!(
+                            "{}: [{: <5.2};{: >5.2}]",
+                            frame_number.value(),
+                            value.x,
+                            value.y
+                        ));
+                    }
+                });
         });
     }
 }
