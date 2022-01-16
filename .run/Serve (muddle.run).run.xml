@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Serve (muddle.run)" type="CLionExternalRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" WORKING_DIR="file://$PROJECT_DIR$/bins/web_client" PASS_PARENT_ENVS_2="true" PROJECT_NAME="muddle-run" TARGET_NAME="Unnamed" CONFIG_NAME="Unnamed" RUN_PATH="$USER_HOME$/.cargo/bin/basic-http-server">
+    <method v="2">
+      <option name="RunConfigurationTask" enabled="true" run_configuration_name="wasm-pack (muddle.run)" run_configuration_type="CLionExternalRunConfiguration" />
+    </method>
+  </configuration>
+</component>

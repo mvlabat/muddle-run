@@ -1,0 +1,13 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="wasm-pack (muddle.run)" type="CLionExternalRunConfiguration" factoryName="Application" PROGRAM_PARAMS="build --target web" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" WORKING_DIR="file://$PROJECT_DIR$/bins/web_client" PASS_PARENT_ENVS_2="true" PROJECT_NAME="muddle-run" TARGET_NAME="Unnamed" CONFIG_NAME="Unnamed" RUN_PATH="$USER_HOME$/.cargo/bin/wasm-pack">
+    <envs>
+      <env name="MUDDLE_MATCHMAKER_URL" value="ws://muddle.run:8080" />
+      <env name="SENTRY_DSN" value="https://8a86208bb5ac4de0a79cc60f7fb8bde7@o608373.ingest.sentry.io/5745559" />
+      <env name="MUDDLE_GOOGLE_CLIENT_ID" value="888017021223-fu9gc0apihs2h3jtjesoh329neoeq2pb.apps.googleusercontent.com" />
+      <env name="MUDDLE_UD_CLIENT_ID" value="DgjL+y2VS4eJ6Kqq6XtJA+7bxYPplz3ZBkg86xlHRJQ=" />
+      <env name="MUDDLE_AUTH0_CLIENT_ID" value="UNSNBymWRH97Racw7hW2d9tDN1gsqvfO" />
+      <env name="MUDDLE_PERSISTENCE_URL" value="http://muddle.run:8082" />
+    </envs>
+    <method v="2" />
+  </configuration>
+</component>
