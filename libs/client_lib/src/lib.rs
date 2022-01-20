@@ -26,20 +26,16 @@ use bevy::{
     core::Time,
     diagnostic::FrameTimeDiagnosticsPlugin,
     ecs::{
-        archetype::{Archetype, ArchetypeComponentId},
-        component::ComponentId,
         entity::Entity,
-        query::Access,
         schedule::{ParallelSystemDescriptorCoercion, ShouldRun, State, StateError, SystemStage},
-        system::{Commands, IntoSystem, Local, Res, ResMut, System, SystemParam},
-        world::World,
+        system::{Commands, IntoSystem, Local, Res, ResMut, SystemParam},
     },
     log,
     math::{Vec2, Vec3},
     pbr::{PointLight, PointLightBundle},
     render::camera::PerspectiveCameraBundle,
     transform::components::{GlobalTransform, Parent, Transform},
-    utils::HashMap,
+    utils::{HashMap, Instant},
 };
 use bevy_egui::EguiPlugin;
 use bevy_inspector_egui::{WorldInspectorParams, WorldInspectorPlugin};
@@ -52,7 +48,7 @@ use mr_shared_lib::{
     simulations_per_second, GameState, GameTime, MuddleSharedPlugin, SimulationTime,
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
-use std::{borrow::Cow, marker::PhantomData};
+use std::marker::PhantomData;
 
 mod camera;
 mod components;
@@ -109,7 +105,7 @@ impl Plugin for MuddleClientPlugin {
             .add_startup_system(read_offline_auth_config)
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
-                NetAdaptiveTimestemp::default(),
+                net_adaptive_timestamp.system(),
                 input_stage,
                 SystemStage::parallel(),
                 broadcast_updates_stage,
@@ -475,91 +471,42 @@ fn slower_tick_rate() -> u16 {
 #[derive(Default, Clone)]
 pub struct NetAdaptiveTimestempState {
     accumulator: f64,
-    looping: bool,
+    started_looping_at: Option<Instant>,
 }
 
-pub struct NetAdaptiveTimestemp {
-    state: NetAdaptiveTimestempState,
-    internal_system: Box<dyn System<In = (), Out = ShouldRun>>,
-}
+fn net_adaptive_timestamp(
+    mut state: Local<NetAdaptiveTimestempState>,
+    time: Res<Time>,
+    game_ticks_per_second: Res<GameTicksPerSecond>,
+) -> ShouldRun {
+    #[cfg(feature = "profiler")]
+    puffin::profile_function!();
+    let rate = game_ticks_per_second.rate;
+    let step = 1.0 / rate as f64;
 
-impl Default for NetAdaptiveTimestemp {
-    fn default() -> Self {
-        Self {
-            state: NetAdaptiveTimestempState::default(),
-            internal_system: Box::new(Self::prepare_system.system()),
-        }
+    if state.started_looping_at.is_none() {
+        state.accumulator += time.delta_seconds_f64();
     }
-}
 
-impl NetAdaptiveTimestemp {
-    fn prepare_system(
-        mut state: Local<NetAdaptiveTimestempState>,
-        time: Res<Time>,
-        game_ticks_per_second: Res<GameTicksPerSecond>,
-    ) -> ShouldRun {
-        #[cfg(feature = "profiler")]
-        puffin::profile_function!();
-        let rate = game_ticks_per_second.rate;
-        let step = 1.0 / rate as f64;
-
-        if !state.looping {
-            state.accumulator += time.delta_seconds_f64();
-        }
-
-        if state.accumulator >= step {
-            state.accumulator -= step;
-            state.looping = true;
-            ShouldRun::YesAndCheckAgain
+    if state.accumulator >= step {
+        state.accumulator -= step;
+        if let Some(started_looping_at) = state.started_looping_at {
+            let secs_being_in_loop = Instant::now()
+                .duration_since(started_looping_at)
+                .as_secs_f32();
+            let threshold_secs = 0.05; // 20 fsp
+            if secs_being_in_loop > threshold_secs {
+                state.started_looping_at = None;
+                ShouldRun::Yes
+            } else {
+                ShouldRun::YesAndCheckAgain
+            }
         } else {
-            state.looping = false;
-            ShouldRun::No
+            state.started_looping_at = Some(Instant::now());
+            ShouldRun::YesAndCheckAgain
         }
-    }
-}
-
-impl System for NetAdaptiveTimestemp {
-    type In = ();
-    type Out = ShouldRun;
-
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed(std::any::type_name::<NetAdaptiveTimestemp>())
-    }
-
-    fn new_archetype(&mut self, archetype: &Archetype) {
-        self.internal_system.new_archetype(archetype);
-    }
-
-    fn component_access(&self) -> &Access<ComponentId> {
-        self.internal_system.component_access()
-    }
-
-    fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
-        self.internal_system.archetype_component_access()
-    }
-
-    fn is_send(&self) -> bool {
-        self.internal_system.is_send()
-    }
-
-    unsafe fn run_unsafe(&mut self, _input: Self::In, world: &World) -> Self::Out {
-        self.internal_system.run_unsafe((), world)
-    }
-
-    fn apply_buffers(&mut self, world: &mut World) {
-        self.internal_system.apply_buffers(world)
-    }
-
-    fn initialize(&mut self, world: &mut World) {
-        self.internal_system = Box::new(
-            Self::prepare_system
-                .system()
-                .config(|c| c.0 = Some(self.state.clone())),
-        );
-        self.internal_system.initialize(world);
-    }
-
-    fn check_change_tick(&mut self, change_tick: u32) {
-        self.internal_system.check_change_tick(change_tick)
+    } else {
+        state.started_looping_at = None;
+        ShouldRun::No
     }
 }
