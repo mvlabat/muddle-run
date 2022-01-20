@@ -35,7 +35,7 @@ use bevy::{
     pbr::{PointLight, PointLightBundle},
     render::camera::PerspectiveCameraBundle,
     transform::components::{GlobalTransform, Parent, Transform},
-    utils::HashMap,
+    utils::{HashMap, Instant},
 };
 use bevy_egui::EguiPlugin;
 use bevy_inspector_egui::{WorldInspectorParams, WorldInspectorPlugin};
@@ -471,7 +471,7 @@ fn slower_tick_rate() -> u16 {
 #[derive(Default, Clone)]
 pub struct NetAdaptiveTimestempState {
     accumulator: f64,
-    looping: bool,
+    started_looping_at: Option<Instant>,
 }
 
 fn net_adaptive_timestamp(
@@ -484,16 +484,29 @@ fn net_adaptive_timestamp(
     let rate = game_ticks_per_second.rate;
     let step = 1.0 / rate as f64;
 
-    if !state.looping {
+    if state.started_looping_at.is_none() {
         state.accumulator += time.delta_seconds_f64();
     }
 
     if state.accumulator >= step {
         state.accumulator -= step;
-        state.looping = true;
-        ShouldRun::YesAndCheckAgain
+        if let Some(started_looping_at) = state.started_looping_at {
+            let secs_being_in_loop = Instant::now()
+                .duration_since(started_looping_at)
+                .as_secs_f32();
+            let threshold_secs = 0.05; // 20 fsp
+            if secs_being_in_loop > threshold_secs {
+                state.started_looping_at = None;
+                ShouldRun::Yes
+            } else {
+                ShouldRun::YesAndCheckAgain
+            }
+        } else {
+            state.started_looping_at = Some(Instant::now());
+            ShouldRun::YesAndCheckAgain
+        }
     } else {
-        state.looping = false;
+        state.started_looping_at = None;
         ShouldRun::No
     }
 }
