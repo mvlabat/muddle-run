@@ -83,8 +83,8 @@ impl Plugin for MuddleServerPlugin {
         app.add_plugin(bevy::diagnostic::DiagnosticsPlugin::default());
         app.add_plugin(bevy::app::ScheduleRunnerPlugin::default());
 
-        app.add_startup_system(init_level.system());
-        app.add_startup_system(startup.system());
+        app.add_startup_system(init_level);
+        app.add_startup_system(startup);
 
         let persistence_url: Option<Url> = try_parse_from_env!("MUDDLE_PERSISTENCE_URL")
             .or_else(|| TOKIO.block_on(kube_discovery::discover_persistence()));
@@ -111,24 +111,23 @@ impl Plugin for MuddleServerPlugin {
             log::info!("Persistence service isn't available");
             app.insert_resource::<Option<UnboundedReceiver<PersistenceRequest>>>(None);
         }
-        app.add_startup_system(init_jwks_polling.system());
-        app.add_startup_system(handle_persistence_requests.system());
+        app.add_startup_system(init_jwks_polling);
+        app.add_startup_system(handle_persistence_requests);
 
-        app.add_system(process_idle_timeout.system());
+        app.add_system(process_idle_timeout);
 
         let input_stage = SystemStage::parallel()
-            .with_system(process_scheduled_spawns.system())
-            .with_system(process_network_events.system().label("net"))
-            .with_system(process_player_input_updates.system().after("net"))
-            .with_system(process_switch_role_requests.system().after("net"))
+            .with_system(process_scheduled_spawns)
+            .with_system(process_network_events.label("net"))
+            .with_system(process_player_input_updates.after("net"))
+            .with_system(process_switch_role_requests.after("net"))
             // It's ok to run the following in random order since object updates aren't possible
             // on the client before an authoritative confirmation that an object has been spawned.
-            .with_system(process_spawn_level_object_requests.system().after("net"))
-            .with_system(process_update_level_object_requests.system().after("net"))
-            .with_system(process_despawn_level_object_requests.system().after("net"));
-        let post_game_stage = SystemStage::parallel().with_system(process_player_events.system());
-        let broadcast_updates_stage =
-            SystemStage::parallel().with_system(send_network_updates.system());
+            .with_system(process_spawn_level_object_requests.after("net"))
+            .with_system(process_update_level_object_requests.after("net"))
+            .with_system(process_despawn_level_object_requests.after("net"));
+        let post_game_stage = SystemStage::parallel().with_system(process_player_events);
+        let broadcast_updates_stage = SystemStage::parallel().with_system(send_network_updates);
 
         // Game.
         app.add_plugin(MuddleSharedPlugin::new(

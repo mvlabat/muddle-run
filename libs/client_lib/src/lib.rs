@@ -75,36 +75,25 @@ impl Plugin for MuddleClientPlugin {
         let input_stage = SystemStage::parallel()
             // Processing network events should happen before tracking input
             // because we reset current's player inputs on each delta update.
-            .with_system(maintain_connection.system().label("connection"))
-            .with_system(
-                process_network_events
-                    .system()
-                    .label("network")
-                    .after("connection"),
-            )
-            .with_system(
-                input::track_input_events
-                    .system()
-                    .label("input")
-                    .after("network"),
-            )
-            .with_system(input::cast_mouse_ray.system().after("input"));
+            .with_system(maintain_connection.label("connection"))
+            .with_system(process_network_events.label("network").after("connection"))
+            .with_system(input::track_input_events.label("input").after("network"))
+            .with_system(input::cast_mouse_ray.after("input"));
         let broadcast_updates_stage = SystemStage::parallel()
-            .with_system(send_network_updates.system())
-            .with_system(send_requests.system());
+            .with_system(send_network_updates)
+            .with_system(send_requests);
         let post_tick_stage = SystemStage::parallel()
-            .with_system(control_builder_visibility.system())
-            .with_system(update_player_sensor_materials.system())
-            .with_system(reattach_camera.system().label("reattach_camera"))
-            .with_system(move_free_camera_pivot.system().after("reattach_camera"))
-            .with_system(pause_simulation.system().label("pause_simulation"))
+            .with_system(control_builder_visibility)
+            .with_system(update_player_sensor_materials)
+            .with_system(reattach_camera.label("reattach_camera"))
+            .with_system(move_free_camera_pivot.after("reattach_camera"))
+            .with_system(pause_simulation.label("pause_simulation"))
             .with_system(
                 control_ticking_speed
-                    .system()
                     .label("control_speed")
                     .after("pause_simulation"),
             )
-            .with_system(update_debug_ui_state.system().after("pause_simulation"));
+            .with_system(update_debug_ui_state.after("pause_simulation"));
 
         app.add_plugin(bevy_mod_picking::PickingPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin)
@@ -114,10 +103,10 @@ impl Plugin for MuddleClientPlugin {
             .init_resource::<input::MouseScreenPosition>()
             .add_event::<EditedObjectUpdate>()
             // Startup systems.
-            .add_startup_system(init_matchmaker_connection.system())
-            .add_startup_system(init_state.system())
-            .add_startup_system(basic_scene.system())
-            .add_startup_system(read_offline_auth_config.system())
+            .add_startup_system(init_matchmaker_connection)
+            .add_startup_system(init_state)
+            .add_startup_system(basic_scene)
+            .add_startup_system(read_offline_auth_config)
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
                 NetAdaptiveTimestemp::default(),
@@ -127,26 +116,22 @@ impl Plugin for MuddleClientPlugin {
                 post_tick_stage,
                 None,
             ))
-            .add_system(process_scheduled_spawns.system())
+            .add_system(process_scheduled_spawns)
             // Egui.
-            .add_startup_system(ui::set_ui_scale_factor.system())
-            .add_system(ui::debug_ui::update_debug_visibility.system())
-            .add_system(ui::debug_ui::debug_ui.system())
-            .add_system(ui::debug_ui::profiler_ui.system())
-            .add_system(ui::overlay_ui::connection_status_overlay.system())
-            .add_system(ui::debug_ui::inspect_object.system())
-            .add_system(ui::player_ui::leaderboard_ui.system())
-            .add_system(ui::player_ui::help_ui.system())
-            .add_system(ui::main_menu_ui::main_menu_ui.system())
+            .add_startup_system(ui::set_ui_scale_factor)
+            .add_system(ui::debug_ui::update_debug_visibility)
+            .add_system(ui::debug_ui::debug_ui)
+            .add_system(ui::debug_ui::profiler_ui)
+            .add_system(ui::overlay_ui::connection_status_overlay)
+            .add_system(ui::debug_ui::inspect_object)
+            .add_system(ui::player_ui::leaderboard_ui)
+            .add_system(ui::player_ui::help_ui)
+            .add_system(ui::main_menu_ui::main_menu_ui)
             // Not only Egui for builder mode.
             .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))
             // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.
-            .add_system(
-                process_control_points_input
-                    .system()
-                    .after("builder_system_set"),
-            )
-            .add_system(spawn_control_points.system().after("builder_system_set"));
+            .add_system(process_control_points_input.after("builder_system_set"))
+            .add_system(spawn_control_points.after("builder_system_set"));
 
         #[cfg(feature = "profiler")]
         mr_shared_lib::util::profile_schedule(&mut app.schedule);

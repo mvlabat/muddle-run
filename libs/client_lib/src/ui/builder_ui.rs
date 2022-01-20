@@ -9,7 +9,7 @@ use bevy::{
     ecs::{
         entity::Entity,
         schedule::{ParallelSystemDescriptorCoercion, ShouldRun, SystemSet},
-        system::{IntoSystem, Local, Query, Res, ResMut, SystemParam},
+        system::{Local, Query, Res, ResMut, SystemParam},
     },
     input::{mouse::MouseButton, Input},
     log,
@@ -115,9 +115,9 @@ pub struct EditedObjectUpdate {
 
 pub fn builder_system_set() -> SystemSet {
     SystemSet::new()
-        .with_run_criteria(builder_run_criteria.system())
-        .with_system(builder_ui.system().label("ui"))
-        .with_system(process_builder_mouse_input.system().after("ui"))
+        .with_run_criteria(builder_run_criteria)
+        .with_system(builder_ui.label("ui"))
+        .with_system(process_builder_mouse_input.after("ui"))
 }
 
 pub fn builder_run_criteria(

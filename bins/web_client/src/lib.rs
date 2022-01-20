@@ -10,7 +10,7 @@ pub fn main() {
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(bevy::DefaultPlugins)
         .add_plugin(MuddleClientPlugin)
-        .add_system(resize_canvas.system())
+        .add_system(resize_canvas)
         .run();
 }
 

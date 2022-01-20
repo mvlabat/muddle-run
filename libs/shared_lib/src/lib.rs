@@ -179,49 +179,37 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::SPAWN,
                 SystemStage::parallel()
-                    .with_system(Events::<IntersectionEvent>::update_system.system())
-                    .with_system(Events::<ContactEvent>::update_system.system())
-                    .with_system(Events::<PlayerFinish>::update_system.system())
-                    .with_system(Events::<PlayerDeath>::update_system.system())
-                    .with_system(switch_player_role.system().label("player_role"))
+                    .with_system(Events::<IntersectionEvent>::update_system)
+                    .with_system(Events::<ContactEvent>::update_system)
+                    .with_system(Events::<PlayerFinish>::update_system)
+                    .with_system(Events::<PlayerDeath>::update_system)
+                    .with_system(switch_player_role.label("player_role"))
                     .with_system(
                         despawn_players
-                            .system()
                             .label("despawn_players")
                             .after("player_role"),
                     )
-                    .with_system(
-                        despawn_level_objects
-                            .system()
-                            .label("despawn_level_objects"),
-                    )
+                    .with_system(despawn_level_objects.label("despawn_level_objects"))
                     // Updating level objects might despawn entities completely if they are
                     // updated with replacement. Running it before `despawn_level_objects` might
                     // result into an edge-case where changes to the `Spawned` component are not
                     // propagated.
                     .with_system(
                         update_level_objects
-                            .system()
                             .label("update_level_objects")
                             .after("despawn_level_objects"),
                     )
                     // Adding components to an entity if there's a command to remove it the queue
                     // will lead to crash. Executing this system before `update_level_objects` helps
                     // to avoid this scenario.
-                    .with_system(
-                        poll_calculating_shapes
-                            .system()
-                            .before("update_level_objects"),
-                    )
+                    .with_system(poll_calculating_shapes.before("update_level_objects"))
                     .with_system(
                         maintain_available_spawn_areas
-                            .system()
                             .label("maintain_available_spawn_areas")
                             .after("update_level_objects"),
                     )
                     .with_system(
                         spawn_players
-                            .system()
                             .after("despawn_players")
                             .after("maintain_available_spawn_areas"),
                     ),
@@ -229,37 +217,33 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::PRE_GAME,
                 SystemStage::parallel()
-                    .with_system(update_level_object_movement_route_settings.system())
-                    .with_system(physics::attach_bodies_and_colliders_system.system())
-                    .with_system(physics::create_joints_system.system()),
+                    .with_system(update_level_object_movement_route_settings)
+                    .with_system(physics::attach_bodies_and_colliders_system)
+                    .with_system(physics::create_joints_system),
             )
             .with_stage(
                 stage::FINALIZE_PHYSICS,
-                SystemStage::parallel()
-                    .with_system(physics::finalize_collider_attach_to_bodies.system()),
+                SystemStage::parallel().with_system(physics::finalize_collider_attach_to_bodies),
             )
             .with_stage(
                 stage::GAME,
                 SystemStage::parallel()
-                    .with_system(player_movement.system())
-                    .with_system(process_objects_route_graph.system().label("route_graph"))
-                    .with_system(load_object_positions.system().after("route_graph")),
+                    .with_system(player_movement)
+                    .with_system(process_objects_route_graph.label("route_graph"))
+                    .with_system(load_object_positions.after("route_graph")),
             )
             .with_stage(
                 stage::PHYSICS,
-                SystemStage::parallel()
-                    .with_system(physics::step_world_system::<NoUserData>.system()),
+                SystemStage::parallel().with_system(physics::step_world_system::<NoUserData>),
             )
             .with_stage(
                 stage::POST_PHYSICS,
                 SystemStage::parallel()
                     .with_system(
-                        process_collision_events
-                            .system()
-                            .chain(process_players_with_new_collisions.system()),
+                        process_collision_events.chain(process_players_with_new_collisions),
                     )
-                    .with_system(physics::sync_transforms.system().label("sync_transforms"))
-                    .with_system(sync_position.system().after("sync_transforms")),
+                    .with_system(physics::sync_transforms.label("sync_transforms"))
+                    .with_system(sync_position.after("sync_transforms")),
             )
             .with_stage(
                 stage::POST_GAME,
@@ -269,7 +253,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::SIMULATION_FINAL,
-                SystemStage::parallel().with_system(tick_simulation_frame.system()),
+                SystemStage::parallel().with_system(tick_simulation_frame),
             );
         #[cfg(feature = "profiler")]
         crate::util::profile_schedule(&mut simulation_schedule);
@@ -292,17 +276,17 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::POST_SIMULATIONS,
                 SystemStage::parallel()
-                    .with_system(tick_game_frame.system().label("tick"))
-                    .with_system(process_spawned_entities.system().after("tick"))
+                    .with_system(tick_game_frame.label("tick"))
+                    .with_system(process_spawned_entities.after("tick"))
                     // Remove disconnected players doesn't depend on ticks, so it's fine.
-                    .with_system(remove_disconnected_players.system()),
+                    .with_system(remove_disconnected_players),
             )
             .with_stage(
                 stage::POST_TICK,
                 post_tick_stage
                     .take()
                     .expect("Can't initialize the plugin more than once")
-                    .with_system(physics::collect_removals.system()),
+                    .with_system(physics::collect_removals),
             );
         #[cfg(feature = "profiler")]
         crate::util::profile_schedule(&mut main_schedule);
@@ -320,7 +304,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 .with_system_set(
                     SystemSet::on_update(GameState::Playing)
                         .after("restart_game")
-                        .with_system(read_movement_updates.system()),
+                        .with_system(read_movement_updates),
                 ),
         );
         app.add_stage_before(
@@ -335,10 +319,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         app.add_state(GameState::Playing);
         app.add_state_to_stage(stage::READ_INPUT_UPDATES, GameState::Playing);
 
-        app.add_startup_system(network_setup.system());
+        app.add_startup_system(network_setup);
 
         #[cfg(feature = "client")]
-        app.add_startup_system(crate::client::assets::init_muddle_assets.system());
+        app.add_startup_system(crate::client::assets::init_muddle_assets);
 
         #[cfg(feature = "profiler")]
         app.add_system_to_stage(
@@ -571,11 +555,8 @@ impl System for GameTickRunCriteria {
     }
 
     fn initialize(&mut self, world: &mut World) {
-        self.internal_system = Box::new(
-            Self::prepare_system
-                .system()
-                .config(|c| c.0 = Some(self.state.clone())),
-        );
+        self.internal_system =
+            Box::new(Self::prepare_system.config(|c| c.0 = Some(self.state.clone())));
         self.internal_system.initialize(world);
     }
 
@@ -689,11 +670,8 @@ impl System for SimulationTickRunCriteria {
     }
 
     fn initialize(&mut self, world: &mut World) {
-        self.internal_system = Box::new(
-            Self::prepare_system
-                .system()
-                .config(|c| c.0 = Some(self.state.clone())),
-        );
+        self.internal_system =
+            Box::new(Self::prepare_system.config(|c| c.0 = Some(self.state.clone())));
         self.internal_system.initialize(world);
     }
 
