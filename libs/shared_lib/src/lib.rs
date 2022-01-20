@@ -175,7 +175,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
 
         #[allow(unused_mut)]
         let mut simulation_schedule = Schedule::default()
-            .with_run_criteria(SimulationTickRunCriteria::default())
+            .with_run_criteria(simulation_tick_run_criteria.system())
             .with_stage(
                 stage::SPAWN,
                 SystemStage::parallel()
@@ -572,111 +572,48 @@ pub struct SimulationTickRunCriteriaState {
     last_server_frame: FrameNumber,
 }
 
-pub struct SimulationTickRunCriteria {
-    state: SimulationTickRunCriteriaState,
-    internal_system: Box<dyn System<In = (), Out = ShouldRun>>,
-}
-
-impl Default for SimulationTickRunCriteria {
-    fn default() -> Self {
-        Self {
-            state: SimulationTickRunCriteriaState {
-                last_game_frame: None,
-                last_player_frame: FrameNumber::new(0),
-                last_server_frame: FrameNumber::new(0),
-            },
-            internal_system: Box::new(Self::prepare_system.system()),
-        }
+fn simulation_tick_run_criteria(
+    mut state: Local<SimulationTickRunCriteriaState>,
+    game_state: Res<State<GameState>>,
+    game_time: Res<GameTime>,
+    simulation_time: Res<SimulationTime>,
+) -> ShouldRun {
+    #[cfg(feature = "profiler")]
+    puffin::profile_function!();
+    // Checking that a game frame has changed will make us avoid panicking in case we rewind
+    // simulation frame just 1 frame back.
+    if state.last_game_frame != Some(game_time.frame_number) {
+        state.last_game_frame = Some(game_time.frame_number);
+    } else if state.last_player_frame == simulation_time.player_frame
+        && state.last_server_frame == simulation_time.server_frame
+        && game_state.current() == &GameState::Playing
+    {
+        panic!(
+            "Simulation frame hasn't advanced: {}, {}",
+            simulation_time.player_frame, simulation_time.server_frame
+        );
     }
-}
+    state.last_player_frame = simulation_time.player_frame;
+    state.last_server_frame = simulation_time.server_frame;
 
-impl SimulationTickRunCriteria {
-    fn prepare_system(
-        mut state: Local<SimulationTickRunCriteriaState>,
-        game_state: Res<State<GameState>>,
-        game_time: Res<GameTime>,
-        simulation_time: Res<SimulationTime>,
-    ) -> ShouldRun {
-        #[cfg(feature = "profiler")]
-        puffin::profile_function!();
-        // Checking that a game frame has changed will make us avoid panicking in case we rewind
-        // simulation frame just 1 frame back.
-        if state.last_game_frame != Some(game_time.frame_number) {
-            state.last_game_frame = Some(game_time.frame_number);
-        } else if state.last_player_frame == simulation_time.player_frame
-            && state.last_server_frame == simulation_time.server_frame
-            && game_state.current() == &GameState::Playing
-        {
-            panic!(
-                "Simulation frame hasn't advanced: {}, {}",
-                simulation_time.player_frame, simulation_time.server_frame
-            );
-        }
-        state.last_player_frame = simulation_time.player_frame;
-        state.last_server_frame = simulation_time.server_frame;
-
-        if state.last_player_frame <= game_time.frame_number
-            && game_state.current() == &GameState::Playing
-        {
-            trace!(
-                "Run and loop a simulation schedule (simulation: {}, game: {}, state: {:?})",
-                simulation_time.player_frame,
-                game_time.frame_number,
-                *game_state
-            );
-            ShouldRun::YesAndCheckAgain
-        } else {
-            trace!(
-                "Don't run a simulation schedule (simulation: {}, game: {}, state: {:?})",
-                simulation_time.player_frame,
-                game_time.frame_number,
-                *game_state
-            );
-            ShouldRun::No
-        }
-    }
-}
-
-impl System for SimulationTickRunCriteria {
-    type In = ();
-    type Out = ShouldRun;
-
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed(std::any::type_name::<SimulationTickRunCriteria>())
-    }
-
-    fn new_archetype(&mut self, archetype: &Archetype) {
-        self.internal_system.new_archetype(archetype);
-    }
-
-    fn component_access(&self) -> &Access<ComponentId> {
-        self.internal_system.component_access()
-    }
-
-    fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
-        self.internal_system.archetype_component_access()
-    }
-
-    fn is_send(&self) -> bool {
-        self.internal_system.is_send()
-    }
-
-    unsafe fn run_unsafe(&mut self, _input: Self::In, world: &World) -> Self::Out {
-        self.internal_system.run_unsafe((), world)
-    }
-
-    fn apply_buffers(&mut self, world: &mut World) {
-        self.internal_system.apply_buffers(world)
-    }
-
-    fn initialize(&mut self, world: &mut World) {
-        self.internal_system =
-            Box::new(Self::prepare_system.config(|c| c.0 = Some(self.state.clone())));
-        self.internal_system.initialize(world);
-    }
-
-    fn check_change_tick(&mut self, change_tick: u32) {
-        self.internal_system.check_change_tick(change_tick)
+    if state.last_player_frame <= game_time.frame_number
+        && game_state.current() == &GameState::Playing
+    {
+        trace!(
+            "Run and loop a simulation schedule (simulation: {}, game: {}, state: {:?})",
+            simulation_time.player_frame,
+            game_time.frame_number,
+            *game_state
+        );
+        ShouldRun::YesAndCheckAgain
+    } else {
+        trace!(
+            "Don't run a simulation schedule (simulation: {}, game: {}, state: {:?})",
+            simulation_time.player_frame,
+            game_time.frame_number,
+            *game_state
+        );
+        ShouldRun::No
     }
 }
 
