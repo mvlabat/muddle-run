@@ -1,3 +1,5 @@
+#![allow(clippy::unused_unit)]
+
 use bevy::prelude::*;
 use mr_client_lib::MuddleClientPlugin;
 use wasm_bindgen::prelude::*;
