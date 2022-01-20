@@ -423,15 +423,15 @@ pub fn network_setup(mut net: ResMut<NetworkResource>) {
 const CLIENT_INPUT_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
     channel: 0,
     channel_mode: MessageChannelMode::Unreliable,
-    message_buffer_size: 8,
-    packet_buffer_size: 8,
+    message_buffer_size: 32,
+    packet_buffer_size: 32,
 };
 
 const CLIENT_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
     channel: 1,
     channel_mode: MessageChannelMode::Reliable {
         reliability_settings: ReliableChannelSettings {
-            bandwidth: 4096,
+            bandwidth: 1024 * 1024,
             recv_window_size: 1024,
             send_window_size: 1024,
             burst_bandwidth: 1024,
@@ -444,15 +444,15 @@ const CLIENT_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelS
         },
         max_message_len: 1024,
     },
-    message_buffer_size: 8,
-    packet_buffer_size: 8,
+    message_buffer_size: 128,
+    packet_buffer_size: 128,
 };
 
 const SERVER_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
     channel: 2,
     channel_mode: MessageChannelMode::Reliable {
         reliability_settings: ReliableChannelSettings {
-            bandwidth: 4096,
+            bandwidth: 1024 * 1024,
             recv_window_size: 1024,
             send_window_size: 1024,
             burst_bandwidth: 1024,
@@ -465,15 +465,15 @@ const SERVER_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelS
         },
         max_message_len: 1024,
     },
-    message_buffer_size: 8,
-    packet_buffer_size: 8,
+    message_buffer_size: 128,
+    packet_buffer_size: 128,
 };
 
 const SERVER_DELTA_UPDATE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
     channel: 3,
     channel_mode: MessageChannelMode::Unreliable,
-    message_buffer_size: 8,
-    packet_buffer_size: 8,
+    message_buffer_size: 32,
+    packet_buffer_size: 32,
 };
 
 #[cfg(test)]
