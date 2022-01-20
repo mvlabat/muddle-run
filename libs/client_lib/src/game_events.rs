@@ -12,6 +12,7 @@ pub fn process_scheduled_spawns(
     let PlayerSystemParamsMut {
         mut players,
         player_registry,
+        ..
     } = players;
     let iter = players.iter_mut().filter_map(move |(net_id, player)| {
         player_registry

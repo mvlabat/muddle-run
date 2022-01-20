@@ -20,7 +20,10 @@ use bevy::{
 };
 use bevy_rapier2d::{
     na::Point2,
-    physics::{ColliderBundle, RigidBodyBundle},
+    physics::{
+        wrapper::{ColliderFlagsComponent, ColliderShapeComponent, ColliderTypeComponent},
+        ColliderBundle, RigidBodyBundle,
+    },
     rapier::{
         dynamics::RigidBodyType,
         geometry::{ColliderFlags, ColliderShape, ColliderType, InteractionGroups},
@@ -28,14 +31,17 @@ use bevy_rapier2d::{
     },
 };
 use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
 
 #[derive(SystemParam)]
-pub struct LevelParams<'a> {
-    pub level_state: Res<'a, LevelState>,
-    pub entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
+pub struct LevelParams<'w, 's> {
+    pub level_state: Res<'w, LevelState>,
+    pub entity_registry: Res<'w, EntityRegistry<EntityNetId>>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
-impl<'a> LevelParams<'a> {
+impl<'w, 's> LevelParams<'w, 's> {
     pub fn level_object_by_entity(&self, entity: Entity) -> Option<&LevelObject> {
         self.entity_registry
             .get_id(entity)
@@ -206,44 +212,44 @@ impl LevelObjectDesc {
         match self {
             Self::Plane(_) => (
                 RigidBodyBundle {
-                    body_type: RigidBodyType::KinematicPositionBased,
+                    body_type: RigidBodyType::KinematicPositionBased.into(),
                     position: self.position().unwrap().into(),
                     ..RigidBodyBundle::default()
                 },
                 ColliderBundle {
-                    collider_type: ColliderType::Sensor,
-                    flags,
-                    shape,
+                    collider_type: ColliderType::Sensor.into(),
+                    flags: ColliderFlagsComponent(flags),
+                    shape: ColliderShapeComponent(shape),
                     ..ColliderBundle::default()
                 },
             ),
             Self::Cube(_) => (
                 RigidBodyBundle {
-                    body_type: RigidBodyType::KinematicPositionBased,
+                    body_type: RigidBodyType::KinematicPositionBased.into(),
                     position: [self.position().unwrap().x, self.position().unwrap().y].into(),
                     ..RigidBodyBundle::default()
                 },
                 ColliderBundle {
-                    collider_type: if is_ghost {
+                    collider_type: ColliderTypeComponent(if is_ghost {
                         ColliderType::Sensor
                     } else {
                         ColliderType::Solid
-                    },
-                    flags,
-                    shape,
+                    }),
+                    flags: ColliderFlagsComponent(flags),
+                    shape: ColliderShapeComponent(shape),
                     ..ColliderBundle::default()
                 },
             ),
             Self::RoutePoint(_) => (
                 RigidBodyBundle {
-                    body_type: RigidBodyType::KinematicPositionBased,
+                    body_type: RigidBodyType::KinematicPositionBased.into(),
                     position: [self.position().unwrap().x, self.position().unwrap().y].into(),
                     ..RigidBodyBundle::default()
                 },
                 ColliderBundle {
-                    collider_type: ColliderType::Sensor,
-                    flags,
-                    shape,
+                    collider_type: ColliderType::Sensor.into(),
+                    flags: ColliderFlagsComponent(flags),
+                    shape: ColliderShapeComponent(shape),
                     ..ColliderBundle::default()
                 },
             ),

@@ -18,9 +18,9 @@ use bevy::{
     math::Vec2,
     transform::components::Transform,
 };
-use bevy_rapier2d::rapier::{
-    dynamics::{RigidBodyPosition, RigidBodyVelocity},
-    math::Vector,
+use bevy_rapier2d::{
+    physics::wrapper::{RigidBodyPositionComponent, RigidBodyVelocityComponent},
+    rapier::math::Vector,
 };
 
 /// Positions should align in half a second.
@@ -123,14 +123,14 @@ pub fn read_movement_updates(
     }
 }
 
-type PlayersQuery<'a> = (
+type PlayersQuery = (
     Entity,
-    &'a mut RigidBodyPosition,
-    &'a mut RigidBodyVelocity,
-    &'a PlayerDirection,
-    &'a Position,
-    Option<&'a PlayerFrameSimulated>,
-    &'a Spawned,
+    &'static mut RigidBodyPositionComponent,
+    &'static mut RigidBodyVelocityComponent,
+    &'static PlayerDirection,
+    &'static Position,
+    Option<&'static PlayerFrameSimulated>,
+    &'static Spawned,
 );
 
 pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuery>) {
@@ -199,12 +199,12 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
     }
 }
 
-type LevelObjectsQuery<'a> = (
+type LevelObjectsQuery = (
     Entity,
-    &'a mut RigidBodyPosition,
-    &'a Position,
-    Option<&'a PlayerFrameSimulated>,
-    &'a Spawned,
+    &'static mut RigidBodyPositionComponent,
+    &'static Position,
+    Option<&'static PlayerFrameSimulated>,
+    &'static Spawned,
 );
 
 pub fn load_object_positions(
@@ -244,13 +244,13 @@ pub fn load_object_positions(
     }
 }
 
-type SimulatedEntitiesQuery<'a> = (
-    &'a RigidBodyPosition,
-    &'a mut Position,
-    Option<&'a mut Transform>,
-    Option<&'a mut PredictedPosition>,
-    Option<&'a PlayerFrameSimulated>,
-    &'a Spawned,
+type SimulatedEntitiesQuery = (
+    &'static RigidBodyPositionComponent,
+    &'static mut Position,
+    Option<&'static mut Transform>,
+    Option<&'static mut PredictedPosition>,
+    Option<&'static PlayerFrameSimulated>,
+    &'static Spawned,
 );
 
 pub fn sync_position(

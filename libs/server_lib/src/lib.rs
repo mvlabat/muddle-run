@@ -75,16 +75,16 @@ pub static TOKIO: SyncLazy<tokio::runtime::Runtime> = SyncLazy::new(|| {
 pub struct MuddleServerPlugin;
 
 impl Plugin for MuddleServerPlugin {
-    fn build(&self, builder: &mut AppBuilder) {
+    fn build(&self, app: &mut App) {
         // The minimal set of Bevy plugins needed for the game logic.
-        builder.add_plugin(bevy::log::LogPlugin::default());
-        builder.add_plugin(bevy::core::CorePlugin::default());
-        builder.add_plugin(bevy::transform::TransformPlugin::default());
-        builder.add_plugin(bevy::diagnostic::DiagnosticsPlugin::default());
-        builder.add_plugin(bevy::app::ScheduleRunnerPlugin::default());
+        app.add_plugin(bevy::log::LogPlugin::default());
+        app.add_plugin(bevy::core::CorePlugin::default());
+        app.add_plugin(bevy::transform::TransformPlugin::default());
+        app.add_plugin(bevy::diagnostic::DiagnosticsPlugin::default());
+        app.add_plugin(bevy::app::ScheduleRunnerPlugin::default());
 
-        builder.add_startup_system(init_level.system());
-        builder.add_startup_system(startup.system());
+        app.add_startup_system(init_level.system());
+        app.add_startup_system(startup.system());
 
         let persistence_url: Option<Url> = try_parse_from_env!("MUDDLE_PERSISTENCE_URL")
             .or_else(|| TOKIO.block_on(kube_discovery::discover_persistence()));
@@ -98,23 +98,23 @@ impl Plugin for MuddleServerPlugin {
                 auth0_client_id: std::env::var("MUDDLE_AUTH0_CLIENT_ID")
                     .expect("Expected MUDDLE_AUTH0_CLIENT_ID"),
             };
-            builder.insert_resource(config);
+            app.insert_resource(config);
             let (persistence_req_tx, persistence_req_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PersistenceRequest>();
             let (persistence_msg_tx, persistence_msg_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PersistenceMessage>();
-            builder.insert_resource(persistence_req_tx);
-            builder.insert_resource(Some(persistence_req_rx));
-            builder.insert_resource(persistence_msg_tx);
-            builder.insert_resource(persistence_msg_rx);
+            app.insert_resource(persistence_req_tx);
+            app.insert_resource(Some(persistence_req_rx));
+            app.insert_resource(persistence_msg_tx);
+            app.insert_resource(persistence_msg_rx);
         } else {
             log::info!("Persistence service isn't available");
-            builder.insert_resource::<Option<UnboundedReceiver<PersistenceRequest>>>(None);
+            app.insert_resource::<Option<UnboundedReceiver<PersistenceRequest>>>(None);
         }
-        builder.add_startup_system(init_jwks_polling.system());
-        builder.add_startup_system(handle_persistence_requests.system());
+        app.add_startup_system(init_jwks_polling.system());
+        app.add_startup_system(handle_persistence_requests.system());
 
-        builder.add_system(process_idle_timeout.system());
+        app.add_system(process_idle_timeout.system());
 
         let input_stage = SystemStage::parallel()
             .with_system(process_scheduled_spawns.system())
@@ -131,7 +131,7 @@ impl Plugin for MuddleServerPlugin {
             SystemStage::parallel().with_system(send_network_updates.system());
 
         // Game.
-        builder.add_plugin(MuddleSharedPlugin::new(
+        app.add_plugin(MuddleSharedPlugin::new(
             FixedTimestep::steps_per_second(simulations_per_second() as f64),
             input_stage,
             post_game_stage,
@@ -140,28 +140,27 @@ impl Plugin for MuddleServerPlugin {
             None,
         ));
 
-        let resources = builder.world_mut();
-        resources.get_resource_or_insert_with(EntityNetId::default);
-        resources.get_resource_or_insert_with(PlayerNetId::default);
-        resources.get_resource_or_insert_with(PlayerConnections::default);
-        resources.get_resource_or_insert_with(Vec::<(PlayerNetId, u32)>::default);
-        resources.get_resource_or_insert_with(HashMap::<u32, ConnectionState>::default);
-        resources.get_resource_or_insert_with(DeferredPlayerQueues::<RunnerInput>::default);
-        resources.get_resource_or_insert_with(DeferredPlayerQueues::<PlayerRole>::default);
-        resources.get_resource_or_insert_with(
+        let world = &mut app.world;
+        world.get_resource_or_insert_with(EntityNetId::default);
+        world.get_resource_or_insert_with(PlayerNetId::default);
+        world.get_resource_or_insert_with(PlayerConnections::default);
+        world.get_resource_or_insert_with(Vec::<(PlayerNetId, u32)>::default);
+        world.get_resource_or_insert_with(HashMap::<u32, ConnectionState>::default);
+        world.get_resource_or_insert_with(DeferredPlayerQueues::<RunnerInput>::default);
+        world.get_resource_or_insert_with(DeferredPlayerQueues::<PlayerRole>::default);
+        world.get_resource_or_insert_with(
             DeferredPlayerQueues::<messages::SpawnLevelObjectRequestBody>::default,
         );
-        resources
-            .get_resource_or_insert_with(DeferredPlayerQueues::<SpawnLevelObjectRequest>::default);
-        resources.get_resource_or_insert_with(DeferredPlayerQueues::<LevelObject>::default);
-        resources.get_resource_or_insert_with(DeferredPlayerQueues::<EntityNetId>::default);
-        resources.get_resource_or_insert_with(DeferredMessagesQueue::<RespawnPlayer>::default);
-        resources.get_resource_or_insert_with(DeferredMessagesQueue::<SpawnLevelObject>::default);
-        resources.get_resource_or_insert_with(DeferredMessagesQueue::<UpdateLevelObject>::default);
-        resources.get_resource_or_insert_with(DeferredMessagesQueue::<DespawnLevelObject>::default);
-        resources.get_resource_or_insert_with(|| LastPlayerDisconnectedAt(Instant::now()));
-        resources.get_resource_or_insert_with(|| IdleTimeout(idle_timeout()));
-        resources.get_resource_or_insert_with(Jwks::default);
+        world.get_resource_or_insert_with(DeferredPlayerQueues::<SpawnLevelObjectRequest>::default);
+        world.get_resource_or_insert_with(DeferredPlayerQueues::<LevelObject>::default);
+        world.get_resource_or_insert_with(DeferredPlayerQueues::<EntityNetId>::default);
+        world.get_resource_or_insert_with(DeferredMessagesQueue::<RespawnPlayer>::default);
+        world.get_resource_or_insert_with(DeferredMessagesQueue::<SpawnLevelObject>::default);
+        world.get_resource_or_insert_with(DeferredMessagesQueue::<UpdateLevelObject>::default);
+        world.get_resource_or_insert_with(DeferredMessagesQueue::<DespawnLevelObject>::default);
+        world.get_resource_or_insert_with(|| LastPlayerDisconnectedAt(Instant::now()));
+        world.get_resource_or_insert_with(|| IdleTimeout(idle_timeout()));
+        world.get_resource_or_insert_with(Jwks::default);
     }
 }
 

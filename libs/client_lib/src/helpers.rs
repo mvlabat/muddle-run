@@ -15,19 +15,21 @@ use bevy::{
     window::Window,
 };
 use mr_shared_lib::{messages::PlayerNetId, player::Player};
-use std::time::Duration;
+use std::{marker::PhantomData, time::Duration};
 
 /// Radius in screen coordinates.
 const DRAGGING_THRESHOLD: f32 = 10.0;
 const DOUBLE_CLICK_MAX_DELAY_SECS: f64 = 0.3;
 
 #[derive(SystemParam)]
-pub struct PlayerParams<'a> {
-    pub players: Res<'a, HashMap<PlayerNetId, Player>>,
-    pub current_player_net_id: Res<'a, CurrentPlayerNetId>,
+pub struct PlayerParams<'w, 's> {
+    pub players: Res<'w, HashMap<PlayerNetId, Player>>,
+    pub current_player_net_id: Res<'w, CurrentPlayerNetId>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
-impl<'a> PlayerParams<'a> {
+impl<'w, 's> PlayerParams<'w, 's> {
     pub fn current_player(&self) -> Option<&Player> {
         self.current_player_net_id
             .0
@@ -41,14 +43,14 @@ pub struct Previous;
 pub struct Current;
 
 #[derive(SystemParam)]
-pub struct MouseEntityPicker<'a, Q: Send + Sync + 'static, F: Send + Sync + 'static> {
-    prev_state: Local<'a, MouseEntityPickerData<Previous>>,
-    state: Local<'a, MouseEntityPickerData<Current>>,
-    button_input: Res<'a, Input<MouseButton>>,
-    mouse_screen_position: Res<'a, MouseScreenPosition>,
-    camera_query: Query<'a, &'static bevy_mod_picking::PickingCamera>,
-    camera_entity: Res<'a, MainCameraEntity>,
-    time: Res<'a, Time>,
+pub struct MouseEntityPicker<'w, 's, Q: Send + Sync + 'static, F: Send + Sync + 'static> {
+    prev_state: Local<'s, MouseEntityPickerData<Previous>>,
+    state: Local<'s, MouseEntityPickerData<Current>>,
+    button_input: Res<'w, Input<MouseButton>>,
+    mouse_screen_position: Res<'w, MouseScreenPosition>,
+    camera_query: Query<'w, 's, &'static bevy_mod_picking::PickingCamera>,
+    camera_entity: Res<'w, MainCameraEntity>,
+    time: Res<'w, Time>,
     #[system_param(ignore)]
     _q: std::marker::PhantomData<(Q, F)>,
 }
@@ -88,7 +90,7 @@ impl From<MouseEntityPickerData<Current>> for MouseEntityPickerData<Previous> {
     }
 }
 
-impl<'a, Q, F> MouseEntityPicker<'a, Q, F>
+impl<'w, 's, Q, F> MouseEntityPicker<'w, 's, Q, F>
 where
     Q: WorldQuery + Send + Sync + 'static,
     F: WorldQuery + Send + Sync + 'static,

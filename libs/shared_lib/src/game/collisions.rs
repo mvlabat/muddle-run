@@ -24,9 +24,10 @@ use bevy_rapier2d::{
 };
 
 #[derive(SystemParam)]
-pub struct CollisionQueries<'a> {
+pub struct CollisionQueries<'w, 's> {
     players: Query<
-        'a,
+        'w,
+        's,
         (
             Entity,
             &'static Spawned,
@@ -34,7 +35,7 @@ pub struct CollisionQueries<'a> {
             &'static mut PlayerSensors,
         ),
     >,
-    player_sensors: Query<'a, (Entity, &'static PlayerSensor)>,
+    player_sensors: Query<'w, 's, (Entity, &'static PlayerSensor)>,
 }
 
 /// The system returns player entities whose intersections were changed.

@@ -2,17 +2,21 @@ use crate::PLAYER_SENSOR_RADIUS;
 use bevy::{
     asset::{Assets, Handle},
     ecs::system::{Commands, Res, ResMut, SystemParam},
+    pbr::AlphaMode,
     prelude::StandardMaterial,
     render::{
         color::Color,
         mesh::{shape::Icosphere, Mesh},
     },
 };
+use std::marker::PhantomData;
 
 #[derive(SystemParam)]
-pub struct MuddleAssets<'a> {
-    pub materials: Res<'a, MuddleMaterials>,
-    pub meshes: Res<'a, MuddleMeshes>,
+pub struct MuddleAssets<'w, 's> {
+    pub materials: Res<'w, MuddleMaterials>,
+    pub meshes: Res<'w, MuddleMeshes>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
 pub struct MuddleMaterials {
@@ -64,20 +68,29 @@ pub fn init_muddle_assets(
             },
         },
         ghost: ObjectMaterials {
-            plane: materials.add(Color::rgba(0.3, 0.5, 0.3, a).into()),
-            plane_death: materials.add(Color::rgba(0.55, 0.15, 0.2, a).into()),
-            plane_finish: materials.add(Color::rgba(0.2, 0.25, 0.75, a).into()),
-            cube: materials.add(Color::rgba(0.4, 0.4, 0.4, a).into()),
-            cube_death: materials.add(Color::rgba(0.8, 0.35, 0.35, a).into()),
+            plane: materials.add(with_blend_alpha_mode(Color::rgba(0.3, 0.5, 0.3, a).into())),
+            plane_death: materials.add(with_blend_alpha_mode(
+                Color::rgba(0.55, 0.15, 0.2, a).into(),
+            )),
+            plane_finish: materials.add(with_blend_alpha_mode(
+                Color::rgba(0.2, 0.25, 0.75, a).into(),
+            )),
+            cube: materials.add(with_blend_alpha_mode(Color::rgba(0.4, 0.4, 0.4, a).into())),
+            cube_death: materials.add(with_blend_alpha_mode(
+                Color::rgba(0.8, 0.35, 0.35, a).into(),
+            )),
             route_point: {
-                let mut material: StandardMaterial = Color::rgba(0.4, 0.4, 0.7, a).into();
+                let mut material: StandardMaterial =
+                    with_blend_alpha_mode(Color::rgba(0.4, 0.4, 0.7, a).into());
                 material.reflectance = 0.0;
                 material.metallic = 0.0;
                 materials.add(material)
             },
         },
-        control_point_normal: materials.add(Color::rgb(1.0, 0.992, 0.816).into()),
-        control_point_hovered: materials.add(Color::rgb(0.5, 0.492, 0.816).into()),
+        control_point_normal: materials
+            .add(with_blend_alpha_mode(Color::rgb(1.0, 0.992, 0.816).into())),
+        control_point_hovered: materials
+            .add(with_blend_alpha_mode(Color::rgb(0.5, 0.492, 0.816).into())),
     });
     commands.insert_resource(MuddleMeshes {
         player_sensor: meshes.add(Mesh::from(Icosphere {
@@ -89,6 +102,11 @@ pub fn init_muddle_assets(
             subdivisions: 32,
         })),
     });
+}
+
+fn with_blend_alpha_mode(mut material: StandardMaterial) -> StandardMaterial {
+    material.alpha_mode = AlphaMode::Blend;
+    material
 }
 
 pub struct ObjectMaterials {

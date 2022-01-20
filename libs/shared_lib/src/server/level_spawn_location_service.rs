@@ -16,17 +16,18 @@ use bevy::{
     },
     math::Vec2,
 };
-use bevy_rapier2d::rapier::geometry::SharedShape;
+use bevy_rapier2d::physics::wrapper::ColliderShapeComponent;
 use rand::seq::SliceRandom;
 
 #[derive(SystemParam)]
-pub struct LevelSpawnLocationService<'a> {
-    level_state: Res<'a, LevelState>,
-    level_objects: Query<'a, (&'static Position, &'static SharedShape), With<LevelObjectTag>>,
-    entity_registry: Res<'a, EntityRegistry<EntityNetId>>,
+pub struct LevelSpawnLocationService<'w, 's> {
+    level_state: Res<'w, LevelState>,
+    level_objects:
+        Query<'w, 's, (&'static Position, &'static ColliderShapeComponent), With<LevelObjectTag>>,
+    entity_registry: Res<'w, EntityRegistry<EntityNetId>>,
 }
 
-impl<'a> LevelSpawnLocationService<'a> {
+impl<'w, 's> LevelSpawnLocationService<'w, 's> {
     pub fn spawn_position(&self, frame_number: FrameNumber) -> Vec2 {
         let available_shapes = self
             .level_state

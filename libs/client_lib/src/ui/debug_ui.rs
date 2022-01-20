@@ -8,7 +8,7 @@ use bevy::{
     prelude::*,
     utils::HashMap,
 };
-use bevy_egui::{egui, EguiContext};
+use bevy_egui::{egui, egui::epaint::RectShape, EguiContext};
 use mr_shared_lib::{
     client::components::DebugUiVisibility,
     framebuffer::FrameNumber,
@@ -23,17 +23,19 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     SimulationTime,
 };
-use std::collections::VecDeque;
+use std::{collections::VecDeque, marker::PhantomData};
 
 #[derive(SystemParam)]
-pub struct DebugData<'a> {
-    time: Res<'a, SimulationTime>,
-    tick_rate: Res<'a, GameTicksPerSecond>,
-    player_delay: Res<'a, PlayerDelay>,
-    adjusted_speed_reason: Res<'a, AdjustedSpeedReason>,
-    target_frames_ahead: Res<'a, TargetFramesAhead>,
-    estimated_server_time: Res<'a, EstimatedServerTime>,
-    connection_state: Res<'a, ConnectionState>,
+pub struct DebugData<'w, 's> {
+    time: Res<'w, SimulationTime>,
+    tick_rate: Res<'w, GameTicksPerSecond>,
+    player_delay: Res<'w, PlayerDelay>,
+    adjusted_speed_reason: Res<'w, AdjustedSpeedReason>,
+    target_frames_ahead: Res<'w, TargetFramesAhead>,
+    estimated_server_time: Res<'w, EstimatedServerTime>,
+    connection_state: Res<'w, ConnectionState>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
 #[derive(Default)]
@@ -61,7 +63,7 @@ pub fn update_debug_visibility(
     mut debug_ui_was_shown: Local<bool>,
     debug_ui_state: Res<DebugUiState>,
     mut visibility_settings: ResMut<VisibilitySettings>,
-    mut debug_ui_visible: Query<&mut Visible, With<DebugUiVisibility>>,
+    mut debug_ui_visible: Query<&mut Visibility, With<DebugUiVisibility>>,
 ) {
     visibility_settings.debug = debug_ui_state.show;
     if *debug_ui_was_shown != debug_ui_state.show {
@@ -191,15 +193,15 @@ pub fn debug_ui(
 }
 
 #[derive(SystemParam)]
-pub struct InspectObjectQueries<'a> {
-    players: Res<'a, HashMap<PlayerNetId, Player>>,
-    player_registry: Res<'a, EntityRegistry<PlayerNetId>>,
-    objects_registry: Res<'a, EntityRegistry<EntityNetId>>,
-    level_state: Res<'a, LevelState>,
-    positions: Query<'a, &'static Position>,
-    player_directions: Query<'a, &'static PlayerDirection>,
-    level_object_movements: Query<'a, &'static LevelObjectMovement>,
-    ghosts: Query<'a, &'static LevelObjectStaticGhost>,
+pub struct InspectObjectQueries<'w, 's> {
+    players: Res<'w, HashMap<PlayerNetId, Player>>,
+    player_registry: Res<'w, EntityRegistry<PlayerNetId>>,
+    objects_registry: Res<'w, EntityRegistry<EntityNetId>>,
+    level_state: Res<'w, LevelState>,
+    positions: Query<'w, 's, &'static Position>,
+    player_directions: Query<'w, 's, &'static PlayerDirection>,
+    level_object_movements: Query<'w, 's, &'static LevelObjectMovement>,
+    ghosts: Query<'w, 's, &'static LevelObjectStaticGhost>,
 }
 
 pub fn inspect_object(
@@ -273,16 +275,16 @@ fn graph(
 
     // TODO (from Egui): we should not use `slider_width` as default graph width.
     let height = ui.style().spacing.slider_width;
-    let size = vec2(ui.available_size_before_wrap_finite().x, height);
+    let size = vec2(ui.max_rect().width(), height);
     let (rect, response) = ui.allocate_at_least(size, Sense::hover());
     let style = ui.style().noninteractive();
 
-    let mut shapes = vec![Shape::Rect {
+    let mut shapes = vec![Shape::Rect(RectShape {
         rect,
         corner_radius: style.corner_radius,
         fill: ui.style().visuals.extreme_bg_color,
         stroke: ui.style().noninteractive().bg_stroke,
-    }];
+    })];
 
     let rect = rect.shrink(4.0);
     let line_stroke = Stroke::new(1.0, Color32::from_additive_luminance(128));

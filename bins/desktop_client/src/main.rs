@@ -2,14 +2,12 @@ use bevy::prelude::*;
 use mr_client_lib::MuddleClientPlugin;
 
 fn main() {
-    env_logger::init();
-
     let _guard = sentry::init(sentry::ClientOptions {
         release: sentry::release_name!(),
         ..Default::default()
     });
 
-    App::build()
+    App::new()
         // Window and rendering.
         .insert_resource(WindowDescriptor {
             title: "Muddle Run".to_owned(),

@@ -577,7 +577,7 @@ fn authentication_screen(
                         .expect("Expected an email when linking accounts");
                     egui::widgets::TextEdit::singleline(email)
                         .desired_width(AUTH_INPUT_FIELD_WIDTH)
-                        .enabled(false)
+                        .interactive(false)
                         .ui(ui);
                 } else {
                     auth_ui_state.email.ui(ui);
@@ -591,9 +591,15 @@ fn authentication_screen(
                     || auth_ui_state.email.is_valid())
                     && auth_ui_state.password.is_valid();
                 ui.horizontal(|ui| {
-                    if egui::widgets::Button::new(if is_sign_up { "Sign Up" } else { "Sign In" })
-                        .enabled(!auth_ui_state.pending_request && is_valid)
-                        .ui(ui)
+                    if ui
+                        .add_enabled(
+                            !auth_ui_state.pending_request && is_valid,
+                            egui::widgets::Button::new(if is_sign_up {
+                                "Sign Up"
+                            } else {
+                                "Sign In"
+                            }),
+                        )
                         .clicked()
                     {
                         auth_ui_state.pending_request = true;
@@ -810,9 +816,11 @@ fn matchmaker_screen(
         // Server list.
         let mut sorted_servers = servers.values().collect::<Vec<_>>();
         sorted_servers.sort_by(|a, b| a.name.cmp(&b.name));
-        egui::containers::ScrollArea::from_max_height(500.0).show(ui, |ui| {
-            server_list(ui, &sorted_servers, selected);
-        });
+        egui::containers::ScrollArea::vertical()
+            .max_height(500.0)
+            .show(ui, |ui| {
+                server_list(ui, &sorted_servers, selected);
+            });
     }
 
     // Play button.
@@ -828,11 +836,13 @@ fn matchmaker_screen(
         ),
         egui::Sense::hover(),
     );
-    let button_response = ui.put(
-        egui::Rect::from_min_size(outer_rect.center() - button_size / 2.0, button_size),
-        egui::widgets::Button::new("Play").enabled(is_selected),
-    );
-    if button_response.clicked() {
+    let button_response = ui.add_enabled_ui(is_selected, |ui| {
+        ui.put(
+            egui::Rect::from_min_size(outer_rect.center() - button_size / 2.0, button_size),
+            egui::widgets::Button::new("Play"),
+        )
+    });
+    if button_response.inner.clicked() {
         *server_to_connect = Some(ServerToConnect(servers[selected.as_ref().unwrap()].clone()));
     }
 }
@@ -846,7 +856,7 @@ fn server_list(ui: &mut egui::Ui, servers: &[&Server], selected: &mut Option<Str
         let padding = 10.0;
         let spacing = 5.0;
         let (outer_rect, response) = ui.allocate_exact_size(
-            egui::Vec2::new(ui.available_size_before_wrap_finite().x, 60.0),
+            egui::Vec2::new(ui.max_rect().width(), 60.0),
             egui::Sense::click(),
         );
 
@@ -860,20 +870,23 @@ fn server_list(ui: &mut egui::Ui, servers: &[&Server], selected: &mut Option<Str
             None
         };
 
-        let server_name_galley = ui
-            .fonts()
-            .layout_no_wrap(egui::TextStyle::Heading, server.name.clone());
+        let server_name_galley = ui.fonts().layout_no_wrap(
+            server.name.clone(),
+            egui::TextStyle::Heading,
+            ui.visuals().text_color(),
+        );
         let server_name_cursor = inner_rect.min;
 
         let players_galley = ui.fonts().layout_no_wrap(
-            egui::TextStyle::Body,
             format!(
                 "Players: {}/{}",
                 server.player_count, server.player_capacity
             ),
+            egui::TextStyle::Body,
+            ui.visuals().text_color(),
         );
         let players_cursor =
-            inner_rect.min + egui::Vec2::new(0.0, server_name_galley.size.y + spacing);
+            inner_rect.min + egui::Vec2::new(0.0, server_name_galley.size().y + spacing);
 
         if let Some(fill) = fill {
             ui.painter().rect_filled(outer_rect, 0.0, fill);
@@ -885,13 +898,8 @@ fn server_list(ui: &mut egui::Ui, servers: &[&Server], selected: &mut Option<Str
             ],
             ui.style().visuals.window_stroke(),
         );
-        ui.painter().galley(
-            server_name_cursor,
-            server_name_galley,
-            ui.visuals().text_color(),
-        );
-        ui.painter()
-            .galley(players_cursor, players_galley, ui.visuals().text_color());
+        ui.painter().galley(server_name_cursor, server_name_galley);
+        ui.painter().galley(players_cursor, players_galley);
 
         if response.clicked() {
             *selected = Some(server.name.clone());
@@ -901,7 +909,7 @@ fn server_list(ui: &mut egui::Ui, servers: &[&Server], selected: &mut Option<Str
 }
 
 fn status_bar(ui: &mut egui::Ui, label: impl ToString, progress: f32) {
-    let desired_width = ui.available_size_before_wrap_finite().x;
+    let desired_width = ui.max_rect().width();
     let height = ui.spacing().interact_size.y;
     let (outer_rect, _response) =
         ui.allocate_exact_size(egui::Vec2::new(desired_width, height), egui::Sense::hover());
@@ -915,13 +923,13 @@ fn status_bar(ui: &mut egui::Ui, label: impl ToString, progress: f32) {
         let fill = egui::Color32::from_rgb(23, 98, 3);
         let stroke = egui::Stroke::new(0.0, egui::Color32::TRANSPARENT);
 
-        ui.painter().add(egui::Shape::Rect {
+        ui.painter().add(egui::Shape::Rect(egui::epaint::RectShape {
             rect: egui::Rect::from_min_size(outer_rect.min, size),
             corner_radius,
             fill,
             stroke,
-        });
-        ui.painter().add(egui::Shape::Rect {
+        }));
+        ui.painter().add(egui::Shape::Rect(egui::epaint::RectShape {
             rect: egui::Rect::from_min_size(
                 outer_rect.min.add(egui::Vec2::new(0.0, size.y / 2.0)),
                 size.mul(egui::Vec2::new(1.0, 0.5)),
@@ -929,9 +937,9 @@ fn status_bar(ui: &mut egui::Ui, label: impl ToString, progress: f32) {
             corner_radius: 0.0,
             fill,
             stroke,
-        });
+        }));
         if size.x < outer_rect.size().sub(egui::Vec2::new(corner_radius, 0.0)).x {
-            ui.painter().add(egui::Shape::Rect {
+            ui.painter().add(egui::Shape::Rect(egui::epaint::RectShape {
                 rect: egui::Rect::from_min_size(
                     outer_rect.min.add(egui::Vec2::new(corner_radius, 0.0)),
                     size.sub(egui::Vec2::new(corner_radius, 0.0)),
@@ -939,7 +947,7 @@ fn status_bar(ui: &mut egui::Ui, label: impl ToString, progress: f32) {
                 corner_radius: 0.0,
                 fill,
                 stroke,
-            });
+            }));
         }
     }
 

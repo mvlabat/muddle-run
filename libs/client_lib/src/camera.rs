@@ -10,6 +10,7 @@ use bevy::{
         system::{Commands, Query, QuerySet, RemovedComponents, Res},
     },
     log,
+    prelude::QueryState,
     transform::components::{Parent, Transform},
 };
 use mr_shared_lib::{
@@ -21,10 +22,17 @@ use mr_shared_lib::{
 
 const CAMERA_MOVEMENT_SPEED: f32 = 4.0;
 
-pub type ReattachCameraQueries<'a, 'b, 'c> = QuerySet<(
-    Query<'a, Option<&'b Parent>, With<CameraPivotTag>>,
-    Query<'a, (Entity, &'c Spawned, &'c Position), (Changed<Spawned>, With<PlayerTag>)>,
-)>;
+pub type ReattachCameraQueries<'w, 's> = QuerySet<
+    'w,
+    's,
+    (
+        QueryState<Option<&'static Parent>, With<CameraPivotTag>>,
+        QueryState<
+            (Entity, &'static Spawned, &'static Position),
+            (Changed<Spawned>, With<PlayerTag>),
+        >,
+    ),
+>;
 
 pub fn reattach_camera(
     mut commands: Commands,
@@ -33,14 +41,15 @@ pub fn reattach_camera(
     current_player_net_id: Res<CurrentPlayerNetId>,
     player_registry: Res<EntityRegistry<PlayerNetId>>,
     despawned_player_events: RemovedComponents<PlayerTag>,
-    queries: ReattachCameraQueries,
+    mut queries: ReattachCameraQueries,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    let camera_parent = queries
+    let has_camera_parent = queries
         .q0()
         .get(main_camera_pivot.0)
-        .expect("Expected the camera to initialize in `basic_scene`");
+        .expect("Expected the camera to initialize in `basic_scene`")
+        .is_some();
 
     let mut main_camera_pivot_commands = commands.entity(main_camera_pivot.0);
     // TODO: track the following (to avoid iterating each frame):
@@ -52,10 +61,7 @@ pub fn reattach_camera(
             Some(player_net_id) == player_registry.get_id(player_entity)
         });
         if is_current_player {
-            match (
-                spawned.is_spawned(time.frame_number),
-                camera_parent.is_some(),
-            ) {
+            match (spawned.is_spawned(time.frame_number), has_camera_parent) {
                 (true, false) => {
                     log::trace!("Attaching camera pivot to a player");
                     main_camera_pivot_commands
@@ -79,7 +85,7 @@ pub fn reattach_camera(
         let is_current_player = current_player_net_id.0.map_or(false, |player_net_id| {
             Some(player_net_id) == player_registry.get_id(despawned_player_entity)
         });
-        if camera_parent.is_some() {
+        if has_camera_parent {
             log::warn!("Resetting camera pivot didn't happen in time, resetting camera position");
             if is_current_player {
                 main_camera_pivot_commands

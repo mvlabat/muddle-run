@@ -12,7 +12,7 @@ use bevy::{
 #[cfg(feature = "client")]
 use bevy::{
     prelude::*,
-    render::{mesh::Indices, pipeline::PrimitiveTopology},
+    render::{mesh::Indices, render_resource::PrimitiveTopology},
 };
 
 pub fn object_height(collision_logic: CollisionLogic) -> f32 {
@@ -23,7 +23,7 @@ pub fn object_height(collision_logic: CollisionLogic) -> f32 {
     }
 }
 
-pub trait ClientFactory<'a> {
+pub trait ClientFactory<'w, 's> {
     type Dependencies;
     type Input;
 
@@ -39,8 +39,8 @@ pub trait ClientFactory<'a> {
 
 pub struct PlayerClientFactory;
 
-impl<'a> ClientFactory<'a> for PlayerClientFactory {
-    type Dependencies = PbrClientParams<'a>;
+impl<'w, 's> ClientFactory<'w, 's> for PlayerClientFactory {
+    type Dependencies = PbrClientParams<'w, 's>;
     type Input = Vec2;
 
     #[cfg(feature = "client")]
@@ -72,8 +72,8 @@ impl<'a> ClientFactory<'a> for PlayerClientFactory {
 
 pub struct PlayerSensorClientFactory;
 
-impl<'a> ClientFactory<'a> for PlayerSensorClientFactory {
-    type Dependencies = PbrClientParams<'a>;
+impl<'w, 's> ClientFactory<'w, 's> for PlayerSensorClientFactory {
+    type Dependencies = PbrClientParams<'w, 's>;
     type Input = ();
 
     #[cfg(feature = "client")]
@@ -86,9 +86,8 @@ impl<'a> ClientFactory<'a> for PlayerSensorClientFactory {
             .insert_bundle(PbrBundle {
                 mesh: deps.assets.meshes.player_sensor.clone(),
                 material: deps.assets.materials.player_sensor_normal.clone(),
-                visible: Visible {
+                visibility: Visibility {
                     is_visible: deps.visibility_settings.debug,
-                    is_transparent: false,
                 },
                 ..Default::default()
             })
@@ -112,8 +111,8 @@ pub struct LevelObjectInput<T: Clone> {
     pub is_ghost: bool,
 }
 
-impl<'a> ClientFactory<'a> for PlaneClientFactory {
-    type Dependencies = PbrClientParams<'a>;
+impl<'w, 's> ClientFactory<'w, 's> for PlaneClientFactory {
+    type Dependencies = PbrClientParams<'w, 's>;
     type Input = (
         LevelObjectInput<PlaneDesc>,
         Option<bevy_rapier2d::rapier::geometry::SharedShape>,
@@ -206,13 +205,12 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
         };
 
         commands.insert_bundle(PbrBundle {
-            visible: Visible {
+            visibility: Visibility {
                 is_visible: if input.is_ghost {
                     deps.visibility_settings.ghosts
                 } else {
                     true
                 },
-                is_transparent: input.is_ghost,
             },
             mesh: deps.meshes.add(mesh),
             material: {
@@ -249,8 +247,8 @@ impl<'a> ClientFactory<'a> for PlaneClientFactory {
 
 pub struct CubeClientFactory;
 
-impl<'a> ClientFactory<'a> for CubeClientFactory {
-    type Dependencies = PbrClientParams<'a>;
+impl<'w, 's> ClientFactory<'w, 's> for CubeClientFactory {
+    type Dependencies = PbrClientParams<'w, 's>;
     type Input = LevelObjectInput<CubeDesc>;
 
     #[cfg(feature = "client")]
@@ -265,13 +263,12 @@ impl<'a> ClientFactory<'a> for CubeClientFactory {
             1.0
         };
         commands.insert_bundle(PbrBundle {
-            visible: Visible {
+            visibility: Visibility {
                 is_visible: if input.is_ghost {
                     deps.visibility_settings.ghosts
                 } else {
                     true
                 },
-                is_transparent: input.is_ghost,
             },
             mesh: deps.meshes.add(Mesh::from(shape::Cube {
                 size: input.desc.size * 2.0 * ghost_size_multiplier,
@@ -314,8 +311,8 @@ pub const ROUTE_POINT_BASE_EDGE_HALF_LEN: f32 = 0.25;
 
 pub struct RoutePointClientFactory;
 
-impl<'a> ClientFactory<'a> for RoutePointClientFactory {
-    type Dependencies = PbrClientParams<'a>;
+impl<'w, 's> ClientFactory<'w, 's> for RoutePointClientFactory {
+    type Dependencies = PbrClientParams<'w, 's>;
     type Input = LevelObjectInput<RoutePointDesc>;
 
     #[cfg(feature = "client")]
@@ -330,13 +327,12 @@ impl<'a> ClientFactory<'a> for RoutePointClientFactory {
             1.0
         };
         commands.insert_bundle(PbrBundle {
-            visible: Visible {
+            visibility: Visibility {
                 is_visible: if input.is_ghost {
                     deps.visibility_settings.ghosts
                 } else {
                     deps.visibility_settings.route_points
                 },
-                is_transparent: input.is_ghost,
             },
             mesh: deps.meshes.add(Mesh::from(Pyramid {
                 height: ROUTE_POINT_HEIGHT * ghost_size_multiplier,
@@ -371,16 +367,18 @@ pub struct VisibilitySettings {
 
 #[cfg(feature = "client")]
 #[derive(SystemParam)]
-pub struct PbrClientParams<'a> {
-    meshes: ResMut<'a, Assets<Mesh>>,
-    assets: MuddleAssets<'a>,
-    visibility_settings: Res<'a, VisibilitySettings>,
-    mesh_query: Query<'a, &'static Handle<Mesh>>,
+pub struct PbrClientParams<'w, 's> {
+    meshes: ResMut<'w, Assets<Mesh>>,
+    assets: MuddleAssets<'w, 's>,
+    visibility_settings: Res<'w, VisibilitySettings>,
+    mesh_query: Query<'w, 's, &'static Handle<Mesh>>,
 }
 
 #[cfg(not(feature = "client"))]
 #[derive(SystemParam)]
-pub struct PbrClientParams<'a> {
+pub struct PbrClientParams<'w, 's> {
     #[system_param(ignore)]
-    _lifetime: std::marker::PhantomData<&'a ()>,
+    _w_lt: std::marker::PhantomData<&'w ()>,
+    #[system_param(ignore)]
+    _s_lt: std::marker::PhantomData<&'s ()>,
 }

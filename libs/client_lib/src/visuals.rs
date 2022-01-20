@@ -11,14 +11,13 @@ use bevy::{
     asset::{Assets, Handle},
     ecs::{
         entity::Entity,
-        query::{Or, With},
+        query::{Or, With, Without},
         system::{Commands, Local, Query, Res, ResMut, SystemParam},
     },
     input::mouse::MouseButton,
     math::{Quat, Vec2, Vec3, Vec3Swizzles},
-    pbr::PbrBundle,
-    prelude::{StandardMaterial, Without},
-    render::{draw::Visible, mesh::Mesh},
+    pbr::{PbrBundle, StandardMaterial},
+    render::{mesh::Mesh, view::Visibility},
     transform::components::{Children, Parent, Transform},
 };
 use mr_shared_lib::{
@@ -43,9 +42,9 @@ pub fn control_builder_visibility(
     player_params: PlayerParams,
     level_params: LevelParams,
     mut visibility_settings: ResMut<VisibilitySettings>,
-    mut level_objects_query: Query<(Entity, &Transform, &mut Visible), With<LevelObjectTag>>,
+    mut level_objects_query: Query<(Entity, &Transform, &mut Visibility), With<LevelObjectTag>>,
     mut ghosts_query: Query<
-        (&Transform, &mut Visible, &LevelObjectStaticGhost),
+        (&Transform, &mut Visibility, &LevelObjectStaticGhost),
         Without<LevelObjectTag>,
     >,
 ) {
@@ -92,8 +91,9 @@ pub fn control_builder_visibility(
     }
 }
 
-pub type ControlEntitiesQuery<'a> = Query<
-    'a,
+pub type ControlEntitiesQuery<'w, 's> = Query<
+    'w,
+    's,
     Entity,
     Or<(
         With<LevelObjectControlPoint>,
@@ -210,22 +210,24 @@ pub type ControlEntitiesQueryMutFilter = Or<(
     With<LevelObjectControlBorder>,
 )>;
 
-pub type ControlEntitiesQueryMut<'a> =
-    Query<'a, ControlEntitiesQueryMutComponents, ControlEntitiesQueryMutFilter>;
+pub type ControlEntitiesQueryMut<'w, 's> =
+    Query<'w, 's, ControlEntitiesQueryMutComponents, ControlEntitiesQueryMutFilter>;
 
 #[derive(SystemParam)]
-pub struct ControlPointsQueries<'a> {
+pub struct ControlPointsQueries<'w, 's> {
     control_point_parent_query: Query<
-        'a,
+        'w,
+        's,
         (
             &'static LevelObjectStaticGhostParent,
             &'static LevelObjectControlPoints,
             &'static LevelObjectControlBorders,
         ),
     >,
-    control_entities_query: ControlEntitiesQueryMut<'a>,
+    control_entities_query: ControlEntitiesQueryMut<'w, 's>,
     control_point_parent_ghost_query: Query<
-        'a,
+        'w,
+        's,
         &'static Transform,
         (
             With<LevelObjectStaticGhost>,

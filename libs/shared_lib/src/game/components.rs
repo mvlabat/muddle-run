@@ -3,18 +3,23 @@ use crate::{
     game::level::CollisionLogic,
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
-use bevy::{ecs::entity::Entity, math::Vec2, utils::HashSet};
+use bevy::{
+    ecs::{component::Component, entity::Entity},
+    math::Vec2,
+    utils::HashSet,
+};
 use std::collections::VecDeque;
 
 // NOTE: After adding components for new archetypes, make sure that related entities are cleaned up
 // in the `restart_game` system.
 
+#[derive(Component)]
 pub struct PlayerTag;
 
-#[derive(Clone)]
+#[derive(Component, Clone)]
 pub struct PlayerSensor(pub Entity);
 
-#[derive(Debug)]
+#[derive(Component, Debug)]
 pub struct PlayerSensors {
     pub main: PlayerSensorState,
     pub sensors: Vec<(Entity, PlayerSensorState)>,
@@ -54,16 +59,21 @@ impl PlayerSensorState {
     }
 }
 
+#[derive(Component)]
 pub struct LevelObjectTag;
 
+#[derive(Component)]
 pub struct LevelObjectLabel(pub String);
 
 /// Represents a level object at its initial position.
+#[derive(Component)]
 pub struct LevelObjectStaticGhost(pub Entity);
 
+#[derive(Component)]
 pub struct LevelObjectStaticGhostParent(pub Entity);
 
 /// Represents Player's input (not an actual direction of entity's movement).
+#[derive(Component)]
 pub struct PlayerDirection {
     /// `None` indicates a missing network input.
     pub buffer: Framebuffer<Option<Vec2>>,
@@ -80,6 +90,7 @@ impl PlayerDirection {
 }
 
 /// Represents start positions before moving an entity.
+#[derive(Component)]
 pub struct Position {
     pub buffer: Framebuffer<Vec2>,
 }
@@ -103,6 +114,7 @@ impl Position {
 /// Is used only by the client, to lerp the position if an authoritative update arrives from the
 /// server. Using this component only makes sense if it's movement is not deterministic (i.e. it
 /// can be affected by collisions with other entities or is controlled by a player, etc).
+#[derive(Component)]
 pub struct PredictedPosition {
     pub value: Vec2,
 }
@@ -115,7 +127,7 @@ pub enum SpawnCommand {
 
 /// The purpose of this component is providing a frame number of when a component was spawned,
 /// to be able to avoid processing an entity in case rewind game state during lag compensation.
-#[derive(Clone, Debug)]
+#[derive(Component, Clone, Debug)]
 pub struct Spawned {
     /// We store an option since FrameNumber represents a wrapped counter (i.e. cycling counter).
     /// If a component gets old enough, we set the timestamp to `None`, as we become sure that
@@ -189,9 +201,10 @@ impl Spawned {
 }
 
 /// Marks an entity to be simulated with using `SimulationTime::player_frame`.
+#[derive(Component)]
 pub struct PlayerFrameSimulated;
 
-#[derive(Clone)]
+#[derive(Component, Clone)]
 pub struct LevelObjectMovement {
     /// May point to the future if it's the start of the game and we have non-zero start offset.
     pub frame_started: FrameNumber,

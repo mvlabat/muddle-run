@@ -10,6 +10,7 @@ use bevy::{
     utils::HashMap,
 };
 use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
 
 #[derive(Debug)]
 pub enum PlayerEvent {
@@ -18,9 +19,11 @@ pub enum PlayerEvent {
 }
 
 #[derive(SystemParam)]
-pub struct PlayerSystemParamsMut<'a> {
-    pub players: ResMut<'a, HashMap<PlayerNetId, Player>>,
-    pub player_registry: ResMut<'a, EntityRegistry<PlayerNetId>>,
+pub struct PlayerSystemParamsMut<'w, 's> {
+    pub players: ResMut<'w, HashMap<PlayerNetId, Player>>,
+    pub player_registry: ResMut<'w, EntityRegistry<PlayerNetId>>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
 }
 
 #[derive(Debug, Default)]
