@@ -34,9 +34,6 @@ use crate::{
 use bevy::{
     app::Events,
     ecs::{
-        archetype::{Archetype, ArchetypeComponentId},
-        component::ComponentId,
-        query::Access,
         schedule::{ParallelSystemDescriptorCoercion, ShouldRun},
         system::IntoSystem,
     },
@@ -61,7 +58,7 @@ use bevy_rapier2d::{
     },
 };
 use messages::{EntityNetId, PlayerNetId};
-use std::{borrow::Cow, sync::Mutex};
+use std::sync::Mutex;
 
 #[cfg(feature = "client")]
 pub mod client;
@@ -271,7 +268,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 broadcast_updates_stage
                     .take()
                     .expect("Can't initialize the plugin more than once")
-                    .with_run_criteria(GameTickRunCriteria::new(TICKS_PER_NETWORK_BROADCAST)),
+                    .with_run_criteria(game_tick_run_criteria(TICKS_PER_NETWORK_BROADCAST)),
             )
             .with_stage(
                 stage::POST_SIMULATIONS,
@@ -477,42 +474,23 @@ impl SimulationTime {
 
 #[derive(Default, Clone)]
 pub struct GameTickRunCriteriaState {
-    ticks_per_step: FrameNumber,
     last_generation: Option<usize>,
     last_tick: FrameNumber,
 }
 
-pub struct GameTickRunCriteria {
-    state: GameTickRunCriteriaState,
-    internal_system: Box<dyn System<In = (), Out = ShouldRun>>,
-}
-
-impl GameTickRunCriteria {
-    pub fn new(ticks_per_step: u16) -> Self {
-        Self {
-            state: GameTickRunCriteriaState {
-                ticks_per_step: FrameNumber::new(ticks_per_step),
-                last_generation: None,
-                last_tick: FrameNumber::new(0),
-            },
-            internal_system: Box::new(Self::prepare_system.system()),
-        }
-    }
-
-    fn prepare_system(
-        mut state: Local<GameTickRunCriteriaState>,
-        time: Res<GameTime>,
-    ) -> ShouldRun {
+fn game_tick_run_criteria(ticks_per_step: u16) -> impl System<In = (), Out = ShouldRun> {
+    move |mut state: Local<GameTickRunCriteriaState>, time: Res<GameTime>| -> ShouldRun {
+        let ticks_per_step = FrameNumber::new(ticks_per_step);
         #[cfg(feature = "profiler")]
         puffin::profile_function!();
         if state.last_generation != Some(time.session) {
             state.last_generation = Some(time.session);
-            state.last_tick = time.frame_number - state.ticks_per_step;
+            state.last_tick = time.frame_number - ticks_per_step;
         }
 
-        if state.last_tick + state.ticks_per_step <= time.frame_number {
+        if state.last_tick + ticks_per_step <= time.frame_number {
             trace!("Run and loop a game schedule (game {})", time.frame_number);
-            let ticks_per_step = state.ticks_per_step;
+            let ticks_per_step = ticks_per_step;
             state.last_tick += ticks_per_step;
             ShouldRun::YesAndCheckAgain
         } else {
@@ -520,49 +498,7 @@ impl GameTickRunCriteria {
             ShouldRun::No
         }
     }
-}
-
-impl System for GameTickRunCriteria {
-    type In = ();
-    type Out = ShouldRun;
-
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed(std::any::type_name::<GameTickRunCriteria>())
-    }
-
-    fn new_archetype(&mut self, archetype: &Archetype) {
-        self.internal_system.new_archetype(archetype);
-    }
-
-    fn component_access(&self) -> &Access<ComponentId> {
-        self.internal_system.component_access()
-    }
-
-    fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
-        self.internal_system.archetype_component_access()
-    }
-
-    fn is_send(&self) -> bool {
-        self.internal_system.is_send()
-    }
-
-    unsafe fn run_unsafe(&mut self, _input: Self::In, world: &World) -> Self::Out {
-        self.internal_system.run_unsafe((), world)
-    }
-
-    fn apply_buffers(&mut self, world: &mut World) {
-        self.internal_system.apply_buffers(world)
-    }
-
-    fn initialize(&mut self, world: &mut World) {
-        self.internal_system =
-            Box::new(Self::prepare_system.config(|c| c.0 = Some(self.state.clone())));
-        self.internal_system.initialize(world);
-    }
-
-    fn check_change_tick(&mut self, change_tick: u32) {
-        self.internal_system.check_change_tick(change_tick)
-    }
+    .system()
 }
 
 #[derive(Default, Clone)]
