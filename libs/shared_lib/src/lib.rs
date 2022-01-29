@@ -392,6 +392,12 @@ pub enum GameState {
     Playing,
 }
 
+impl Default for GameState {
+    fn default() -> Self {
+        Self::Paused
+    }
+}
+
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct GameTime {
     pub session: usize,
