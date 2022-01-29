@@ -21,12 +21,13 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::Player,
     registry::EntityRegistry,
-    SimulationTime,
+    GameState, SimulationTime,
 };
 use std::{collections::VecDeque, marker::PhantomData};
 
 #[derive(SystemParam)]
 pub struct DebugData<'w, 's> {
+    game_state: Res<'w, State<GameState>>,
     time: Res<'w, SimulationTime>,
     tick_rate: Res<'w, GameTicksPerSecond>,
     player_delay: Res<'w, PlayerDelay>,
@@ -45,6 +46,7 @@ pub struct DebugUiState {
     pub fps_history_len: usize,
     pub pause: bool,
 
+    pub game_state: GameState,
     pub frames_ahead: FrameNumber,
     pub target_frames_ahead: FrameNumber,
     pub tick_rate: u16,
@@ -80,6 +82,7 @@ pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_dat
     if debug_ui_state.pause {
         return;
     }
+    debug_ui_state.game_state = debug_data.game_state.current().clone();
     debug_ui_state.frames_ahead = debug_data.time.player_frame - debug_data.time.server_frame;
     debug_ui_state.target_frames_ahead = debug_data.target_frames_ahead.frames_count;
     debug_ui_state.tick_rate = debug_data.tick_rate.rate;
@@ -162,7 +165,8 @@ pub fn debug_ui(
                 debug_ui_state.pause = true;
             }
 
-            ui.label(format!("Frames ahead: {}", debug_ui_state.frames_ahead,));
+            ui.label(format!("Game state: {:?}", debug_ui_state.game_state));
+            ui.label(format!("Frames ahead: {}", debug_ui_state.frames_ahead));
             ui.label(format!(
                 "Target frames ahead: {}",
                 debug_ui_state.target_frames_ahead,
