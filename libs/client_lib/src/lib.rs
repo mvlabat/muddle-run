@@ -105,7 +105,7 @@ impl Plugin for MuddleClientPlugin {
             .add_startup_system(read_offline_auth_config)
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
-                net_adaptive_timestamp.system(),
+                net_adaptive_run_criteria.system(),
                 input_stage,
                 SystemStage::parallel(),
                 broadcast_updates_stage,
@@ -469,15 +469,16 @@ fn slower_tick_rate() -> u16 {
 }
 
 #[derive(Default, Clone)]
-pub struct NetAdaptiveTimestempState {
+pub struct NetAdaptiveRunCriteriaState {
     accumulator: f64,
     started_looping_at: Option<Instant>,
 }
 
-fn net_adaptive_timestamp(
-    mut state: Local<NetAdaptiveTimestempState>,
+fn net_adaptive_run_criteria(
+    mut state: Local<NetAdaptiveRunCriteriaState>,
     time: Res<Time>,
     game_ticks_per_second: Res<GameTicksPerSecond>,
+    game_state: Res<State<GameState>>,
 ) -> ShouldRun {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -488,13 +489,19 @@ fn net_adaptive_timestamp(
         state.accumulator += time.delta_seconds_f64();
     }
 
+    // In the scenario when a client was frozen (minimized, for example) and it got disconnected,
+    // we don't want to replay all the accumulated frames.
+    if game_state.current() != &GameState::Playing {
+        state.accumulator = state.accumulator.min(1.0);
+    }
+
     if state.accumulator >= step {
         state.accumulator -= step;
         if let Some(started_looping_at) = state.started_looping_at {
             let secs_being_in_loop = Instant::now()
                 .duration_since(started_looping_at)
                 .as_secs_f32();
-            let threshold_secs = 0.05; // 20 fsp
+            let threshold_secs = 0.05; // 20 fps
             if secs_being_in_loop > threshold_secs {
                 state.started_looping_at = None;
                 ShouldRun::Yes
