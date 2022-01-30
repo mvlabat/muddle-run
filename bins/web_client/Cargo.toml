@@ -6,7 +6,6 @@ edition = "2021"
 description = "muddle.run web client"
 license-file = "../../LICENSE"
 repository = "https://github.com/mvlabat/muddle-run"
-build = "build.rs"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
