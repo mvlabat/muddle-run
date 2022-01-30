@@ -8,12 +8,7 @@
     <option name="emulateTerminal" value="false" />
     <option name="withSudo" value="false" />
     <option name="backtrace" value="SHORT" />
-    <envs>
-      <env name="MUDDLE_UD_CLIENT_ID" value="sdfbHBKHKFCNXy9UuDOgTi3z/mNIMz0/mag9cCvVij0\=" />
-      <env name="MUDDLE_AUTH0_CLIENT_ID" value="UNSNBymWRH97Racw7hW2d9tDN1gsqvfO" />
-      <env name="MUDDLE_GOOGLE_CLIENT_ID" value="888017021223-ns7g1usfmn4h2t49i5igvn0aaqdddpin.apps.googleusercontent.com" />
-      <env name="DATABASE_URL" value="postgres://postgres@localhost/mr_persistence_production" />
-    </envs>
+    <envs />
     <option name="isRedirectInput" value="false" />
     <option name="redirectInputPath" value="" />
     <method v="2" />

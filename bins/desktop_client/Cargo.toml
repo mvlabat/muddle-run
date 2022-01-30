@@ -11,6 +11,10 @@ ud-login = ["mr_client_lib/ud-login"]
 
 [dependencies]
 mr_client_lib = { path = "../../libs/client_lib", features = ["use-udp", "profiler"] }
+mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 
 bevy = "0.6"
 sentry = "0.23.0"
+
+[build-dependencies]
+mr_build_dotenv = { path = "../../libs/build_dotenv" }

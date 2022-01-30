@@ -13,3 +13,9 @@ pkg
 terraform.tfvars
 terraform.tfstate*
 .terraform.tfstate.lock.info
+
+# dotenv
+.env
+.env.*
+!.env.example
+!.env.*.example

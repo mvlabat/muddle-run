@@ -1,0 +1,8 @@
+[package]
+name = "mr_build_dotenv"
+version = "0.1.0"
+authors = ["mvlabat <mvlabat@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+dotenv = "0.15.0"

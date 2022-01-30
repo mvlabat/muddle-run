@@ -13,8 +13,12 @@ use-webrtc = ["mr_server_lib/use-webrtc"]
 
 [dependencies]
 mr_server_lib = { path = "../../libs/server_lib" }
+mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 
 bevy = { version = "0.6", default-features = false }
 rymder = { version = "0.3.0", features = ["player-tracking"] }
 sentry = "0.23.0"
 tokio = { version = "1.15.0", features = ["sync"] }
+
+[build-dependencies]
+mr_build_dotenv = { path = "../../libs/build_dotenv" }

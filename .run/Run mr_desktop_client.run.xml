@@ -9,7 +9,6 @@
     <option name="withSudo" value="false" />
     <option name="backtrace" value="SHORT" />
     <envs>
-      <env name="MUDDLE_SERVER_IP_ADDR" value="192.168.1.236" />
       <env name="RUST_LOG" value="mr_shared_lib=debug,mr_client_lib=debug" />
     </envs>
     <option name="isRedirectInput" value="false" />

@@ -3,8 +3,6 @@
 #![feature(let_else)]
 #![feature(once_cell)]
 
-pub use mr_shared_lib::try_parse_from_env;
-
 use crate::{
     game_events::{process_player_events, process_scheduled_spawns},
     net::{process_network_events, send_network_updates, startup, PlayerConnections},
@@ -35,6 +33,7 @@ use mr_shared_lib::{
 use reqwest::Url;
 use std::{
     lazy::SyncLazy,
+    net::IpAddr,
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -44,6 +43,8 @@ mod kube_discovery;
 mod net;
 mod persistence;
 mod player_updates;
+
+pub const DEFAULT_IDLE_TIMEOUT: u64 = 300_000;
 
 pub struct Agones {
     pub sdk: rymder::Sdk,
@@ -72,6 +73,15 @@ pub static TOKIO: SyncLazy<tokio::runtime::Runtime> = SyncLazy::new(|| {
         .expect("Cannot start tokio runtime")
 });
 
+#[derive(Clone, Debug)]
+pub struct MuddleServerConfig {
+    pub persistence_url: Option<Url>,
+    pub idle_timeout_millis: Option<u64>,
+    pub listen_port: Option<u16>,
+    pub listen_ip_addr: Option<IpAddr>,
+    pub public_ip_addr: Option<IpAddr>,
+}
+
 pub struct MuddleServerPlugin;
 
 impl Plugin for MuddleServerPlugin {
@@ -86,7 +96,13 @@ impl Plugin for MuddleServerPlugin {
         app.add_startup_system(init_level);
         app.add_startup_system(startup);
 
-        let persistence_url: Option<Url> = try_parse_from_env!("MUDDLE_PERSISTENCE_URL")
+        let server_config = app
+            .world
+            .get_resource::<MuddleServerConfig>()
+            .expect("Expected MuddleServerConfig")
+            .clone();
+        let persistence_url: Option<Url> = server_config
+            .persistence_url
             .or_else(|| TOKIO.block_on(kube_discovery::discover_persistence()));
         if let Some(url) = persistence_url {
             let config = PersistenceConfig {
@@ -158,7 +174,20 @@ impl Plugin for MuddleServerPlugin {
         world.get_resource_or_insert_with(DeferredMessagesQueue::<UpdateLevelObject>::default);
         world.get_resource_or_insert_with(DeferredMessagesQueue::<DespawnLevelObject>::default);
         world.get_resource_or_insert_with(|| LastPlayerDisconnectedAt(Instant::now()));
-        world.get_resource_or_insert_with(|| IdleTimeout(idle_timeout()));
+        world.get_resource_or_insert_with(|| {
+            IdleTimeout(
+                server_config
+                    .idle_timeout_millis
+                    .map(Duration::from_millis)
+                    .unwrap_or_else(|| {
+                        log::info!(
+                            "Using the default value for MUDDLE_IDLE_TIMEOUT: {}",
+                            DEFAULT_IDLE_TIMEOUT
+                        );
+                        Duration::from_millis(DEFAULT_IDLE_TIMEOUT)
+                    }),
+            )
+        });
         world.get_resource_or_insert_with(Jwks::default);
     }
 }
@@ -242,17 +271,4 @@ pub fn process_idle_timeout(
             std::process::exit(0);
         }
     }
-}
-
-fn idle_timeout() -> Duration {
-    let default = 300_000;
-    try_parse_from_env!("MUDDLE_IDLE_TIMEOUT")
-        .map(Duration::from_millis)
-        .unwrap_or_else(|| {
-            log::info!(
-                "Using the default value for MUDDLE_IDLE_TIMEOUT: {}",
-                default
-            );
-            Duration::from_millis(default)
-        })
 }
