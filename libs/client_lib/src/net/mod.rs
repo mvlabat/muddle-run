@@ -1,11 +1,11 @@
 use crate::{
     input::{LevelObjectRequestsQueue, PlayerRequestsQueue},
-    net::auth::persistence_url,
+    net::auth::AuthConfig,
     websocket::WebSocketStream,
-    CurrentPlayerNetId, EstimatedServerTime, InitialRtt, LevelObjectCorrelations, PlayerDelay,
-    TargetFramesAhead,
+    CurrentPlayerNetId, EstimatedServerTime, InitialRtt, LevelObjectCorrelations,
+    MuddleClientConfig, PlayerDelay, TargetFramesAhead,
 };
-use auth::{AuthConfig, AuthMessage, AuthRequest};
+use auth::{AuthMessage, AuthRequest};
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashMap};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
@@ -31,8 +31,7 @@ use mr_shared_lib::{
     },
     player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     registry::EntityRegistry,
-    simulations_per_second, try_parse_from_env, GameTime, SimulationTime,
-    COMPONENT_FRAMEBUFFER_LIMIT,
+    simulations_per_second, GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::{
     future::Future,
@@ -51,7 +50,7 @@ mod listen_local_storage;
 #[cfg(not(target_arch = "wasm32"))]
 mod redirect_uri_server;
 
-const DEFAULT_SERVER_PORT: u16 = 3455;
+pub const DEFAULT_SERVER_PORT: u16 = 3455;
 const DEFAULT_SERVER_IP_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
 #[derive(SystemParam)]
@@ -105,23 +104,39 @@ pub struct MainMenuUiChannels {
 
 pub struct ServerToConnect(pub Server);
 
-pub fn init_matchmaker_connection(mut commands: Commands) {
-    let matchmaker_url = match matchmaker_url() {
-        Some(url) => url,
+pub fn init_matchmaker_connection(mut commands: Commands, client_config: Res<MuddleClientConfig>) {
+    let matchmaker_url = match &client_config.matchmaker_url {
+        Some(url) => url.clone(),
         None => {
+            log::info!("Matchmaker address wasn't passed, skipping the initialization");
             return;
         }
     };
 
     let auth_config = AuthConfig {
-        persistence_url: persistence_url().expect("Expected MUDDLE_PERSISTENCE_URL"),
-        google_client_id: auth::google_client_id().expect("Expected MUDDLE_GOOGLE_CLIENT_ID"),
-        google_client_secret: auth::google_client_secret(),
-        auth0_client_id: auth::auth0_client_id().expect("Expected MUDDLE_AUTH0_CLIENT_ID"),
+        persistence_url: client_config
+            .persistence_url
+            .clone()
+            .expect("Expected MUDDLE_PERSISTENCE_URL"),
+        google_client_id: client_config
+            .google_client_id
+            .clone()
+            .expect("Expected MUDDLE_GOOGLE_CLIENT_ID"),
+        google_client_secret: client_config.google_client_secret.clone(),
+        auth0_client_id: client_config
+            .auth0_client_id
+            .clone()
+            .expect("Expected MUDDLE_AUTH0_CLIENT_ID"),
         #[cfg(feature = "unstoppable_resolution")]
-        ud_client_id: auth::ud_client_id().expect("Expected MUDDLE_UD_CLIENT_ID"),
+        ud_client_id: client_config
+            .ud_client_id
+            .clone()
+            .expect("Expected MUDDLE_UD_CLIENT_ID"),
         #[cfg(feature = "unstoppable_resolution")]
-        ud_secret_id: auth::ud_client_secret().expect("Expected MUDDLE_UD_CLIENT_SECRET"),
+        ud_secret_id: client_config
+            .ud_client_secret
+            .clone()
+            .expect("Expected MUDDLE_UD_CLIENT_SECRET"),
     };
     if cfg!(not(target_arch = "wasm32")) {
         auth_config
@@ -745,6 +760,7 @@ pub fn process_network_events(
 
 pub fn maintain_connection(
     time: Res<GameTime>,
+    client_config: Res<MuddleClientConfig>,
     matchmaker_state: Option<ResMut<MatchmakerState>>,
     matchmaker_channels: Option<ResMut<MainMenuUiChannels>>,
     mut server_to_connect: ResMut<Option<ServerToConnect>>,
@@ -853,7 +869,9 @@ pub fn maintain_connection(
                 network_params.net.connect(server.addr);
             }
         } else {
-            let server_socket_addr = server_addr();
+            let server_socket_addr = client_config
+                .server_addr
+                .unwrap_or_else(|| SocketAddr::new(DEFAULT_SERVER_IP_ADDR, DEFAULT_SERVER_PORT));
 
             log::info!("Connecting to {}", server_socket_addr);
             network_params.net.connect(server_socket_addr);
@@ -1373,20 +1391,4 @@ fn player_start_position(player_net_id: PlayerNetId, delta_update: &DeltaUpdate)
         .iter()
         .find(|player_state| player_state.net_id == player_net_id)
         .map(|player_state| player_state.position)
-}
-
-fn matchmaker_url() -> Option<Url> {
-    try_parse_from_env!("MUDDLE_MATCHMAKER_URL")
-}
-
-fn server_addr() -> SocketAddr {
-    let port: u16 = try_parse_from_env!("MUDDLE_SERVER_PORT").unwrap_or(DEFAULT_SERVER_PORT);
-    let ip_addr: IpAddr =
-        try_parse_from_env!("MUDDLE_SERVER_IP_ADDR").unwrap_or(DEFAULT_SERVER_IP_ADDR);
-    SocketAddr::new(ip_addr, port)
-}
-
-pub fn server_addr_optional() -> Option<SocketAddr> {
-    let port: u16 = try_parse_from_env!("MUDDLE_SERVER_PORT").unwrap_or(DEFAULT_SERVER_PORT);
-    try_parse_from_env!("MUDDLE_SERVER_IP_ADDR").map(|ip_addr| SocketAddr::new(ip_addr, port))
 }

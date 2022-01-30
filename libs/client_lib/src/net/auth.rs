@@ -10,7 +10,6 @@ use mr_messages_lib::{
     ErrorKind, ErrorResponse, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
     LinkAccountRequest, PatchUserError, PatchUserRequest, RegisterAccountError, RegisteredUser,
 };
-use mr_shared_lib::try_parse_from_env;
 use reqwest::IntoUrl;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -1012,32 +1011,6 @@ impl AuthRequestsHandler {
             .send(message)
             .expect("Failed to send an auth update");
     }
-}
-
-pub fn persistence_url() -> Option<Url> {
-    try_parse_from_env!("MUDDLE_PERSISTENCE_URL")
-}
-
-pub fn google_client_id() -> Option<String> {
-    std::option_env!("MUDDLE_GOOGLE_CLIENT_ID").map(str::to_owned)
-}
-
-pub fn google_client_secret() -> Option<String> {
-    std::option_env!("MUDDLE_GOOGLE_CLIENT_SECRET").map(str::to_owned)
-}
-
-pub fn auth0_client_id() -> Option<String> {
-    std::option_env!("MUDDLE_AUTH0_CLIENT_ID").map(str::to_owned)
-}
-
-#[cfg(feature = "unstoppable_resolution")]
-pub fn ud_client_id() -> Option<String> {
-    std::option_env!("MUDDLE_UD_CLIENT_ID").map(str::to_owned)
-}
-
-#[cfg(feature = "unstoppable_resolution")]
-pub fn ud_client_secret() -> Option<String> {
-    std::option_env!("MUDDLE_UD_CLIENT_SECRET").map(str::to_owned)
 }
 
 fn code_challenge() -> (String, String) {

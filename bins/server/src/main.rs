@@ -1,8 +1,11 @@
 use bevy::{app::App, log};
-use mr_server_lib::{try_parse_from_env, Agones, MuddleServerPlugin, PlayerEvent, TOKIO};
+use mr_server_lib::{Agones, MuddleServerConfig, MuddleServerPlugin, PlayerEvent, TOKIO};
+use mr_utils_lib::try_parse_from_env;
 use std::{ops::Deref, time::Duration};
 
 fn main() {
+    mr_utils_lib::env::load_env();
+
     // We want to exit the process on any panic (in any thread), so this is why the custom hook.
     let orig_hook = std::panic::take_hook();
 
@@ -121,5 +124,12 @@ fn main() {
         app.insert_resource(agones);
         app.insert_resource(player_tracking_tx);
     }
+    app.insert_resource(MuddleServerConfig {
+        persistence_url: try_parse_from_env!("MUDDLE_PERSISTENCE_URL"),
+        idle_timeout_millis: try_parse_from_env!("MUDDLE_IDLE_TIMEOUT"),
+        listen_port: try_parse_from_env!("MUDDLE_LISTEN_PORT"),
+        listen_ip_addr: try_parse_from_env!("MUDDLE_LISTEN_IP_ADDR"),
+        public_ip_addr: try_parse_from_env!("MUDDLE_PUBLIC_IP_ADDR"),
+    });
     app.add_plugin(MuddleServerPlugin).run();
 }

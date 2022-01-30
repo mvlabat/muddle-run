@@ -2,6 +2,8 @@
 #![feature(let_else)]
 #![feature(slice_pattern)]
 
+pub use net::DEFAULT_SERVER_PORT;
+
 use crate::{
     camera::{move_free_camera_pivot, reattach_camera},
     components::{CameraPivotDirection, CameraPivotTag},
@@ -48,7 +50,8 @@ use mr_shared_lib::{
     simulations_per_second, GameState, GameTime, MuddleSharedPlugin, SimulationTime,
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
-use std::marker::PhantomData;
+use std::{marker::PhantomData, net::SocketAddr};
+use url::Url;
 
 mod camera;
 mod components;
@@ -159,6 +162,17 @@ impl Plugin for MuddleClientPlugin {
 }
 
 // Resources.
+pub struct MuddleClientConfig {
+    pub persistence_url: Option<Url>,
+    pub google_client_id: Option<String>,
+    pub google_client_secret: Option<String>,
+    pub auth0_client_id: Option<String>,
+    pub ud_client_id: Option<String>,
+    pub ud_client_secret: Option<String>,
+    pub matchmaker_url: Option<Url>,
+    pub server_addr: Option<SocketAddr>,
+}
+
 #[derive(Default)]
 pub struct WindowInnerSize {
     pub width: usize,

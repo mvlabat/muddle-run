@@ -87,6 +87,8 @@ async fn decode_token_helper(
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
+    mr_utils_lib::env::load_env();
+
     // TODO: add sentry support and move panic handler to the utils crate.
     let orig_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {

@@ -67,9 +67,26 @@ basic-http-server . # or any other tool that can serve static files
 
 ### Environment variables
 
-Environment variables are read when both compiling the binaries and running them
-(except for the web client). The environment variables that are read when running
-a binary take higher priority.
+Environment variables are read when both compiling the binaries and running
+them (except for the web client). The environment variables that are read
+during the run-time take higher priority.
+
+Dotenv files are also supported. They are recursively searched down to the
+root starting from a working directory. The binaries search for the following
+files:
+
+- .env
+- .env.$MUDDLE_ENV
+- .env.$CARGO_PKG_NAME
+- .env.$CARGO_PKG_NAME.$MUDDLE_ENV
+
+Every found file is loaded, and all read variables are merged. Priority is
+defined as in the list above, where the most specific dotenv file overrides
+the vars from the other ones.
+
+`MUDDLE_ENV` equals `production` when compiling with the release profile
+and `development` when compiling with the debug one. It can be overridden
+with an environment variable.
 
 #### `mr_server`
 

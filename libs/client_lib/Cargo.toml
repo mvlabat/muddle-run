@@ -20,7 +20,7 @@ base64 = "0.20.0-alpha.1"
 bevy = "0.6"
 bevy-inspector-egui = { version = "0.7" }
 bevy_egui = "0.10"
-bevy_mod_picking = { git = "https://github.com/aevyrie/bevy_mod_picking.git" }
+bevy_mod_picking = { version = "0.5.4" }
 bevy_networking_turbulence = { version = "0.4", default-features = false }
 bevy_rapier2d = { version = "0.12", features = ["wasm-bindgen"] }
 bincode = "1.3.3"

@@ -1,4 +1,6 @@
-use crate::{Agones, LastPlayerDisconnectedAt, PersistenceMessage, PersistenceRequest};
+use crate::{
+    Agones, LastPlayerDisconnectedAt, MuddleServerConfig, PersistenceMessage, PersistenceRequest,
+};
 use bevy::{
     ecs::system::SystemParam,
     log,
@@ -24,7 +26,7 @@ use mr_shared_lib::{
     player::{random_name, Player, PlayerEvent, PlayerRole},
     registry::{EntityRegistry, Registry},
     server::level_spawn_location_service::LevelSpawnLocationService,
-    try_parse_from_env, GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
+    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use std::{
     collections::hash_map::Entry,
@@ -34,13 +36,17 @@ use std::{
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-pub fn startup(mut net: ResMut<NetworkResource>, agones: Option<Res<Agones>>) {
+pub fn startup(
+    config: Res<MuddleServerConfig>,
+    mut net: ResMut<NetworkResource>,
+    agones: Option<Res<Agones>>,
+) {
     log::info!("Starting the server");
     let agones_status = agones
         .as_ref()
         .and_then(|agones| agones.game_server.status.as_ref());
-    let (listen, public) = listen_addr(agones_status)
-        .zip(public_id_addr(agones_status))
+    let (listen, public) = listen_addr(&config, agones_status)
+        .zip(public_id_addr(&config, agones_status))
         .expect("Expected MUDDLE_LISTEN_PORT and MUDDLE_PUBLIC_IP_ADDR env variables");
     net.listen(
         listen,
@@ -1161,7 +1167,10 @@ fn send_reliable_game_message(
     }
 }
 
-fn listen_addr(gameserver_status: Option<&rymder::gameserver::Status>) -> Option<SocketAddr> {
+fn listen_addr(
+    server_config: &MuddleServerConfig,
+    gameserver_status: Option<&rymder::gameserver::Status>,
+) -> Option<SocketAddr> {
     let server_port = gameserver_status
         .and_then(|status| {
             status
@@ -1176,7 +1185,7 @@ fn listen_addr(gameserver_status: Option<&rymder::gameserver::Status>) -> Option
                     p.port
                 })
         })
-        .or_else(|| try_parse_from_env!("MUDDLE_LISTEN_PORT"))?;
+        .or(server_config.listen_port)?;
 
     let zero_ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 
@@ -1189,7 +1198,7 @@ fn listen_addr(gameserver_status: Option<&rymder::gameserver::Status>) -> Option
             );
             zero_ip_addr
         })
-        .or_else(|| try_parse_from_env!("MUDDLE_LISTEN_IP_ADDR"));
+        .or(server_config.listen_ip_addr);
 
     if let Some(ip_addr) = ip_addr {
         return Some(SocketAddr::new(ip_addr, server_port));
@@ -1198,7 +1207,10 @@ fn listen_addr(gameserver_status: Option<&rymder::gameserver::Status>) -> Option
     Some(SocketAddr::new(zero_ip_addr, server_port))
 }
 
-fn public_id_addr(gameserver_status: Option<&rymder::gameserver::Status>) -> Option<IpAddr> {
+fn public_id_addr(
+    server_config: &MuddleServerConfig,
+    gameserver_status: Option<&rymder::gameserver::Status>,
+) -> Option<IpAddr> {
     let ip_addr = gameserver_status
         .map(|status| {
             log::info!(
@@ -1207,7 +1219,7 @@ fn public_id_addr(gameserver_status: Option<&rymder::gameserver::Status>) -> Opt
             );
             status.address
         })
-        .or_else(|| try_parse_from_env!("MUDDLE_PUBLIC_IP_ADDR"));
+        .or(server_config.public_ip_addr);
 
     if ip_addr.is_some() {
         return ip_addr;

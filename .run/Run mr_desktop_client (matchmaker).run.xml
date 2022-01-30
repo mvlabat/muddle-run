@@ -1,6 +1,6 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Run mr_desktop_client (matchmaker)" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
-    <option name="command" value="run --package mr_desktop_client --features &quot;ud-login&quot;" />
+    <option name="command" value="run --package mr_desktop_client" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$" />
     <option name="channel" value="DEFAULT" />
     <option name="requiredFeatures" value="true" />
@@ -9,13 +9,8 @@
     <option name="withSudo" value="false" />
     <option name="backtrace" value="SHORT" />
     <envs>
-      <env name="MUDDLE_MATCHMAKER_URL" value="ws://muddle.run:8080" />
       <env name="RUST_LOG" value="mr_shared_lib=debug,mr_client_lib=debug" />
-      <env name="MUDDLE_GOOGLE_CLIENT_ID" value="888017021223-ns7g1usfmn4h2t49i5igvn0aaqdddpin.apps.googleusercontent.com" />
-      <env name="MUDDLE_UD_CLIENT_ID" value="sdfbHBKHKFCNXy9UuDOgTi3z/mNIMz0/mag9cCvVij0=" />
-      <env name="MUDDLE_AUTH0_CLIENT_ID" value="UNSNBymWRH97Racw7hW2d9tDN1gsqvfO" />
-      <env name="MUDDLE_PERSISTENCE_URL" value="http://127.0.0.1:8082" />
-      <env name="MUDDLE_SERVER_IP_ADDR" value="192.168.1.173" />
+      <env name="MUDDLE_ENV" value="production" />
     </envs>
     <option name="isRedirectInput" value="false" />
     <option name="redirectInputPath" value="" />

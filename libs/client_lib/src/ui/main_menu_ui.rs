@@ -1,20 +1,22 @@
 use crate::{
     net::{
         auth::{AuthMessage, AuthRequest},
-        server_addr_optional, MainMenuUiChannels, MatchmakerState, ServerToConnect,
-        TcpConnectionStatus,
+        MainMenuUiChannels, MatchmakerState, ServerToConnect, TcpConnectionStatus,
     },
-    OfflineAuthConfig,
+    MuddleClientConfig, OfflineAuthConfig,
 };
 use bevy::{
-    ecs::system::{Local, Res, ResMut},
+    ecs::system::{Local, Res, ResMut, SystemParam},
     log,
     utils::{HashMap, Instant},
 };
 use bevy_egui::{egui, egui::Widget, EguiContext};
 use mr_messages_lib::{LinkAccountLoginMethod, MatchmakerMessage, Server};
 use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
-use std::ops::{Add, Mul, Sub};
+use std::{
+    marker::PhantomData,
+    ops::{Add, Mul, Sub},
+};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedSender};
 
 const ERROR_COLOR: egui::Color32 = egui::Color32::RED;
@@ -230,11 +232,19 @@ impl Default for MainMenuUiScreen {
     }
 }
 
+#[derive(SystemParam)]
+pub struct Configs<'w, 's> {
+    client_config: Res<'w, MuddleClientConfig>,
+    offline_auth_config: Res<'w, OfflineAuthConfig>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
+}
+
 pub fn main_menu_ui(
     mut main_menu_ui_state: Local<MainMenuUiState>,
     egui_context: ResMut<EguiContext>,
     matchmaker_state: Option<ResMut<MatchmakerState>>,
-    offline_auth_config: Res<OfflineAuthConfig>,
+    configs: Configs,
     main_menu_ui_channels: Option<ResMut<MainMenuUiChannels>>,
     mut server_to_connect: ResMut<Option<ServerToConnect>>,
     connection_state: Res<ConnectionState>,
@@ -251,9 +261,10 @@ pub fn main_menu_ui(
         };
 
     if !main_menu_ui_state.initialized {
-        if offline_auth_config.exists() {
+        if configs.offline_auth_config.exists() {
             main_menu_ui_state.auth.screen = AuthUiScreen::RefreshAuth;
-            main_menu_ui_state.auth.logged_in_as = Some(offline_auth_config.username.clone());
+            main_menu_ui_state.auth.logged_in_as =
+                Some(configs.offline_auth_config.username.clone());
         } else {
             main_menu_ui_state.auth.screen = AuthUiScreen::SignIn;
         }
@@ -349,7 +360,7 @@ pub fn main_menu_ui(
     loop {
         match main_menu_ui_channels.matchmaker_message_rx.try_recv() {
             Ok(MatchmakerMessage::Init(mut init_list)) => {
-                if let Some(server_addr) = server_addr_optional() {
+                if let Some(server_addr) = configs.client_config.server_addr {
                     init_list.push(Server {
                         name: "localhost".to_string(),
                         addr: server_addr,
@@ -461,7 +472,7 @@ pub fn main_menu_ui(
                                         ui,
                                         &mut main_menu_ui_channels.auth_request_tx,
                                         auth_ui_state,
-                                        &offline_auth_config,
+                                        &configs.offline_auth_config,
                                     );
                                     if confirm {
                                         *screen = MainMenuUiScreen::Matchmaker;
