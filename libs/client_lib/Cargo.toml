@@ -18,7 +18,7 @@ ud-login = ["unstoppable_resolution"]
 anyhow = "1.0.52"
 base64 = "0.20.0-alpha.1"
 bevy = "0.6"
-bevy-inspector-egui = { version = "0.7" }
+bevy-inspector-egui = { version = "0.8" }
 bevy_egui = "0.10"
 bevy_mod_picking = { version = "0.5.4" }
 bevy_networking_turbulence = { version = "0.4", default-features = false }

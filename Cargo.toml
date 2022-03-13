@@ -24,7 +24,7 @@ opt-level = 1
 
 [patch.crates-io]
 dotenv = { git = "https://github.com/mvlabat/dotenv.git" }
-bevy = { git = "https://github.com/mvlabat/bevy//", branch = "stage-label-box-impl" }
+bevy = { git = "https://github.com/mvlabat/bevy//", branch = "muddle-run" }
 bevy_rapier2d = { git = "https://github.com/dimforge/bevy_rapier.git", rev = "27c945faa735cef641b3bc12851e22a564717425" }
 #parry2d = { git = "https://github.com/dimforge/parry", rev = "5c957b9" }
 rapier2d = { git = "https://github.com/dimforge/rapier.git", rev = "3a2f5f7cf5e21cfa5a3cc687caa8f4fbc3c04984" }
@@ -33,10 +33,6 @@ rapier2d = { git = "https://github.com/dimforge/rapier.git", rev = "3a2f5f7cf5e2
 #bevy_rapier2d = { path = "../bevy_rapier/bevy_rapier2d" }
 #bevy = { path = "../bevy" }
 #bevy_egui = { path = "../bevy_egui" }
-# If we patch bevy, we need to patch these as well for bevy_networking_turbulence:
-#bevy_app = { path = "../bevy/crates/bevy_app" }
-#bevy_ecs = { path = "../bevy/crates/bevy_ecs" }
-#bevy_tasks = { path = "../bevy/crates/bevy_tasks" }
 
 #bevy_networking_turbulence = { git = "https://github.com/mvlabat/bevy_networking_turbulence.git", branch = "muddle-run" }
 naia-client-socket = { git = "https://github.com/mvlabat/naia-socket.git", branch = "muddle-run" }
@@ -45,7 +41,7 @@ naia-server-socket = { git = "https://github.com/mvlabat/naia-socket.git", branc
 #naia-client-socket = { path = "../naia-socket/client" }
 #naia-server-socket = { path = "../naia-socket/server" }
 
-#bevy-inspector-egui = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "rapier-0.11" }
+bevy-inspector-egui = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "bevy_egui-0.12" }
 #bevy-inspector-egui = { path = "../bevy-inspector-egui" }
 
 #[patch.'https://github.com/bevyengine/bevy']
