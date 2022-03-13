@@ -1,4 +1,3 @@
-#![feature(const_fn_trait_bound)]
 #![feature(drain_filter)]
 #![feature(hash_drain_filter)]
 #![feature(step_trait)]
@@ -172,7 +171,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
 
         #[allow(unused_mut)]
         let mut simulation_schedule = Schedule::default()
-            .with_run_criteria(simulation_tick_run_criteria.system())
+            .with_run_criteria(IntoSystem::into_system(simulation_tick_run_criteria))
             .with_stage(
                 stage::SPAWN,
                 SystemStage::parallel()
@@ -485,26 +484,27 @@ pub struct GameTickRunCriteriaState {
 }
 
 fn game_tick_run_criteria(ticks_per_step: u16) -> impl System<In = (), Out = ShouldRun> {
-    move |mut state: Local<GameTickRunCriteriaState>, time: Res<GameTime>| -> ShouldRun {
-        let ticks_per_step = FrameNumber::new(ticks_per_step);
-        #[cfg(feature = "profiler")]
-        puffin::profile_function!();
-        if state.last_generation != Some(time.session) {
-            state.last_generation = Some(time.session);
-            state.last_tick = time.frame_number - ticks_per_step;
-        }
+    IntoSystem::into_system(
+        move |mut state: Local<GameTickRunCriteriaState>, time: Res<GameTime>| -> ShouldRun {
+            let ticks_per_step = FrameNumber::new(ticks_per_step);
+            #[cfg(feature = "profiler")]
+            puffin::profile_function!();
+            if state.last_generation != Some(time.session) {
+                state.last_generation = Some(time.session);
+                state.last_tick = time.frame_number - ticks_per_step;
+            }
 
-        if state.last_tick + ticks_per_step <= time.frame_number {
-            trace!("Run and loop a game schedule (game {})", time.frame_number);
-            let ticks_per_step = ticks_per_step;
-            state.last_tick += ticks_per_step;
-            ShouldRun::YesAndCheckAgain
-        } else {
-            trace!("Don't run a game schedule (game {})", time.frame_number);
-            ShouldRun::No
-        }
-    }
-    .system()
+            if state.last_tick + ticks_per_step <= time.frame_number {
+                trace!("Run and loop a game schedule (game {})", time.frame_number);
+                let ticks_per_step = ticks_per_step;
+                state.last_tick += ticks_per_step;
+                ShouldRun::YesAndCheckAgain
+            } else {
+                trace!("Don't run a game schedule (game {})", time.frame_number);
+                ShouldRun::No
+            }
+        },
+    )
 }
 
 #[derive(Default, Clone)]

@@ -108,7 +108,7 @@ impl Plugin for MuddleClientPlugin {
             .add_startup_system(read_offline_auth_config)
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
-                net_adaptive_run_criteria.system(),
+                IntoSystem::into_system(net_adaptive_run_criteria),
                 input_stage,
                 SystemStage::parallel(),
                 broadcast_updates_stage,
