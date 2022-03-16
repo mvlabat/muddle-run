@@ -7,17 +7,111 @@
 
     <style>
         body, html {
+            background-color: #2f2f2f;
             margin: 0;
             padding: 0;
             overflow: hidden;
+        }
+
+        .progress-container {
+            height: 100px;
+            width: 400px;
+            position: absolute;
+            top: 50%;
+            margin-top: -50px;
+            left: 50%;
+            margin-left: -200px;
+
+            border: 1px solid #3c3c3c;
+            border-radius: 10px;
+            background-color: #1b1b1b;
+            box-shadow: 0 0 20px 20px rgba(0, 0, 0, 0.25);
+            overflow: hidden;
+
+            color: #8c8c8c;
+            font-family: "Ubuntu Light", sans-serif;
+        }
+
+        .progress-filler {
+            position: absolute;
+            width: 0;
+            height: 100%;
+            background-color: #166203;
+
+            -webkit-transition: width 500ms ease-in-out;
+            -moz-transition: width 500ms ease-in-out;
+            -o-transition: width 500ms ease-in-out;
+            transition: width 500ms ease-in-out;
+        }
+
+        .progress-header {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            line-height: 80px;
+            font-size: 24px;
+        }
+
+        .progress-text {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            line-height: 130px;
+            font-size: 16px;
         }
     </style>
 </head>
 
 <body>
+    <div class="progress-container">
+        <div class="progress-filler"></div>
+        <div class="progress-header">Loading</div>
+        <div class="progress-text"></div>
+    </div>
+
     <script type="module">
         import init from "./pkg/mr_web_client.js";
-        init();
+
+        fetch(new URL('pkg/mr_web_client_bg.wasm', import.meta.url)).then(async (response) => {
+            const length = Number(response.headers.get('Content-Length'));
+            if (!length) {
+                await init(response);
+                return;
+            }
+
+            const buffer = new ArrayBuffer(length);
+            const view = new Uint8Array(buffer);
+
+            const reader = response.body.getReader();
+
+            const [progressFiller] = document.getElementsByClassName('progress-filler');
+            const [progressText] = document.getElementsByClassName('progress-text');
+
+            let offset = 0;
+            while (true) {
+                const {done, value: chunk} = await reader.read();
+                if (done) {
+                    progressText.innerHTML = '100%';
+                    progressFiller.style.width = '100%';
+                    // Wait for the animation. :)
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                    break;
+                }
+
+                view.set(chunk, offset);
+                offset += chunk.length;
+                const progress = String(Math.round((offset / length) * 100)) + '%';
+                progressText.innerHTML = progress;
+                progressFiller.style.width = progress;
+            }
+
+            await init(buffer);
+        }).finally(() => {
+            const [progressContainer] = document.getElementsByClassName('progress-container');
+            progressContainer.parentElement.removeChild(progressContainer);
+        });
 
         function callback(records) {
             records.forEach(function (record) {
