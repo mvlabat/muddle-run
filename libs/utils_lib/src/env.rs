@@ -63,11 +63,15 @@ macro_rules! try_parse_from_env {
                 log::warn!("Variable {} wasn't found", $var_name);
                 None
             })
-            .map(|value| {
-                value
+            .and_then(|value| {
+                if value.is_empty() {
+                    return None;
+                }
+                let parsed = value
                     .parse()
                     .ok()
-                    .unwrap_or_else(|| panic!("Couldn't parse {}", $var_name))
+                    .unwrap_or_else(|| panic!("Couldn't parse {} (value: {:?})", $var_name, value));
+                Some(parsed)
             })
     };
 }

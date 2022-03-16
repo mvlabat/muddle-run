@@ -157,6 +157,12 @@ pub struct AuthTokenResponse {
     pub id_token: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AuthTokenErrorResponse {
+    pub error: String,
+    pub error_description: String,
+}
+
 #[derive(Debug)]
 pub enum AuthRequest {
     Password {
@@ -625,15 +631,28 @@ impl AuthRequestsHandler {
         offline_auth_config: &OfflineAuthConfig,
         params: &RefreshAuthTokenRequestParams,
     ) -> bool {
-        let Some(Ok(response)) = self
-            .request::<AuthTokenResponse, serde_json::Value, _, _>(
+        let response = match self
+            .request::<AuthTokenResponse, AuthTokenErrorResponse, _, _>(
                 &offline_auth_config.token_uri,
-                RequestParams::UrlEncoded(params)
-            ).await else
+                RequestParams::UrlEncoded(params),
+            )
+            .await
         {
-            log::error!("Failed to refresh an auth token");
-            self.send_auth_message(AuthMessage::UnavailableError);
-            return false;
+            Some(Ok(response)) => response,
+            Some(Err(error_response)) => {
+                log::warn!("Failed to refresh an auth token: {:?}", error_response);
+                if error_response.error == "invalid_grant" {
+                    self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
+                } else {
+                    self.send_auth_message(AuthMessage::UnavailableError);
+                }
+                return false;
+            }
+            _ => {
+                log::error!("Failed to refresh an auth token");
+                self.send_auth_message(AuthMessage::UnavailableError);
+                return false;
+            }
         };
 
         if let Err(err) = parse_jwt(&response.id_token) {
