@@ -1,78 +1,15 @@
+mod matchmaker;
+mod persistence;
+
+pub use matchmaker::*;
+pub use persistence::*;
+
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
-use std::net::SocketAddr;
-
-pub const PLAYER_CAPACITY: u16 = 5;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum MatchmakerMessage {
-    /// Is sent when a client is connected, contains a list of active servers.
-    Init(Vec<Server>),
-    /// Is sent when a server is either added or modified.
-    ServerUpdated(Server),
-    /// Is sent when a server is closed, contains a server name.
-    ServerRemoved(String),
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Server {
-    pub name: String,
-    pub addr: SocketAddr,
-    pub player_capacity: u16,
-    pub player_count: u16,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RegisteredUser {
-    pub id: i64,
-    pub email: Option<String>,
-    pub display_name: Option<String>,
-    pub created_at: chrono::NaiveDateTime,
-    pub updated_at: chrono::NaiveDateTime,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "code", content = "data", rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum RegisterAccountError {
-    UserWithEmailAlreadyExists(LinkAccount),
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkAccountRequest {
-    pub existing_account_jwt: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkAccount {
-    pub user: RegisteredUser,
-    pub login_methods: Vec<LinkAccountLoginMethod>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkAccountLoginMethod {
-    pub issuer: String,
-    pub login_hint: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum LinkAccountError {
-    ClaimsMismatch,
-    AlreadyLinked,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PatchUserRequest {
-    pub display_name: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum PatchUserError {
-    DisplayNameTaken,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetUserRequest {
-    pub subject: String,
-    pub issuer: String,
+pub struct PaginationParams {
+    pub offset: i64,
+    pub limit: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

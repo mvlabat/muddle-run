@@ -119,8 +119,8 @@ async fn get_user(
     request: GetUserRequest,
 ) {
     let result = client
-        .get(config.url.join("users").unwrap())
-        .json(&request)
+        .get(config.url.join("user").unwrap())
+        .query(&request)
         .send()
         .await;
 
