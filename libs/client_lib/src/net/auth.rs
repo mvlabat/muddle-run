@@ -904,8 +904,8 @@ impl AuthRequestsHandler {
 
         let (data, status) = match result {
             Ok(result) => {
-                let is_success = result.status();
-                (result.bytes().await, is_success)
+                let status = result.status();
+                (result.bytes().await, status)
             }
             Err(err) => {
                 log::error!("Failed to send a request: {:?}", err);
@@ -972,8 +972,8 @@ impl AuthRequestsHandler {
 
         let (data, status) = match result {
             Ok(result) => {
-                let is_success = result.status();
-                (result.bytes().await, is_success)
+                let status = result.status();
+                (result.bytes().await, status)
             }
             Err(err) => {
                 log::error!("Failed to send a request: {:?}", err);

@@ -117,7 +117,7 @@ pub fn init_matchmaker_connection(mut commands: Commands, client_config: Res<Mud
         persistence_url: client_config
             .persistence_url
             .clone()
-            .expect("Expected MUDDLE_PERSISTENCE_URL"),
+            .expect("Expected MUDDLE_PUBLIC_PERSISTENCE_URL"),
         google_client_id: client_config
             .google_client_id
             .clone()

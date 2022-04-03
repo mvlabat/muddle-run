@@ -15,12 +15,7 @@ pub enum GetLevelsUserFilter {
     BuilderId(i64),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetLevelRequest {
-    pub id: i64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct LevelsListItem {
     pub id: i64,
     pub title: String,
@@ -31,7 +26,7 @@ pub struct LevelsListItem {
     pub updated_at: chrono::NaiveDateTime,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct LevelDto {
     pub id: i64,
     pub title: String,
@@ -43,11 +38,19 @@ pub struct LevelDto {
     pub updated_at: chrono::NaiveDateTime,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct GetLevelResponse {
     #[serde(flatten)]
     pub level: LevelDto,
     pub autosaved_versions: Vec<LevelsListItem>,
+    pub level_permissions: Vec<LevelPermissionDto>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct LevelPermissionDto {
+    pub user_id: i64,
+    pub user_name: Option<String>,
+    pub created_at: chrono::NaiveDateTime,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -60,6 +63,7 @@ pub struct PostLevelRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PostLevelResponse {
     pub id: i64,
+    pub data: serde_json::Value,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
 }

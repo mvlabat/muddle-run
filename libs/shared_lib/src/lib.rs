@@ -436,6 +436,7 @@ impl SimulationTime {
             > u16::MAX / 2
             && self.server_frame > frame_number
         {
+            // TODO: overflow happens here.
             self.server_generation -= 1;
         }
         self.server_frame = self.server_frame.min(frame_number);

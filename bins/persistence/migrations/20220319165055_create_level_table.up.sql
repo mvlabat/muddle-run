@@ -2,10 +2,19 @@
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
+CREATE OR REPLACE FUNCTION always_set_updated_at_column()
+    RETURNS TRIGGER AS
+$$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
 CREATE TABLE levels
 (
     id           bigserial PRIMARY KEY,
-    title        varchar(255) UNIQUE                 NOT NULL,
+    title        varchar(255)                        NOT NULL,
     user_id      bigint REFERENCES users (id)        NOT NULL,
     parent_id    bigint                              REFERENCES levels (id) ON DELETE SET NULL,
     data         json                                NOT NULL,
@@ -24,7 +33,7 @@ CREATE TRIGGER set_updated_at
     BEFORE UPDATE
     ON levels
     FOR EACH ROW
-EXECUTE PROCEDURE set_updated_at_column();
+EXECUTE PROCEDURE always_set_updated_at_column();
 
 CREATE TABLE level_permissions
 (

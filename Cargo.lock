@@ -599,7 +599,7 @@ checksum = "e6b4d9b1225d28d360ec6a231d65af1fd99a2a095154c8040689617290569c5c"
 [[package]]
 name = "bevy"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_internal",
 ]
@@ -607,7 +607,7 @@ dependencies = [
 [[package]]
 name = "bevy-crevice-derive"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_macro_utils",
  "proc-macro2",
@@ -641,7 +641,7 @@ dependencies = [
 [[package]]
 name = "bevy_app"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_derive",
  "bevy_ecs",
@@ -654,7 +654,7 @@ dependencies = [
 [[package]]
 name = "bevy_asset"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "anyhow",
  "bevy_app",
@@ -681,7 +681,7 @@ dependencies = [
 [[package]]
 name = "bevy_audio"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "anyhow",
  "bevy_app",
@@ -696,7 +696,7 @@ dependencies = [
 [[package]]
 name = "bevy_core"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -711,7 +711,7 @@ dependencies = [
 [[package]]
 name = "bevy_core_pipeline"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -723,7 +723,7 @@ dependencies = [
 [[package]]
 name = "bevy_crevice"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy-crevice-derive",
  "bytemuck",
@@ -734,7 +734,7 @@ dependencies = [
 [[package]]
 name = "bevy_derive"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_macro_utils",
  "quote",
@@ -744,7 +744,7 @@ dependencies = [
 [[package]]
 name = "bevy_diagnostic"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_core",
@@ -756,7 +756,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "async-channel",
  "bevy_ecs_macros",
@@ -773,7 +773,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs_macros"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_macro_utils",
  "proc-macro2",
@@ -816,7 +816,7 @@ dependencies = [
 [[package]]
 name = "bevy_gilrs"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -828,7 +828,7 @@ dependencies = [
 [[package]]
 name = "bevy_gltf"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "anyhow",
  "base64 0.13.0",
@@ -852,7 +852,7 @@ dependencies = [
 [[package]]
 name = "bevy_input"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -863,7 +863,7 @@ dependencies = [
 [[package]]
 name = "bevy_internal"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -896,7 +896,7 @@ dependencies = [
 [[package]]
 name = "bevy_log"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "android_log-sys",
  "bevy_app",
@@ -910,7 +910,7 @@ dependencies = [
 [[package]]
 name = "bevy_macro_utils"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "cargo-manifest",
  "quote",
@@ -920,7 +920,7 @@ dependencies = [
 [[package]]
 name = "bevy_math"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_reflect",
  "glam",
@@ -967,7 +967,7 @@ dependencies = [
 [[package]]
 name = "bevy_pbr"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -997,7 +997,7 @@ dependencies = [
 [[package]]
 name = "bevy_reflect"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_reflect_derive",
  "bevy_utils",
@@ -1013,7 +1013,7 @@ dependencies = [
 [[package]]
 name = "bevy_reflect_derive"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_macro_utils",
  "proc-macro2",
@@ -1025,7 +1025,7 @@ dependencies = [
 [[package]]
 name = "bevy_render"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "anyhow",
  "bevy_app",
@@ -1060,7 +1060,7 @@ dependencies = [
 [[package]]
 name = "bevy_scene"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "anyhow",
  "bevy_app",
@@ -1078,7 +1078,7 @@ dependencies = [
 [[package]]
 name = "bevy_sprite"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1103,7 +1103,7 @@ dependencies = [
 [[package]]
 name = "bevy_tasks"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "async-channel",
  "async-executor",
@@ -1116,7 +1116,7 @@ dependencies = [
 [[package]]
 name = "bevy_text"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -1139,7 +1139,7 @@ dependencies = [
 [[package]]
 name = "bevy_transform"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1152,7 +1152,7 @@ dependencies = [
 [[package]]
 name = "bevy_ui"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1179,7 +1179,7 @@ dependencies = [
 [[package]]
 name = "bevy_utils"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "ahash",
  "bevy_derive",
@@ -1192,7 +1192,7 @@ dependencies = [
 [[package]]
 name = "bevy_window"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "bevy_app",
  "bevy_math",
@@ -1204,7 +1204,7 @@ dependencies = [
 [[package]]
 name = "bevy_winit"
 version = "0.6.0"
-source = "git+https://github.com/mvlabat/bevy//?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
+source = "git+https://github.com/mvlabat/bevy.git?branch=muddle-run#d0b03ac3ae3bc3a15eac09276b1aaded6d0a45b3"
 dependencies = [
  "approx",
  "bevy_app",
@@ -3774,6 +3774,7 @@ dependencies = [
 name = "mr_server_lib"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bevy",
  "bevy_networking_turbulence",
  "bevy_rapier2d",
@@ -3789,6 +3790,8 @@ dependencies = [
  "rapier2d",
  "reqwest",
  "rymder",
+ "serde",
+ "serde_json",
  "tokio",
  "uuid",
 ]
@@ -5125,15 +5128,15 @@ dependencies = [
 
 [[package]]
 name = "rymder"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dacf6f72be12c450b8df59da3e7d8dd5e59f0d3f9ad4791ddada054fbc91624a"
+checksum = "9ca4a8e08abdfb7808df84e67c9ab33106407ce15e51462321dcfae790a2712c"
 dependencies = [
  "async-stream",
- "chrono",
  "futures-util",
  "http",
  "prost",
+ "time 0.3.7",
  "tokio",
  "tonic",
 ]

@@ -150,6 +150,7 @@ pub struct StartGame {
     pub nickname: String,
     pub objects: Vec<commands::UpdateLevelObject>,
     pub players: Vec<(PlayerNetId, Player)>,
+    pub level_id: Option<i64>,
     pub generation: u64,
     /// Full game state encoded as a DeltaUpdate.
     pub game_state: DeltaUpdate,

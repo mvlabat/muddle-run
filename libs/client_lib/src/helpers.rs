@@ -140,13 +140,13 @@ where
 
         // Updating "clicked" and "picked" state.
         if self.prev_state.is_just_picked
-            && now - self.prev_state.picked_at
+            && now.saturating_sub(self.prev_state.picked_at)
                 > Duration::from_secs_f64(DOUBLE_CLICK_MAX_DELAY_SECS)
         {
             self.state.is_just_picked = false;
         }
         if self.prev_state.is_just_clicked
-            && now - self.prev_state.clicked_at
+            && now.saturating_sub(self.prev_state.clicked_at)
                 > Duration::from_secs_f64(DOUBLE_CLICK_MAX_DELAY_SECS)
         {
             self.state.is_just_clicked = false;

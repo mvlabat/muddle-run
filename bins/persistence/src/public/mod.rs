@@ -3,9 +3,9 @@ use actix_web::{get, http::header, patch, post, web, HttpRequest, HttpResponse};
 use headers::{authorization::Bearer, Authorization, Header};
 use jwt_compact::Token;
 use mr_messages_lib::{
-    ErrorKind, ErrorResponse, GetLevelsRequest, GetLevelsUserFilter, LevelsListItem, LinkAccount,
-    LinkAccountError, LinkAccountLoginMethod, LinkAccountRequest, PaginationParams, PatchUserError,
-    PatchUserRequest, RegisterAccountError, RegisteredUser,
+    ErrorKind, ErrorResponse, GetLevelsRequest, GetLevelsUserFilter, GetUserResponse,
+    LevelsListItem, LinkAccount, LinkAccountError, LinkAccountLoginMethod, LinkAccountRequest,
+    PaginationParams, PatchUserError, PatchUserRequest, RegisterAccountError, RegisteredUser,
 };
 use mr_utils_lib::JwtAuthClaims;
 use sqlx::{types::chrono, Connection};
@@ -54,6 +54,37 @@ pub async fn register(data: web::Data<Data>, req: HttpRequest) -> HttpResponse {
         }),
         Err(InsertUserError::Sql(err)) => {
             log::error!("Failed to upsert a user: {:?}", err);
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[get("/users/{id}")]
+pub async fn get_user(data: web::Data<Data>, user_id: web::Path<i64>) -> HttpResponse {
+    let mut connection = match data.pool.acquire().await {
+        Ok(c) => c,
+        Err(err) => {
+            log::error!("Failed to acquire a connection: {:?}", err);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let user = sqlx::query_as!(
+        GetUserResponse,
+        "SELECT id, display_name, created_at, updated_at FROM users WHERE id = $1",
+        user_id.into_inner()
+    )
+    .fetch_one(&mut connection)
+    .await;
+
+    match user {
+        Ok(user) => HttpResponse::Ok().json(user),
+        Err(sqlx::Error::RowNotFound) => HttpResponse::NotFound().json(ErrorResponse::<()> {
+            message: "User doesn't exist".to_owned(),
+            error_kind: ErrorKind::NotFound,
+        }),
+        Err(err) => {
+            log::error!("Failed to get a user: {:?}", err);
             HttpResponse::InternalServerError().finish()
         }
     }

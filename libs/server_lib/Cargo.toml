@@ -13,6 +13,7 @@ use-webrtc = ["bevy_networking_turbulence/use-webrtc"]
 profiler = ["puffin", "mr_shared_lib/profiler"]
 
 [dependencies]
+anyhow = { version = "1.0.52" }
 bevy = { version = "0.6", default-features = false }
 bevy_networking_turbulence = { version = "0.4", default-features = false }
 bevy_rapier2d = "0.12"
@@ -24,7 +25,9 @@ puffin = { version = "0.13.1", optional = true }
 rand = "0.8.4"
 rapier2d = "0.12.0-alpha.1"
 reqwest = "0.11.9"
-rymder = "0.3.0"
+rymder = "0.4.0"
+serde = "1.0.133"
+serde_json = "1.0.74"
 tokio = "1.15.0"
 uuid = "0.8.2"
 

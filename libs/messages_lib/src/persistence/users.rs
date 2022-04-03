@@ -1,6 +1,16 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetUserResponse {
+    pub id: i64,
+    pub display_name: Option<String>,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
+}
+
+// Is returned in the response to `GetRegisteredUserQuery`.
+// Note: don't expose it to other clients as emails are sensitive.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RegisteredUser {
     pub id: i64,
     pub email: Option<String>,
@@ -49,7 +59,7 @@ pub enum PatchUserError {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetUserRequest {
+pub struct GetRegisteredUserQuery {
     pub subject: String,
     pub issuer: String,
 }

@@ -3,7 +3,7 @@ use k8s_openapi::api::core::v1::Pod;
 use kube::{api::ListParams, Api, Client};
 use reqwest::Url;
 
-pub async fn discover_persistence() -> Option<Url> {
+pub async fn discover_persistence() -> Option<(Url, Url)> {
     let client = Client::try_default()
         .await
         .map_err(|err| {
@@ -27,8 +27,16 @@ pub async fn discover_persistence() -> Option<Url> {
         .ok()?;
 
     let pod_ip = pods_list.items.first()?.status.as_ref()?.pod_ip.as_ref()?;
-    let persistence_url = format!("http://{}:8083", pod_ip).parse().unwrap();
-    log::info!("Using \"{}\" as MUDDLE_PERSISTENCE_URL", persistence_url);
+    let public_persistence_url = format!("http://{}:8082", pod_ip).parse().unwrap();
+    let private_persistence_url = format!("http://{}:8083", pod_ip).parse().unwrap();
+    log::info!(
+        "Using \"{}\" as MUDDLE_PUBLIC_PERSISTENCE_URL",
+        public_persistence_url
+    );
+    log::info!(
+        "Using \"{}\" as MUDDLE_PRIVATE_PERSISTENCE_URL",
+        private_persistence_url
+    );
 
-    Some(persistence_url)
+    Some((public_persistence_url, private_persistence_url))
 }

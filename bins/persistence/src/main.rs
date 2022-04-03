@@ -156,6 +156,7 @@ async fn main() -> anyhow::Result<()> {
         App::new()
             .wrap(cors)
             .app_data(web::Data::new(data))
+            .service(public::get_user)
             .service(public::register)
             .service(public::link_account)
             .service(public::patch_user)
@@ -171,7 +172,7 @@ async fn main() -> anyhow::Result<()> {
         let data = data.clone();
         App::new()
             .app_data(web::Data::new(data))
-            .service(private::get_user)
+            .service(private::get_registered_user)
             .service(private::get_level)
             .service(private::post_level)
             .service(private::patch_level)

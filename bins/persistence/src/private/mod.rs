@@ -1,14 +1,17 @@
 use crate::Data;
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use mr_messages_lib::{
-    ErrorKind, ErrorResponse, GetLevelRequest, GetLevelResponse, GetUserRequest, LevelData,
-    LevelDto, LevelsListItem, PatchLevelRequest, PostLevelRequest, PostLevelResponse,
+    ErrorKind, ErrorResponse, GetLevelResponse, GetRegisteredUserQuery, LevelData, LevelDto,
+    LevelPermissionDto, LevelsListItem, PatchLevelRequest, PostLevelRequest, PostLevelResponse,
     RegisteredUser,
 };
 use sqlx::Connection;
 
 #[get("/user")]
-pub async fn get_user(data: web::Data<Data>, body: web::Query<GetUserRequest>) -> HttpResponse {
+pub async fn get_registered_user(
+    data: web::Data<Data>,
+    body: web::Query<GetRegisteredUserQuery>,
+) -> HttpResponse {
     let mut connection = match data.pool.acquire().await {
         Ok(c) => c,
         Err(err) => {
@@ -17,7 +20,7 @@ pub async fn get_user(data: web::Data<Data>, body: web::Query<GetUserRequest>) -
         }
     };
 
-    let GetUserRequest { subject, issuer } = body.into_inner();
+    let GetRegisteredUserQuery { subject, issuer } = body.into_inner();
     let user: Result<Option<RegisteredUser>, sqlx::Error> = sqlx::query_as!(
         RegisteredUser,
         "
@@ -46,9 +49,8 @@ WHERE o.subject = $1 AND o.issuer = $2
 }
 
 #[get("/levels/{id}")]
-pub async fn get_level(data: web::Data<Data>, body: web::Query<GetLevelRequest>) -> HttpResponse {
-    let GetLevelRequest { id } = body.into_inner();
-
+pub async fn get_level(data: web::Data<Data>, level_id: web::Path<i64>) -> HttpResponse {
+    let id = level_id.into_inner();
     let mut connection = match data.pool.acquire().await {
         Ok(c) => c,
         Err(err) => {
@@ -97,13 +99,34 @@ WHERE l.parent_id = $1 AND l.is_autosaved = TRUE
     .fetch_all(&mut connection)
     .await;
 
-    match autosaved_versions {
-        Ok(autosaved_versions) => HttpResponse::Ok().json(&GetLevelResponse {
-            level,
-            autosaved_versions,
-        }),
+    let autosaved_versions = match autosaved_versions {
+        Ok(autosaved_versions) => autosaved_versions,
         Err(err) => {
             log::error!("Failed to get autosaved levels: ${:?}", err);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let level_permissions = sqlx::query_as!(
+        LevelPermissionDto,
+        r#"
+SELECT l.user_id, u.display_name AS user_name, l.created_at
+FROM level_permissions l
+JOIN users AS u ON u.id = l.user_id
+WHERE level_id = $1"#,
+        id
+    )
+    .fetch_all(&mut connection)
+    .await;
+
+    match level_permissions {
+        Ok(level_permissions) => HttpResponse::Ok().json(&GetLevelResponse {
+            level,
+            autosaved_versions,
+            level_permissions,
+        }),
+        Err(err) => {
+            log::error!("Failed to get level permissions: ${:?}", err);
             HttpResponse::InternalServerError().finish()
         }
     }
@@ -111,6 +134,8 @@ WHERE l.parent_id = $1 AND l.is_autosaved = TRUE
 
 #[post("/levels")]
 pub async fn post_level(data: web::Data<Data>, body: web::Json<PostLevelRequest>) -> HttpResponse {
+    log::debug!("Posting a level: {:?}", body);
+
     let PostLevelRequest {
         title,
         user_id,
@@ -127,7 +152,7 @@ pub async fn post_level(data: web::Data<Data>, body: web::Json<PostLevelRequest>
 
     let (data, parent_id, old_data) = match level_data {
         LevelData::Forked { parent_id } => {
-            let data = match get_level_data(&mut connection, parent_id).await {
+            let data = match get_level_data(&mut connection, parent_id, false).await {
                 Ok(data) => data,
                 Err(sqlx::Error::RowNotFound) => {
                     return HttpResponse::BadRequest().json(ErrorResponse::<()> {
@@ -146,8 +171,15 @@ pub async fn post_level(data: web::Data<Data>, body: web::Json<PostLevelRequest>
             autosaved_level_id,
             data,
         } => {
-            let old_data = match get_level_data(&mut connection, autosaved_level_id).await {
-                Ok(data) => data,
+            let old_data = match get_level_data(&mut connection, autosaved_level_id, false).await {
+                Ok(data) => {
+                    log::debug!(
+                        "Autosaving level {} with the following data: {:?}",
+                        autosaved_level_id,
+                        data
+                    );
+                    data
+                }
                 Err(sqlx::Error::RowNotFound) => {
                     return HttpResponse::BadRequest().json(ErrorResponse::<()> {
                         message: "Invalid parent_id: level doesn't exist".to_owned(),
@@ -174,7 +206,7 @@ pub async fn post_level(data: web::Data<Data>, body: web::Json<PostLevelRequest>
 INSERT INTO levels
 (title, user_id, parent_id, data, is_autosaved)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, created_at, updated_at
+RETURNING id, data, created_at, updated_at
             "#,
             title,
             user_id,
@@ -197,7 +229,8 @@ WHERE id NOT IN (
     FROM levels
     WHERE parent_id = $1 AND is_autosaved = TRUE
     ORDER BY id DESC
-)
+    LIMIT 5
+) AND parent_id = $1 AND is_autosaved = TRUE
                 "#,
                 parent_id
             )
@@ -221,14 +254,21 @@ WHERE id NOT IN (
 async fn get_level_data(
     connection: &mut sqlx::PgConnection,
     id: i64,
+    is_autosaved: bool,
 ) -> sqlx::Result<serde_json::Value> {
+    log::info!("Getting level ({}) data", id);
     struct JsonValue {
         data: serde_json::Value,
     }
-    sqlx::query_as!(JsonValue, "SELECT data FROM levels WHERE id = $1", id)
-        .fetch_one(connection)
-        .await
-        .map(|JsonValue { data }| data)
+    sqlx::query_as!(
+        JsonValue,
+        "SELECT data FROM levels WHERE id = $1 AND is_autosaved = $2",
+        id,
+        is_autosaved
+    )
+    .fetch_one(connection)
+    .await
+    .map(|JsonValue { data }| data)
 }
 
 #[patch("/levels/{id}")]
@@ -291,7 +331,6 @@ pub async fn patch_level(
             message: "Level doesn't exist".to_owned(),
             error_kind: ErrorKind::NotFound,
         }),
-        // Err(sqlx::Error::Database(err)) if err.constraint().contains("")
         Err(err) => {
             log::error!("Failed to update a level: ${:?}", err);
             HttpResponse::InternalServerError().finish()
