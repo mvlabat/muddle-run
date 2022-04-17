@@ -42,4 +42,4 @@ path = "../shared_lib"
 [dependencies.mr_utils_lib]
 version = "*"
 path = "../utils_lib"
-features = ["bevy_logging", "jwks"]
+features = ["bevy_logging", "jwks", "kube_discovery"]

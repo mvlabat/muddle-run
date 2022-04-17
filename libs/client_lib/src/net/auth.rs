@@ -1,6 +1,7 @@
 use crate::{
     config_storage,
     config_storage::{OfflineAuthConfig, AUTH_CONFIG_KEY},
+    net::persistence::PersistenceClient,
     utils::parse_jwt,
 };
 use bevy::{ecs::system::ResMut, log};
@@ -191,6 +192,7 @@ pub enum AuthMessage {
     AuthHandlerIsReady,
     Success {
         id_token: String,
+        user_id: i64,
     },
     WrongPasswordError,
     SignUpFailedError,
@@ -207,7 +209,6 @@ pub enum AuthMessage {
 }
 
 pub struct AuthConfig {
-    pub persistence_url: Url,
     pub google_client_id: String,
     // Google OAuth requires it for desktop clients.
     pub google_client_secret: Option<String>,
@@ -241,6 +242,7 @@ pub fn read_offline_auth_config(mut offline_auth_config: ResMut<OfflineAuthConfi
 }
 
 pub async fn serve_auth_requests(
+    persistence_client: PersistenceClient,
     auth_config: AuthConfig,
     auth_request_rx: UnboundedReceiver<AuthRequest>,
     auth_message_tx: UnboundedSender<AuthMessage>,
@@ -262,6 +264,7 @@ pub async fn serve_auth_requests(
     };
 
     let mut handler = AuthRequestsHandler {
+        persistence_client,
         client,
         auth_config,
         auth_request_rx,
@@ -277,6 +280,7 @@ pub async fn serve_auth_requests(
 }
 
 pub struct AuthRequestsHandler {
+    persistence_client: PersistenceClient,
     client: reqwest::Client,
     auth_config: AuthConfig,
     auth_request_rx: UnboundedReceiver<AuthRequest>,
@@ -381,7 +385,7 @@ impl AuthRequestsHandler {
 
                     let url = format!(
                         "https://accounts.google.com/o/oauth2/v2/auth?{}",
-                        serde_urlencoded::to_string(params).unwrap()
+                        serde_urlencoded::to_string(&params).unwrap()
                     );
 
                     webbrowser::open(&url).expect("Failed to open a URL in browser");
@@ -754,7 +758,10 @@ impl AuthRequestsHandler {
                 ..
             })) => {
                 let id_token = self.id_token.clone().unwrap();
-                self.send_auth_message(AuthMessage::Success { id_token });
+                self.send_auth_message(AuthMessage::Success {
+                    id_token,
+                    user_id: self.registered_user.as_ref().unwrap().id,
+                });
                 true
             }
             Some(Err(ErrorResponse {
@@ -790,7 +797,10 @@ impl AuthRequestsHandler {
         {
             Some(Ok(())) => {
                 let id_token = self.id_token.clone().unwrap();
-                self.send_auth_message(AuthMessage::Success { id_token });
+                self.send_auth_message(AuthMessage::Success {
+                    id_token,
+                    user_id: self.registered_user.as_ref().unwrap().id,
+                });
             }
             Some(Err(ErrorResponse {
                 error_kind: ErrorKind::RouteSpecific(PatchUserError::DisplayNameTaken),
@@ -818,7 +828,10 @@ impl AuthRequestsHandler {
             if self.link_account(id_token).await {
                 if registered_user.display_name.is_some() {
                     let id_token = self.id_token.clone().unwrap();
-                    self.send_auth_message(AuthMessage::Success { id_token });
+                    self.send_auth_message(AuthMessage::Success {
+                        id_token,
+                        user_id: registered_user.id,
+                    });
                 } else {
                     self.send_auth_message(AuthMessage::SetDisplayName);
                 }
@@ -840,7 +853,10 @@ impl AuthRequestsHandler {
             Some(Ok(registered_user)) => {
                 if registered_user.display_name.is_some() {
                     let id_token = self.id_token.clone().unwrap();
-                    self.send_auth_message(AuthMessage::Success { id_token });
+                    self.send_auth_message(AuthMessage::Success {
+                        id_token,
+                        user_id: registered_user.id,
+                    });
                 } else {
                     self.send_auth_message(AuthMessage::SetDisplayName);
                 }
@@ -894,65 +910,18 @@ impl AuthRequestsHandler {
         path: &str,
         body: &B,
     ) -> Option<Result<R, ErrorResponse<E>>> {
-        let result = self
-            .client
-            .request(method, self.auth_config.persistence_url.join(path).unwrap())
-            .bearer_auth(self.id_token.clone().unwrap())
-            .json(body)
-            .send()
-            .await;
-
-        let (data, status) = match result {
-            Ok(result) => {
-                let status = result.status();
-                (result.bytes().await, status)
-            }
-            Err(err) => {
-                log::error!("Failed to send a request: {:?}", err);
-                self.send_auth_message(AuthMessage::UnavailableError);
-                return None;
-            }
-        };
-
-        #[cfg(debug_assertions)]
-        if let Ok(data) = &data {
-            log::debug!(
-                "Persistence server HTTP response: {}",
-                String::from_utf8_lossy(data.as_slice())
-            );
-        }
-
-        if status.is_success() {
-            match data
-                .ok()
-                .and_then(|data| serde_json::from_slice::<R>(data.as_slice()).ok())
-            {
-                Some(response) => Some(Ok(response)),
-                None => {
-                    log::error!(
-                        "Failed to parse a body response from the persistence server ({:?}, status: {})",
-                        path,
-                        status.as_u16()
-                    );
-                    None
-                }
-            }
-        } else {
-            match data
-                .ok()
-                .and_then(|data| serde_json::from_slice::<ErrorResponse<E>>(data.as_slice()).ok())
-            {
-                Some(response) => Some(Err(response)),
-                None => {
-                    log::error!(
-                        "Failed to parse a body response from the persistence server ({:?}, status: {})",
-                        path,
-                        status.as_u16()
-                    );
-                    None
-                }
-            }
-        }
+        self.persistence_client
+            .request(
+                method,
+                path,
+                Some(
+                    self.id_token
+                        .clone()
+                        .expect("Expected initialized id_token"),
+                ),
+                body,
+            )
+            .await
     }
 
     async fn request<R: DeserializeOwned, E: DeserializeOwned, B: Serialize, U: IntoUrl>(

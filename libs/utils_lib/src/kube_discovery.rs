@@ -1,16 +1,10 @@
+#[cfg(feature = "bevy_logging")]
 use bevy::log;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{api::ListParams, Api, Client};
 use reqwest::Url;
 
-pub async fn discover_persistence() -> Option<(Url, Url)> {
-    let client = Client::try_default()
-        .await
-        .map_err(|err| {
-            log::warn!("Unable to detect kubernetes environment: {:?}", err);
-            err
-        })
-        .ok()?;
+pub async fn discover_persistence(client: Client) -> Option<(Url, Url)> {
     log::info!("Kubernetes environment detected, trying to fetch mr-persistence pods...");
 
     let pods: Api<Pod> = Api::namespaced(client, "default");

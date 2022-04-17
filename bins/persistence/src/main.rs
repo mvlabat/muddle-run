@@ -161,6 +161,7 @@ async fn main() -> anyhow::Result<()> {
             .service(public::link_account)
             .service(public::patch_user)
             .service(public::get_levels)
+            .service(public::get_level)
     };
     let mut public_server = HttpServer::new(public)
         .workers(2)
@@ -173,7 +174,6 @@ async fn main() -> anyhow::Result<()> {
         App::new()
             .app_data(web::Data::new(data))
             .service(private::get_registered_user)
-            .service(private::get_level)
             .service(private::post_level)
             .service(private::patch_level)
             .service(private::delete_level)

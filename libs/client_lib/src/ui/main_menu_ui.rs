@@ -1,19 +1,25 @@
 use crate::{
     net::{
         auth::{AuthMessage, AuthRequest},
-        MainMenuUiChannels, MatchmakerState, ServerToConnect, TcpConnectionStatus,
+        MainMenuUiChannels, MatchmakerState, PersistenceMessagePayload, PersistenceRequest,
+        ServerToConnect, TcpConnectionStatus,
     },
     MuddleClientConfig, OfflineAuthConfig,
 };
 use bevy::{
     ecs::system::{Local, Res, ResMut, SystemParam},
     log,
-    utils::{HashMap, Instant},
+    utils::{HashMap, Instant, Uuid},
 };
 use bevy_egui::{egui, egui::Widget, EguiContext};
-use mr_messages_lib::{LinkAccountLoginMethod, MatchmakerMessage, Server};
-use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
+use mr_messages_lib::{
+    GameServerState, GetLevelResponse, GetLevelsRequest, GetLevelsUserFilter, InitLevel,
+    LevelsListItem, LinkAccountLoginMethod, MatchmakerMessage, MatchmakerRequest, PaginationParams,
+    Server,
+};
+use mr_shared_lib::net::{ConnectionState, ConnectionStatus, MessageId};
 use std::{
+    collections::BTreeMap,
     marker::PhantomData,
     ops::{Add, Mul, Sub},
 };
@@ -210,7 +216,42 @@ impl Default for AuthUiScreen {
 pub struct MatchmakerUiState {
     observed_empty_servers_at: Option<Instant>,
     servers: HashMap<String, Server>,
-    selected: Option<String>,
+    // Contains a sever name, as we don't want selection to jump every time a server is
+    // added/removed.
+    selected_server: Option<String>,
+    levels: BTreeMap<i64, LevelsListItem>,
+    levels_list_filter: LevelsListFilter,
+    selected_level_id: Option<i64>,
+    selected_level_data: Option<GetLevelResponse>,
+    new_level_title: String,
+    screen: MatchmakerUiScreen,
+    request_id_counter: MessageId,
+    current_request_id: Option<MessageId>,
+    request_error_message: Option<String>,
+}
+
+pub enum MatchmakerUiScreen {
+    ServersList,
+    CreateServer,
+}
+
+impl Default for MatchmakerUiScreen {
+    fn default() -> Self {
+        Self::ServersList
+    }
+}
+
+#[derive(PartialEq)]
+pub enum LevelsListFilter {
+    All,
+    Owned,
+    Builder,
+}
+
+impl Default for LevelsListFilter {
+    fn default() -> Self {
+        Self::All
+    }
 }
 
 #[derive(Default)]
@@ -271,17 +312,132 @@ pub fn main_menu_ui(
         main_menu_ui_state.initialized = true;
     }
 
+    process_auth_messages(
+        &mut main_menu_ui_state,
+        &mut matchmaker_state,
+        &mut main_menu_ui_channels,
+    );
+    process_matchmaker_messages(
+        &mut main_menu_ui_state,
+        &configs,
+        &mut main_menu_ui_channels,
+    );
+    process_persistence_messages(&mut main_menu_ui_state, &mut main_menu_ui_channels);
+
+    if !matches!(matchmaker_state.status, TcpConnectionStatus::Connected) {
+        main_menu_ui_state.matchmaker.servers.clear();
+    }
+
+    if !matches!(connection_state.status(), ConnectionStatus::Uninitialized)
+        || server_to_connect.is_some()
+    {
+        return;
+    }
+
+    if main_menu_ui_state.matchmaker.servers.is_empty()
+        && matches!(matchmaker_state.status, TcpConnectionStatus::Connected)
+        && main_menu_ui_state
+            .matchmaker
+            .observed_empty_servers_at
+            .is_none()
+    {
+        main_menu_ui_state.matchmaker.observed_empty_servers_at = Some(Instant::now());
+    }
+
+    let window_width = 400.0;
+    let window_height = 600.0;
+
+    let ctx = egui_context.ctx();
+    egui::CentralPanel::default()
+        .frame(egui::Frame::none().fill(egui::Color32::from_black_alpha(200)))
+        .show(ctx, |ui| {
+            ui.spacing_mut().window_padding = egui::Vec2::splat(ui.visuals().window_stroke().width);
+            egui::Window::new("Server browser")
+                .title_bar(false)
+                .collapsible(false)
+                .resizable(false)
+                .frame(egui::Frame::window(ui.style()))
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .fixed_size(egui::Vec2::new(window_width, window_height))
+                .show(ui.ctx(), |ui| {
+                    let MainMenuUiState {
+                        initialized: _,
+                        screen: ref mut main_menu_ui_screen,
+                        auth: auth_ui_state,
+                        matchmaker: matchmaker_ui_state,
+                    } = &mut *main_menu_ui_state;
+
+                    match matchmaker_state.status {
+                        TcpConnectionStatus::Connected => {
+                            // Header.
+                            if matchmaker_ui_state.servers.is_empty() {
+                                let progress = Instant::now()
+                                    .duration_since(
+                                        matchmaker_ui_state.observed_empty_servers_at.unwrap(),
+                                    )
+                                    .as_secs_f32()
+                                    / 120.0;
+                                status_bar(
+                                    ui,
+                                    "Spinning up a game server (might take a couple of minutes)...",
+                                    progress.min(0.95),
+                                );
+                            } else {
+                                status_bar(ui, "Matchmaker server: connected", 1.0);
+                            }
+                        }
+                        TcpConnectionStatus::Connecting | TcpConnectionStatus::Disconnected => {
+                            status_bar(ui, "Connecting to the matchmaker...", 0.0);
+                        }
+                    }
+
+                    match main_menu_ui_screen {
+                        MainMenuUiScreen::Auth => {
+                            egui::containers::Frame::none()
+                                .margin([25.0, 15.0])
+                                .show(ui, |ui| {
+                                    let confirm = authentication_screen(
+                                        ui,
+                                        &mut main_menu_ui_channels.auth_request_tx,
+                                        auth_ui_state,
+                                        &configs.offline_auth_config,
+                                    );
+                                    if confirm {
+                                        *main_menu_ui_screen = MainMenuUiScreen::Matchmaker;
+                                    }
+                                });
+                        }
+                        MainMenuUiScreen::Matchmaker => {
+                            matchmaker_screen(
+                                ui,
+                                &matchmaker_state,
+                                matchmaker_ui_state,
+                                &mut server_to_connect,
+                                &mut main_menu_ui_channels,
+                            );
+                        }
+                    }
+                });
+        });
+}
+
+fn process_auth_messages(
+    main_menu_ui_state: &mut MainMenuUiState,
+    matchmaker_state: &mut MatchmakerState,
+    main_menu_ui_channels: &mut MainMenuUiChannels,
+) {
     loop {
         match main_menu_ui_channels.auth_message_rx.try_recv() {
             Ok(AuthMessage::AuthHandlerIsReady) => {
                 main_menu_ui_state.auth.handler_is_ready = true;
             }
-            Ok(AuthMessage::Success { id_token }) => {
+            Ok(AuthMessage::Success { id_token, user_id }) => {
                 log::debug!("Successful auth");
                 main_menu_ui_state.screen = MainMenuUiScreen::Matchmaker;
                 main_menu_ui_state.auth.pending_request = false;
                 main_menu_ui_state.auth.reset_form();
                 matchmaker_state.id_token = Some(id_token);
+                matchmaker_state.user_id = Some(user_id);
             }
             #[cfg(feature = "unstoppable_resolution")]
             Ok(AuthMessage::InvalidDomainError) => {
@@ -350,22 +506,32 @@ pub fn main_menu_ui(
                 main_menu_ui_state.auth.pending_request = false;
                 main_menu_ui_state.auth.reset_form();
             }
-            Err(TryRecvError::Empty) => break,
+            Err(TryRecvError::Empty) => return,
             Err(TryRecvError::Disconnected) => {
                 panic!("Failed to read from a channel (auth messages)")
             }
         }
     }
+}
 
+fn process_matchmaker_messages(
+    main_menu_ui_state: &mut MainMenuUiState,
+    configs: &Configs,
+    main_menu_ui_channels: &mut MainMenuUiChannels,
+) {
     loop {
         match main_menu_ui_channels.matchmaker_message_rx.try_recv() {
-            Ok(MatchmakerMessage::Init(mut init_list)) => {
+            Ok(MatchmakerMessage::Init {
+                servers: mut init_list,
+            }) => {
                 if let Some(server_addr) = configs.client_config.server_addr {
                     init_list.push(Server {
                         name: "localhost".to_string(),
+                        state: GameServerState::Allocated,
                         addr: server_addr,
                         player_capacity: 0,
                         player_count: 0,
+                        request_id: Default::default(),
                     })
                 }
 
@@ -386,111 +552,58 @@ pub fn main_menu_ui(
                 log::debug!("Server removed: {:?}", server_name);
                 main_menu_ui_state.matchmaker.servers.remove(&server_name);
             }
-            Err(TryRecvError::Empty) => break,
+            Ok(MatchmakerMessage::InvalidJwt(request_id)) => {
+                log::debug!("InvalidJwt response: {:?}", request_id);
+                main_menu_ui_state.screen = MainMenuUiScreen::Auth;
+                main_menu_ui_state.auth.screen = AuthUiScreen::SignIn;
+            }
+            Err(TryRecvError::Empty) => return,
             Err(TryRecvError::Disconnected) => {
                 panic!("Failed to read from a channel (matchmaker messages)")
             }
         }
     }
+}
 
-    if !matches!(matchmaker_state.status, TcpConnectionStatus::Connected) {
-        main_menu_ui_state.matchmaker.servers.clear();
+fn process_persistence_messages(
+    main_menu_ui_state: &mut MainMenuUiState,
+    main_menu_ui_channels: &mut MainMenuUiChannels,
+) {
+    loop {
+        let payload = match main_menu_ui_channels.persistence_message_rx.try_recv() {
+            Ok(message) => {
+                if Some(message.request_id) != main_menu_ui_state.matchmaker.current_request_id {
+                    log::debug!(
+                        "Skipping response (message request id: {}, current: {:?})",
+                        message.request_id,
+                        main_menu_ui_state.matchmaker.current_request_id
+                    );
+                    continue;
+                }
+                main_menu_ui_state.matchmaker.current_request_id = None;
+                message.payload
+            }
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                panic!("Failed to read from a channel (persistence messages)")
+            }
+        };
+        match payload {
+            PersistenceMessagePayload::GetLevelsResponse(levels) => {
+                log::debug!("New levels list: {levels:?}");
+                main_menu_ui_state.matchmaker.levels =
+                    levels.into_iter().map(|level| (level.id, level)).collect();
+            }
+            PersistenceMessagePayload::GetLevelResponse(response) => {
+                log::debug!("Selected level details: {response:?}");
+                main_menu_ui_state.matchmaker.selected_level_data = Some(response);
+            }
+            PersistenceMessagePayload::RequestFailed(error) => {
+                log::warn!("Get level request failed: {error}");
+                main_menu_ui_state.matchmaker.request_error_message = Some(error);
+            }
+        }
     }
-
-    if !matches!(connection_state.status(), ConnectionStatus::Uninitialized)
-        || server_to_connect.is_some()
-    {
-        return;
-    }
-
-    if main_menu_ui_state.matchmaker.servers.is_empty()
-        && matches!(matchmaker_state.status, TcpConnectionStatus::Connected)
-        && main_menu_ui_state
-            .matchmaker
-            .observed_empty_servers_at
-            .is_none()
-    {
-        main_menu_ui_state.matchmaker.observed_empty_servers_at = Some(Instant::now());
-    }
-
-    let window_width = 400.0;
-    let window_height = 600.0;
-
-    let ctx = egui_context.ctx();
-    egui::CentralPanel::default()
-        .frame(egui::Frame::none().fill(egui::Color32::from_black_alpha(200)))
-        .show(ctx, |ui| {
-            ui.spacing_mut().window_padding = egui::Vec2::splat(ui.visuals().window_stroke().width);
-            egui::Window::new("Server browser")
-                .title_bar(false)
-                .collapsible(false)
-                .resizable(false)
-                .frame(egui::Frame::window(ui.style()))
-                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-                .fixed_size(egui::Vec2::new(window_width, window_height))
-                .show(ui.ctx(), |ui| {
-                    let MainMenuUiState {
-                        initialized: _,
-                        ref mut screen,
-                        auth: auth_ui_state,
-                        matchmaker:
-                            MatchmakerUiState {
-                                ref observed_empty_servers_at,
-                                ref servers,
-                                ref mut selected,
-                            },
-                    } = &mut *main_menu_ui_state;
-
-                    match matchmaker_state.status {
-                        TcpConnectionStatus::Connected => {
-                            // Header.
-                            if servers.is_empty() {
-                                let progress = Instant::now()
-                                    .duration_since(observed_empty_servers_at.unwrap())
-                                    .as_secs_f32()
-                                    / 120.0;
-                                status_bar(
-                                    ui,
-                                    "Spinning up a game server (might take a couple of minutes)...",
-                                    progress.min(0.95),
-                                );
-                            } else {
-                                status_bar(ui, "Matchmaker server: connected", 1.0);
-                            }
-                        }
-                        TcpConnectionStatus::Connecting | TcpConnectionStatus::Disconnected => {
-                            status_bar(ui, "Connecting to the matchmaker...", 0.0);
-                        }
-                    }
-
-                    match screen {
-                        MainMenuUiScreen::Auth => {
-                            egui::containers::Frame::none()
-                                .margin([25.0, 15.0])
-                                .show(ui, |ui| {
-                                    let confirm = authentication_screen(
-                                        ui,
-                                        &mut main_menu_ui_channels.auth_request_tx,
-                                        auth_ui_state,
-                                        &configs.offline_auth_config,
-                                    );
-                                    if confirm {
-                                        *screen = MainMenuUiScreen::Matchmaker;
-                                    }
-                                });
-                        }
-                        MainMenuUiScreen::Matchmaker => {
-                            matchmaker_screen(
-                                ui,
-                                &matchmaker_state,
-                                servers,
-                                selected,
-                                &mut server_to_connect,
-                            );
-                        }
-                    }
-                });
-        });
 }
 
 fn authentication_screen(
@@ -819,27 +932,59 @@ fn authentication_screen(
 fn matchmaker_screen(
     ui: &mut egui::Ui,
     matchmaker_state: &MatchmakerState,
-    servers: &HashMap<String, Server>,
-    selected: &mut Option<String>,
+    matchmaker_ui_state: &mut MatchmakerUiState,
     server_to_connect: &mut Option<ServerToConnect>,
+    main_menu_ui_channels: &mut MainMenuUiChannels,
+) {
+    match matchmaker_ui_state.screen {
+        MatchmakerUiScreen::ServersList => matchmaker_servers_list_screen(
+            ui,
+            matchmaker_state,
+            server_to_connect,
+            matchmaker_ui_state,
+            main_menu_ui_channels.persistence_request_tx.clone(),
+        ),
+        MatchmakerUiScreen::CreateServer => matchmaker_create_server_screen(
+            ui,
+            matchmaker_state,
+            matchmaker_ui_state,
+            main_menu_ui_channels.matchmaker_request_tx.clone(),
+            main_menu_ui_channels.persistence_request_tx.clone(),
+        ),
+    }
+}
+
+fn matchmaker_servers_list_screen(
+    ui: &mut egui::Ui,
+    matchmaker_state: &MatchmakerState,
+    server_to_connect: &mut Option<ServerToConnect>,
+    matchmaker_ui_state: &mut MatchmakerUiState,
+    persistence_requests_tx: UnboundedSender<PersistenceRequest>,
 ) {
     if let TcpConnectionStatus::Connected = matchmaker_state.status {
         // Server list.
-        let mut sorted_servers = servers.values().collect::<Vec<_>>();
+        let mut sorted_servers = matchmaker_ui_state.servers.values().collect::<Vec<_>>();
         sorted_servers.sort_by(|a, b| a.name.cmp(&b.name));
         egui::containers::ScrollArea::vertical()
             .max_height(500.0)
             .show(ui, |ui| {
-                server_list(ui, &sorted_servers, selected);
+                server_list(
+                    ui,
+                    &sorted_servers,
+                    &mut matchmaker_ui_state.selected_server,
+                );
             });
     }
 
-    // Play button.
+    // Button coordinates.
     let button_size = egui::Vec2::new(100.0, 30.0);
     let margin = 10.0;
-    let is_selected = selected
+    let is_selected = matchmaker_ui_state
+        .selected_server
         .as_ref()
-        .map_or(false, |selected| servers.contains_key(selected));
+        .map_or(false, |selected| {
+            matchmaker_ui_state.servers.contains_key(selected)
+        });
     let (outer_rect, _) = ui.allocate_exact_size(
         egui::Vec2::new(
             ui.available_size_before_wrap().x,
@@ -847,14 +992,208 @@ fn matchmaker_screen(
         ),
         egui::Sense::hover(),
     );
+    let one_third_width = outer_rect.size().x / 3.0;
+    let one_third = egui::Vec2::new(outer_rect.min.x + one_third_width, outer_rect.center().y);
+    let two_third = one_third + egui::Vec2::new(one_third_width, 0.0);
+
+    // Play button.
     let button_response = ui.add_enabled_ui(is_selected, |ui| {
         ui.put(
-            egui::Rect::from_min_size(outer_rect.center() - button_size / 2.0, button_size),
+            egui::Rect::from_min_size(one_third.to_pos2() - button_size / 2.0, button_size),
             egui::widgets::Button::new("Play"),
         )
+        .on_disabled_hover_text("Select a server from the list or Create a new one")
     });
     if button_response.inner.clicked() {
-        *server_to_connect = Some(ServerToConnect(servers[selected.as_ref().unwrap()].clone()));
+        *server_to_connect = Some(ServerToConnect(
+            matchmaker_ui_state.servers[matchmaker_ui_state.selected_server.as_ref().unwrap()]
+                .clone(),
+        ));
+    }
+
+    // Create button.
+    let button_response = ui.put(
+        egui::Rect::from_min_size(two_third.to_pos2() - button_size / 2.0, button_size),
+        egui::widgets::Button::new("Create"),
+    );
+    if button_response.clicked() {
+        matchmaker_ui_state.screen = MatchmakerUiScreen::CreateServer;
+        let request_id = matchmaker_ui_state.request_id_counter.increment();
+        matchmaker_ui_state.current_request_id = Some(request_id);
+        persistence_requests_tx
+            .send(PersistenceRequest::GetLevels {
+                request_id,
+                body: GetLevelsRequest {
+                    user_filter: None,
+                    pagination: PaginationParams {
+                        offset: 0,
+                        limit: 20,
+                    },
+                },
+            })
+            .expect("Failed to write to a channel (persistence request)");
+    }
+}
+
+fn matchmaker_create_server_screen(
+    ui: &mut egui::Ui,
+    matchmaker_state: &MatchmakerState,
+    matchmaker_ui_state: &mut MatchmakerUiState,
+    matchmaker_requests_tx: UnboundedSender<MatchmakerRequest>,
+    persistence_requests_tx: UnboundedSender<PersistenceRequest>,
+) {
+    if ui.button("Back").clicked() {
+        matchmaker_ui_state.screen = MatchmakerUiScreen::ServersList;
+    }
+    ui.separator();
+
+    ui.set_enabled(matchmaker_ui_state.current_request_id.is_none());
+
+    ui.horizontal(|ui| {
+        if ui
+            .selectable_value(
+                &mut matchmaker_ui_state.levels_list_filter,
+                LevelsListFilter::All,
+                "All",
+            )
+            .clicked()
+        {
+            let request_id = matchmaker_ui_state.request_id_counter.increment();
+            matchmaker_ui_state.current_request_id = Some(request_id);
+            persistence_requests_tx
+                .send(PersistenceRequest::GetLevels {
+                    request_id,
+                    body: GetLevelsRequest {
+                        user_filter: None,
+                        pagination: PaginationParams {
+                            offset: 0,
+                            limit: 20,
+                        },
+                    },
+                })
+                .expect("Failed to write to a channel (persistence request)");
+        }
+        ui.set_enabled(matchmaker_state.user_id.is_some());
+        if ui
+            .selectable_value(
+                &mut matchmaker_ui_state.levels_list_filter,
+                LevelsListFilter::Owned,
+                "Owned",
+            )
+            .clicked()
+        {
+            let request_id = matchmaker_ui_state.request_id_counter.increment();
+            matchmaker_ui_state.current_request_id = Some(request_id);
+            persistence_requests_tx
+                .send(PersistenceRequest::GetLevels {
+                    request_id,
+                    body: GetLevelsRequest {
+                        user_filter: Some(GetLevelsUserFilter::AuthorId(
+                            matchmaker_state.user_id.unwrap(),
+                        )),
+                        pagination: PaginationParams {
+                            offset: 0,
+                            limit: 20,
+                        },
+                    },
+                })
+                .expect("Failed to write to a channel (persistence request)");
+        }
+        if ui
+            .selectable_value(
+                &mut matchmaker_ui_state.levels_list_filter,
+                LevelsListFilter::Builder,
+                "Builder",
+            )
+            .clicked()
+        {
+            let request_id = matchmaker_ui_state.request_id_counter.increment();
+            matchmaker_ui_state.current_request_id = Some(request_id);
+            persistence_requests_tx
+                .send(PersistenceRequest::GetLevels {
+                    request_id,
+                    body: GetLevelsRequest {
+                        user_filter: Some(GetLevelsUserFilter::BuilderId(
+                            matchmaker_state.user_id.unwrap(),
+                        )),
+                        pagination: PaginationParams {
+                            offset: 0,
+                            limit: 20,
+                        },
+                    },
+                })
+                .expect("Failed to write to a channel (persistence request)");
+        }
+    });
+    ui.separator();
+
+    ui.text_edit_singleline(&mut matchmaker_ui_state.new_level_title);
+    if ui
+        .add_enabled(
+            !matchmaker_ui_state.new_level_title.is_empty(),
+            egui::Button::new("New level"),
+        )
+        .clicked()
+    {
+        matchmaker_requests_tx
+            .send(MatchmakerRequest::CreateServer {
+                init_level: InitLevel::Create {
+                    title: std::mem::take(&mut matchmaker_ui_state.new_level_title),
+                    parent_id: None,
+                },
+                request_id: Uuid::new_v4(),
+                id_token: matchmaker_state.id_token.clone(),
+            })
+            .expect("Failed to write to a channel (matchmaker request)");
+    }
+
+    for level in matchmaker_ui_state.levels.values() {
+        let open = match matchmaker_ui_state.selected_level_id {
+            Some(level_id) if level_id == level.id => None,
+            Some(_level_id) => Some(false),
+            None => None,
+        };
+        let response = egui::CollapsingHeader::new(&level.title)
+            .open(open)
+            .show(ui, |ui| {
+                ui.label(format!(
+                    "Author: {}",
+                    level.user_name.as_deref().unwrap_or_default()
+                ));
+                let builders = matchmaker_ui_state
+                    .selected_level_data
+                    .as_ref()
+                    .map(|level| level.level_permissions.clone())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|user| user.user_name.unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                ui.label(format!("Builders: {builders}",));
+                if ui.button("Host").clicked() {
+                    matchmaker_requests_tx
+                        .send(MatchmakerRequest::CreateServer {
+                            init_level: InitLevel::Existing(level.id),
+                            request_id: Uuid::new_v4(),
+                            id_token: matchmaker_state.id_token.clone(),
+                        })
+                        .expect("Failed to write to a channel (matchmaker request)");
+                }
+            });
+        if response.header_response.clicked()
+            && matchmaker_ui_state.selected_level_id != Some(level.id)
+        {
+            matchmaker_ui_state.selected_level_id = Some(level.id);
+            matchmaker_ui_state.selected_level_data = None;
+            let request_id = matchmaker_ui_state.request_id_counter.increment();
+            matchmaker_ui_state.current_request_id = Some(request_id);
+            persistence_requests_tx
+                .send(PersistenceRequest::GetLevel {
+                    request_id,
+                    level_id: level.id,
+                })
+                .expect("Failed to write to a channel (persistence request)");
+        }
     }
 }
 

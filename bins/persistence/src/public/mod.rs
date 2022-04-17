@@ -3,9 +3,10 @@ use actix_web::{get, http::header, patch, post, web, HttpRequest, HttpResponse};
 use headers::{authorization::Bearer, Authorization, Header};
 use jwt_compact::Token;
 use mr_messages_lib::{
-    ErrorKind, ErrorResponse, GetLevelsRequest, GetLevelsUserFilter, GetUserResponse,
-    LevelsListItem, LinkAccount, LinkAccountError, LinkAccountLoginMethod, LinkAccountRequest,
-    PaginationParams, PatchUserError, PatchUserRequest, RegisterAccountError, RegisteredUser,
+    ErrorKind, ErrorResponse, GetLevelResponse, GetLevelsRequest, GetLevelsUserFilter,
+    GetUserResponse, LevelDto, LevelPermissionDto, LevelsListItem, LinkAccount, LinkAccountError,
+    LinkAccountLoginMethod, LinkAccountRequest, PaginationParams, PatchUserError, PatchUserRequest,
+    RegisterAccountError, RegisteredUser,
 };
 use mr_utils_lib::JwtAuthClaims;
 use sqlx::{types::chrono, Connection};
@@ -542,6 +543,90 @@ pub async fn get_levels(data: web::Data<Data>, body: web::Query<GetLevelsRequest
         Ok(levels) => HttpResponse::Ok().json(&levels),
         Err(err) => {
             log::error!("Failed to get levels: ${:?}", err);
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[get("/levels/{id}")]
+pub async fn get_level(data: web::Data<Data>, level_id: web::Path<i64>) -> HttpResponse {
+    let id = level_id.into_inner();
+    let mut connection = match data.pool.acquire().await {
+        Ok(c) => c,
+        Err(err) => {
+            log::error!("Failed to acquire a connection: {:?}", err);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let level = sqlx::query_as!(
+        LevelDto,
+        r#"
+SELECT l.id, l.title, l.data, u.id AS user_id, u.display_name AS user_name, l.parent_id, l.created_at, l.updated_at
+FROM levels AS l
+JOIN users AS u ON u.id = l.user_id
+WHERE l.id = $1 AND l.is_autosaved = FALSE
+        "#,
+        id,
+    )
+        .fetch_one(&mut connection)
+        .await;
+
+    let level = match level {
+        Ok(level) => level,
+        Err(sqlx::Error::RowNotFound) => {
+            return HttpResponse::NotFound().json(ErrorResponse::<()> {
+                message: "Level doesn't exist".to_owned(),
+                error_kind: ErrorKind::NotFound,
+            })
+        }
+        Err(err) => {
+            log::error!("Failed to get a level: ${:?}", err);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let autosaved_versions = sqlx::query_as!(
+        LevelsListItem,
+        r#"
+SELECT l.id, l.title, u.id AS user_id, u.display_name AS user_name, l.parent_id, l.created_at, l.updated_at
+FROM levels AS l
+JOIN users AS u ON u.id = l.user_id
+WHERE l.parent_id = $1 AND l.is_autosaved = TRUE
+        "#,
+        id,
+    )
+        .fetch_all(&mut connection)
+        .await;
+
+    let autosaved_versions = match autosaved_versions {
+        Ok(autosaved_versions) => autosaved_versions,
+        Err(err) => {
+            log::error!("Failed to get autosaved levels: ${:?}", err);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let level_permissions = sqlx::query_as!(
+        LevelPermissionDto,
+        r#"
+SELECT l.user_id, u.display_name AS user_name, l.created_at
+FROM level_permissions l
+JOIN users AS u ON u.id = l.user_id
+WHERE level_id = $1"#,
+        id
+    )
+    .fetch_all(&mut connection)
+    .await;
+
+    match level_permissions {
+        Ok(level_permissions) => HttpResponse::Ok().json(&GetLevelResponse {
+            level,
+            autosaved_versions,
+            level_permissions,
+        }),
+        Err(err) => {
+            log::error!("Failed to get level permissions: ${:?}", err);
             HttpResponse::InternalServerError().finish()
         }
     }

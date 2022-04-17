@@ -5,10 +5,14 @@ pub use matchmaker::*;
 pub use persistence::*;
 
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
+use serde_with::rust::display_fromstr::deserialize as deserialize_fromstr;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+// See: https://docs.rs/serde_qs/0.9.1/serde_qs/index.html#flatten-workaround
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct PaginationParams {
+    #[serde(deserialize_with = "deserialize_fromstr")]
     pub offset: i64,
+    #[serde(deserialize_with = "deserialize_fromstr")]
     pub limit: i64,
 }
 
@@ -65,5 +69,59 @@ impl<T: Clone + Serialize + DeserializeOwned> ErrorKind<T> {
             },
             serializer,
         )
+    }
+}
+
+pub fn serialize_binary<T: Serialize>(value: &T) -> bincode::Result<Vec<u8>> {
+    bincode::serialize(value)
+}
+
+pub fn deserialize_binary<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> bincode::Result<T> {
+    bincode::deserialize(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serialize_matchmaker_message() {
+        let messages = vec![
+            MatchmakerMessage::Init {
+                servers: vec![Server {
+                    name: "test".to_owned(),
+                    state: Default::default(),
+                    addr: "127.0.0.1:0".parse().unwrap(),
+                    player_capacity: 0,
+                    player_count: 0,
+                    request_id: Default::default(),
+                }],
+            },
+            MatchmakerMessage::ServerUpdated(Server {
+                name: "test".to_owned(),
+                state: Default::default(),
+                addr: "127.0.0.1:0".parse().unwrap(),
+                player_capacity: 0,
+                player_count: 0,
+                request_id: Default::default(),
+            }),
+            MatchmakerMessage::ServerRemoved("test".to_owned()),
+            MatchmakerMessage::InvalidJwt(Default::default()),
+        ];
+
+        for message in messages {
+            let serialized = serialize_binary(&message).unwrap();
+            let serialized_hex = hex::encode(&serialized);
+            let value: MatchmakerMessage = deserialize_binary(&serialized).unwrap_or_else(|err| {
+                panic!("Failed to deserialize {message:?} (binary: {serialized_hex}): {err:?}");
+            });
+            match value {
+                MatchmakerMessage::Init { .. }
+                | MatchmakerMessage::ServerUpdated(_)
+                | MatchmakerMessage::ServerRemoved(_)
+                | MatchmakerMessage::InvalidJwt(_) => {}
+            }
+            assert_eq!(message, value);
+        }
     }
 }

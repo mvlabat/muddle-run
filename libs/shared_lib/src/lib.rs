@@ -432,7 +432,7 @@ impl SimulationTime {
             assert!(self.player_frame >= self.server_frame);
         }
         let frames_ahead = self.player_frame - self.server_frame;
-        if (self.server_frame.value() as i32 - frame_number.value() as i32).abs() as u16
+        if (self.server_frame.value() as i32 - frame_number.value() as i32).unsigned_abs() as u16
             > u16::MAX / 2
             && self.server_frame > frame_number
         {

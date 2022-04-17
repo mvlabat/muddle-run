@@ -1,6 +1,7 @@
 #![feature(assert_matches)]
 #![feature(let_else)]
 #![feature(slice_pattern)]
+#![allow(clippy::only_used_in_recursion)]
 
 pub use net::DEFAULT_SERVER_PORT;
 

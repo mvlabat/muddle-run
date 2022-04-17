@@ -1,17 +1,21 @@
 use crate::PaginationParams;
 use serde::{Deserialize, Serialize};
+use serde_with::rust::display_fromstr::deserialize as deserialize_fromstr;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct GetLevelsRequest {
+    #[serde(flatten)]
     pub user_filter: Option<GetLevelsUserFilter>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum GetLevelsUserFilter {
+    #[serde(deserialize_with = "deserialize_fromstr")]
     AuthorId(i64),
+    #[serde(deserialize_with = "deserialize_fromstr")]
     BuilderId(i64),
 }
 
@@ -87,4 +91,36 @@ pub enum LevelData {
 pub struct PatchLevelRequest {
     pub title: Option<String>,
     pub builder_ids: Option<Vec<i64>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_levels_request_query() {
+        let query = GetLevelsRequest {
+            user_filter: Some(GetLevelsUserFilter::AuthorId(1)),
+            pagination: PaginationParams {
+                offset: 0,
+                limit: 20,
+            },
+        };
+        let serialized = serde_urlencoded::to_string(&query).unwrap();
+        assert_eq!(&serialized, "author_id=1&offset=0&limit=20");
+        let deserialized: GetLevelsRequest = serde_urlencoded::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, query);
+
+        let query = GetLevelsRequest {
+            user_filter: None,
+            pagination: PaginationParams {
+                offset: 0,
+                limit: 20,
+            },
+        };
+        let serialized = serde_urlencoded::to_string(&query).unwrap();
+        assert_eq!(&serialized, "offset=0&limit=20");
+        let deserialized: GetLevelsRequest = serde_urlencoded::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, query);
+    }
 }

@@ -20,7 +20,8 @@ use crate::{
     },
 };
 use bevy::{core::FixedTimestep, log, prelude::*, utils::HashMap};
-use mr_messages_lib::LevelData;
+use kube::Client;
+use mr_messages_lib::{InitLevel, LevelData};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -37,7 +38,7 @@ use mr_shared_lib::{
     registry::IncrementId,
     simulations_per_second, MuddleSharedPlugin,
 };
-use mr_utils_lib::jwks::Jwks;
+use mr_utils_lib::{jwks::Jwks, kube_discovery};
 use reqwest::Url;
 use rymder::GameServer;
 use std::{
@@ -48,7 +49,6 @@ use std::{
 use tokio::sync::mpsc::UnboundedReceiver;
 
 mod game_events;
-mod kube_discovery;
 mod net;
 mod persistence;
 mod player_updates;
@@ -106,7 +106,14 @@ impl Plugin for MuddleServerPlugin {
         let persistence_urls: Option<(Url, Url)> = server_config
             .public_persistence_url
             .zip(server_config.private_persistence_url)
-            .or_else(|| TOKIO.block_on(kube_discovery::discover_persistence()));
+            .or_else(|| {
+                TOKIO.block_on(async {
+                    let client = Client::try_default()
+                        .await
+                        .expect("Unable to detect kubernetes environment");
+                    kube_discovery::discover_persistence(client).await
+                })
+            });
         if let Some((public_url, private_url)) = persistence_urls {
             let config = PersistenceConfig {
                 public_url,
@@ -198,14 +205,6 @@ impl Plugin for MuddleServerPlugin {
     }
 }
 
-enum InitLevel {
-    Existing(i64),
-    Create {
-        title: String,
-        parent_id: Option<i64>,
-    },
-}
-
 pub async fn init_level_data(app: &mut App, game_server: Option<GameServer>) {
     let (user_id, init_level) = if let Some(game_server) = game_server {
         let metadata = game_server
@@ -242,10 +241,12 @@ pub async fn init_level_data(app: &mut App, game_server: Option<GameServer>) {
         .expect("Expected private_persistence_url when booting from the Agones environment or requesting a level via the env variables");
 
     let (get_level_response, init_level_objects) = match init_level {
-        InitLevel::Existing(id) => load_level(private_persistence_url, id)
+        InitLevel::Existing(id) => load_level(public_persistence_url, id)
             .await
             .expect("Failed to load the level"),
         InitLevel::Create { title, parent_id } => {
+            let user_id =
+                user_id.expect("Expected `user_id` when creating a new level is requested");
             let user = get_user(public_persistence_url, user_id)
                 .await
                 .expect("Failed to get user info");
@@ -277,21 +278,18 @@ fn read_env_level_data(
     title: Option<String>,
     parent_id: Option<String>,
     level_id: Option<String>,
-) -> (i64, InitLevel) {
-    let user_id = user_id
-        .expect("Expected user id (`user_id` Agones annotation or `MUDDLE_USER_ID` env variable")
-        .parse()
-        .expect("Failed to parse user id");
+) -> (Option<i64>, InitLevel) {
+    let user_id = user_id.map(|user_id| user_id.parse().expect("Failed to parse `user_id`"));
     let init_level = if let Some(title) = title {
         InitLevel::Create {
             title,
-            parent_id: parent_id.map(|id| id.parse().expect("Failed to parse level_parent_id")),
+            parent_id: parent_id.map(|id| id.parse().expect("Failed to parse `level_parent_id`")),
         }
     } else {
         let level_id = level_id
             .expect("Expected a `level_id` annotation or `level_title` one for a new level (`MUDDLE_LEVEL_ID` or `MUDDLE_LEVEL_TITLE` env vars respectively)")
             .parse()
-            .expect("Failed to parse level_id");
+            .expect("Failed to parse `level_id`");
         InitLevel::Existing(level_id)
     };
     (user_id, init_level)
