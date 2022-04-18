@@ -37,6 +37,7 @@ serde_urlencoded = "0.7.0"
 sha2 = "0.10.1"
 tokio = { version = "1.15.0", features = ["rt", "sync"] }
 url = { version = "2.2.2", features = ["serde"] }
+wasm-timer = "0.2.5"
 webbrowser = "0.5.5"
 whoami = "1.2.1"
 

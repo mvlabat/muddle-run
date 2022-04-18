@@ -62,7 +62,9 @@ impl MatchmakerRequestsHandler {
                     log::info!("Dropping the connection with the matchmaker service...");
                     let _ = self.status_tx.send(TcpConnectionStatus::Disconnected);
                 }
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                wasm_timer::Delay::new(Duration::from_millis(500))
+                    .await
+                    .unwrap();
             }
 
             current_state = connect;
