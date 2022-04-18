@@ -82,6 +82,18 @@
       ]
     }
   },
+  "46a6a2449352d8a576f716ae42ca951b1f1985b15aac036900810e8c10630af6": {
+    "query": "\nDELETE FROM levels\nWHERE id NOT IN (\n    SELECT id\n    FROM levels\n    WHERE parent_id = $1 AND is_autosaved = TRUE\n    ORDER BY id DESC\n    LIMIT 5\n) AND parent_id = $1 AND is_autosaved = TRUE\n                ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": []
+    }
+  },
   "4d96a20112a51caa9db7b2d89180f45698483f3789637613aa8bc929c45ef73c": {
     "query": "\nSELECT l.user_id, u.display_name AS user_name, l.created_at\nFROM level_permissions l\nJOIN users AS u ON u.id = l.user_id\nWHERE level_id = $1",
     "describe": {
@@ -307,38 +319,6 @@
       "nullable": []
     }
   },
-  "70578818f30b14df90aed092be2b0f0ff0b37fb58ba79e4dd9171e834b414b7f": {
-    "query": "\nDELETE FROM levels\nWHERE id NOT IN (\n    SELECT id\n    FROM levels\n    WHERE parent_id = $1 AND is_autosaved = TRUE\n    ORDER BY id DESC\n)\n                ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Left": [
-          "Int8"
-        ]
-      },
-      "nullable": []
-    }
-  },
-  "7d4e444370297ea9b05d94a300cb416276da79dedad558fdd37df91ad3a996eb": {
-    "query": "SELECT data FROM levels WHERE id = $1",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "data",
-          "type_info": "Json"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Int8"
-        ]
-      },
-      "nullable": [
-        false
-      ]
-    }
-  },
   "82b3c6c1c5da9441c1abc1c201056871bb8ca2b2a766a10961582a45c2a817df": {
     "query": "\nSELECT u.id, u.email, o.issuer, o.subject\nFROM users u\nJOIN openids AS o ON u.id = o.user_id\nWHERE u.id = $1\n        ",
     "describe": {
@@ -398,8 +378,8 @@
       ]
     }
   },
-  "ae293713eb093ea782d695ad3fb2e5f48e8703e235dfc93e04a3d3c1e6980683": {
-    "query": "\nINSERT INTO levels\n(title, user_id, parent_id, data, is_autosaved)\nVALUES ($1, $2, $3, $4, $5)\nRETURNING id, created_at, updated_at\n            ",
+  "b0e1d2b6a8d44d81d15afb803813bc0cfa50b7c6ab77cd4f6bc455db9ae61de2": {
+    "query": "SELECT id, display_name, created_at, updated_at FROM users WHERE id = $1",
     "describe": {
       "columns": [
         {
@@ -409,26 +389,28 @@
         },
         {
           "ordinal": 1,
+          "name": "display_name",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 2,
           "name": "created_at",
           "type_info": "Timestamp"
         },
         {
-          "ordinal": 2,
+          "ordinal": 3,
           "name": "updated_at",
           "type_info": "Timestamp"
         }
       ],
       "parameters": {
         "Left": [
-          "Varchar",
-          "Int8",
-          "Int8",
-          "Json",
-          "Bool"
+          "Int8"
         ]
       },
       "nullable": [
         false,
+        true,
         false,
         false
       ]
@@ -625,6 +607,48 @@
       ]
     }
   },
+  "dbc6c8c67c9a046ea0dbfa0a06060cc7cd873fea2d8d2c0f8c03f8c4ad1dba03": {
+    "query": "\nINSERT INTO levels\n(title, user_id, parent_id, data, is_autosaved)\nVALUES ($1, $2, $3, $4, $5)\nRETURNING id, data, created_at, updated_at\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "data",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 2,
+          "name": "created_at",
+          "type_info": "Timestamp"
+        },
+        {
+          "ordinal": 3,
+          "name": "updated_at",
+          "type_info": "Timestamp"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Varchar",
+          "Int8",
+          "Int8",
+          "Json",
+          "Bool"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "df8f6e5a37edf47e9bf896ccf8a74e2377bd12cddab66fbfb3b66d372e152bf1": {
     "query": "\nINSERT INTO openids\n(user_id, issuer, subject, email)\nVALUES ($1, $2, $3, $4)\n        ",
     "describe": {
@@ -638,6 +662,27 @@
         ]
       },
       "nullable": []
+    }
+  },
+  "fcb2a33fa6d3e50fcce3f00700ffeb2b42a578dfd243fda6f236f68d550413f8": {
+    "query": "SELECT data FROM levels WHERE id = $1 AND is_autosaved = $2",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "data",
+          "type_info": "Json"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Bool"
+        ]
+      },
+      "nullable": [
+        false
+      ]
     }
   }
 }
