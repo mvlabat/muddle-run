@@ -56,6 +56,13 @@ FROM debian:stable-slim
 
 COPY --from=builder /usr/src/muddle-run/target/release/mr_matchmaker /usr/local/bin/
 
+ARG muddle_auth0_client_id
+ARG muddle_google_web_client_id
+ARG muddle_google_desktop_client_id
+ENV MUDDLE_AUTH0_CLIENT_ID=${muddle_auth0_client_id}
+ENV MUDDLE_GOOGLE_WEB_CLIENT_ID=${muddle_google_web_client_id}
+ENV MUDDLE_GOOGLE_DESKTOP_CLIENT_ID=${muddle_google_desktop_client_id}
+
 EXPOSE 8080
 
 CMD ["mr_matchmaker"]
