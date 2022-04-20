@@ -20,7 +20,11 @@ pub async fn poll_jwks(config: Config, jwks: Jwks) {
     ))
     .fuse();
     futures::select! {
-        _ = poll_google_jwks => {},
-        _ = poll_auth0_jwks => {},
+        _ = poll_google_jwks => {
+            log::warn!("Polling google JWKs finished");
+        },
+        _ = poll_auth0_jwks => {
+            log::warn!("Polling auth0 JWKs finished");
+        },
     }
 }

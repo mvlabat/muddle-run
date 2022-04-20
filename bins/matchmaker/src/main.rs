@@ -325,6 +325,8 @@ async fn watch_game_servers(client: Client, tx: Sender<MatchmakerMessage>, serve
             let _ = tx.send(message);
         }
     }
+
+    log::warn!("The k8s stream has ended");
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -451,13 +453,20 @@ async fn listen_websocket(params: HandleConnectionParams) {
     let listener = TcpListener::bind(addr).await.expect("Failed to bind");
     log::info!("Listening on: {}", addr);
 
-    while let Ok((stream, addr)) = listener.accept().await {
-        tokio::spawn(handle_connection(
-            addr,
-            stream,
-            params.tx.subscribe(),
-            params.clone(),
-        ));
+    loop {
+        match listener.accept().await {
+            Ok((stream, addr)) => {
+                tokio::spawn(handle_connection(
+                    addr,
+                    stream,
+                    params.tx.subscribe(),
+                    params.clone(),
+                ));
+            }
+            Err(err) => {
+                log::error!("Failed to accept a websocket connection {err:?}");
+            }
+        }
     }
 }
 
