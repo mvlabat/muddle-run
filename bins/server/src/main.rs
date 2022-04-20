@@ -132,7 +132,7 @@ fn main() {
         match allocated_game_server_rx.blocking_recv() {
             Ok(game_server) => game_server,
             Err(err) => {
-                log::error!("Failed to receive Agones allocation status: {:?}", err);
+                log::error!("Failed to receive Agones allocation status: {err:?}");
                 std::process::exit(1);
             }
         }

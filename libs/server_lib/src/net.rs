@@ -44,6 +44,14 @@ pub fn watch_agones_updates(
 ) -> tokio::sync::oneshot::Receiver<GameServer> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     TOKIO.spawn(async move {
+        log::info!("Marking the GameServer as Ready...");
+        if let Err(err) = agones_sdk.mark_ready().await {
+            log::error!(
+                "Failed to mark the Game Server as Ready, exiting: {:?}",
+                err
+            );
+            std::process::exit(1);
+        }
         let mut stream = match agones_sdk.watch_gameserver().await {
             Ok(stream) => stream,
             Err(err) => {
@@ -55,9 +63,11 @@ pub fn watch_agones_updates(
         while let Some(Ok(game_server)) = stream.next().await {
             log::debug!("GameServer update: {:#?}", game_server);
             if let Some(status) = game_server.status.as_ref() {
-                if let (rymder::gameserver::State::Ready, Some(tx)) = (status.state, tx.take()) {
-                    if let Err(err) = tx.send(game_server) {
-                        log::error!("Failed to send Agones allocation message: {:?}", err);
+                if status.state == rymder::gameserver::State::Allocated {
+                    if let Some(tx) = tx.take() {
+                        if let Err(err) = tx.send(game_server) {
+                            log::error!("Failed to send Agones allocation message: {:?}", err);
+                        }
                     }
                 }
             }
@@ -75,14 +85,6 @@ pub fn startup(
     let agones_status = agones.as_ref().and_then(|agones| {
         let mut sdk = agones.sdk.clone();
         TOKIO.spawn(async move {
-            log::info!("Marking the GameServer as Ready...");
-            if let Err(err) = sdk.mark_ready().await {
-                log::error!(
-                    "Failed to mark the Game Server as Ready, exiting: {:?}",
-                    err
-                );
-                std::process::exit(1);
-            }
             log::info!(
                 "Setting GameServer player capacity to {}...",
                 PLAYER_CAPACITY
