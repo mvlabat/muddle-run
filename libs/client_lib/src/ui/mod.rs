@@ -100,3 +100,11 @@ impl MuddleInspectable for Position {
         });
     }
 }
+
+fn without_item_spacing<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let prev_item_spacing = ui.spacing_mut().item_spacing;
+    ui.spacing_mut().item_spacing = egui::Vec2::new(prev_item_spacing.x, 0.0);
+    let response = add_contents(ui);
+    ui.spacing_mut().item_spacing = prev_item_spacing;
+    response
+}

@@ -141,7 +141,7 @@ pub fn builder_run_criteria(
 }
 
 pub fn builder_ui(
-    egui_context: ResMut<EguiContext>,
+    mut egui_context: ResMut<EguiContext>,
     mut builder_ui_state: Local<BuilderUiState>,
     mouse_input: MouseInput<(), ()>,
     mut level_object_correlations: ResMut<LevelObjectCorrelations>,
@@ -150,7 +150,7 @@ pub fn builder_ui(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    let ctx = egui_context.ctx();
+    let ctx = egui_context.ctx_mut();
 
     // Picking a level object if we received a confirmation from the server about an object created
     // by us.
@@ -345,7 +345,7 @@ pub fn builder_ui(
 }
 
 pub fn process_builder_mouse_input(
-    egui_context: ResMut<EguiContext>,
+    mut egui_context: ResMut<EguiContext>,
     mut mouse_input: MouseInput<(), ()>,
     mut level_objects: LevelObjects,
     mut object_update: EventReader<EditedObjectUpdate>,
@@ -364,7 +364,7 @@ pub fn process_builder_mouse_input(
     }
 
     // Picking a level object with a mouse.
-    if !egui_context.ctx().is_pointer_over_area() {
+    if !egui_context.ctx_mut().is_pointer_over_area() {
         mouse_input.mouse_entity_picker.process_input(&mut None);
     }
 
@@ -404,7 +404,7 @@ pub fn process_builder_mouse_input(
             && mouse_input
                 .mouse_button_input
                 .just_pressed(MouseButton::Left)
-            && !egui_context.ctx().is_pointer_over_area()
+            && !egui_context.ctx_mut().is_pointer_over_area()
         {
             *is_being_placed = false;
         }

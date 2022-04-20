@@ -82,7 +82,7 @@ pub struct PlayerUpdatesParams<'w, 's> {
 
 #[derive(SystemParam)]
 pub struct UiParams<'w, 's> {
-    egui_context: Res<'w, EguiContext>,
+    egui_context: ResMut<'w, EguiContext>,
     debug_ui_state: ResMut<'w, DebugUiState>,
     #[system_param(ignore)]
     marker: PhantomData<&'s ()>,
@@ -99,7 +99,7 @@ pub fn track_input_events(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    if ui_params.egui_context.ctx().wants_keyboard_input() {
+    if ui_params.egui_context.ctx_mut().wants_keyboard_input() {
         return;
     }
 

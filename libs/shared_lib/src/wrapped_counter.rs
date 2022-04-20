@@ -36,6 +36,12 @@ where
     pub fn diff_abs(&self, rhs: Self) -> Self {
         *self.max(&rhs) - *self.min(&rhs)
     }
+
+    pub fn increment(&mut self) -> Self {
+        let old = *self;
+        *self = WrappedCounter::add(self, Self::new(1.as_())).0;
+        old
+    }
 }
 
 impl<T: Integer> std::fmt::Display for WrappedCounter<T> {

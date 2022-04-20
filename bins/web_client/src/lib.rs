@@ -10,7 +10,7 @@ use wasm_bindgen::prelude::*;
 pub fn main() {
     App::new()
         .insert_resource(MuddleClientConfig {
-            persistence_url: try_parse_from_env!("MUDDLE_PERSISTENCE_URL"),
+            persistence_url: try_parse_from_env!("MUDDLE_PUBLIC_PERSISTENCE_URL"),
             google_client_id: try_parse_from_env!("MUDDLE_GOOGLE_CLIENT_ID"),
             google_client_secret: try_parse_from_env!("MUDDLE_GOOGLE_CLIENT_SECRET"),
             auth0_client_id: try_parse_from_env!("MUDDLE_AUTH0_CLIENT_ID"),

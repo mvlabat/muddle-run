@@ -2,6 +2,7 @@
 
 # IDE
 .idea
+.vscode
 
 # Build artifacts
 target

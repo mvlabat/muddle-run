@@ -16,7 +16,7 @@ use chrono::{DateTime, Duration, Utc};
 use std::collections::VecDeque;
 use thiserror::Error;
 
-pub const CONNECTION_TIMEOUT_MILLIS: u64 = 2000;
+pub const CONNECTION_TIMEOUT_MILLIS: u64 = 3000;
 const RTT_UPDATE_FACTOR: f32 = 0.2;
 const JITTER_DECREASE_THRESHOLD_SECS: u64 = 1;
 

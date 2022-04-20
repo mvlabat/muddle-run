@@ -102,12 +102,12 @@ pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_dat
 
 pub fn profiler_ui(
     // ResMut is intentional, to avoid fighting over the Mutex from different systems.
-    egui_context: ResMut<EguiContext>,
+    mut egui_context: ResMut<EguiContext>,
     debug_ui_state: Res<DebugUiState>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    let ctx = egui_context.ctx();
+    let ctx = egui_context.ctx_mut();
 
     if !debug_ui_state.show {
         return;
@@ -123,13 +123,13 @@ pub fn profiler_ui(
 
 pub fn debug_ui(
     // ResMut is intentional, to avoid fighting over the Mutex from different systems.
-    egui_context: ResMut<EguiContext>,
+    mut egui_context: ResMut<EguiContext>,
     mut debug_ui_state: ResMut<DebugUiState>,
     diagnostics: Res<Diagnostics>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    let ctx = egui_context.ctx();
+    let ctx = egui_context.ctx_mut();
 
     if let Some(fps_diagnostic) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
         debug_ui_state.fps_history_len = fps_diagnostic.get_max_history_length();
@@ -211,7 +211,7 @@ pub struct InspectObjectQueries<'w, 's> {
 pub fn inspect_object(
     // ResMut is intentional, to avoid fighting over the Mutex from different systems.
     debug_ui_state: Res<DebugUiState>,
-    egui_context: ResMut<EguiContext>,
+    mut egui_context: ResMut<EguiContext>,
     mut mouse_entity_picker: MouseEntityPicker<(), ()>,
     queries: InspectObjectQueries,
 ) {
@@ -221,7 +221,7 @@ pub fn inspect_object(
         return;
     }
 
-    let ctx = egui_context.ctx();
+    let ctx = egui_context.ctx_mut();
     if !ctx.is_pointer_over_area() {
         mouse_entity_picker.process_input(&mut None);
     }
@@ -285,7 +285,7 @@ fn graph(
 
     let mut shapes = vec![Shape::Rect(RectShape {
         rect,
-        corner_radius: style.corner_radius,
+        rounding: style.rounding,
         fill: ui.style().visuals.extreme_bg_color,
         stroke: ui.style().noninteractive().bg_stroke,
     })];
@@ -303,11 +303,11 @@ fn graph(
             let value = remap(y, rect.bottom_up_range(), 0.0..=graph_top_value);
             let text = format!("{:.1}", value);
             shapes.push(Shape::text(
-                ui.fonts(),
+                &ui.fonts(),
                 pos2(rect.left(), y),
                 egui::Align2::LEFT_BOTTOM,
                 text,
-                TextStyle::Monospace,
+                TextStyle::Monospace.resolve(ui.style()),
                 Color32::WHITE,
             ));
         }

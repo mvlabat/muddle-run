@@ -1,7 +1,12 @@
+pub use persistence::{PersistenceMessage, PersistenceMessagePayload, PersistenceRequest};
+
 use crate::{
     input::{LevelObjectRequestsQueue, PlayerRequestsQueue},
-    net::auth::AuthConfig,
-    websocket::WebSocketStream,
+    net::{
+        auth::AuthConfig,
+        matchmaker::MatchmakerRequestsHandler,
+        persistence::{PersistenceClient, PersistenceRequestsHandler},
+    },
     CurrentPlayerNetId, EstimatedServerTime, InitialRtt, LevelObjectCorrelations,
     MuddleClientConfig, PlayerDelay, TargetFramesAhead,
 };
@@ -9,8 +14,8 @@ use auth::{AuthMessage, AuthRequest};
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashMap};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
 use chrono::Utc;
-use futures::{select, FutureExt, StreamExt, TryStreamExt};
-use mr_messages_lib::{MatchmakerMessage, Server};
+use futures::{select, FutureExt};
+use mr_messages_lib::{MatchmakerMessage, MatchmakerRequest, Server};
 use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
@@ -41,12 +46,13 @@ use std::{
 use tokio::sync::mpsc::{
     error::TryRecvError, unbounded_channel, UnboundedReceiver, UnboundedSender,
 };
-use url::Url;
 
 pub mod auth;
 
 #[cfg(target_arch = "wasm32")]
 mod listen_local_storage;
+mod matchmaker;
+mod persistence;
 #[cfg(not(target_arch = "wasm32"))]
 mod redirect_uri_server;
 
@@ -91,6 +97,7 @@ pub enum TcpConnectionStatus {
 pub struct MatchmakerState {
     pub status: TcpConnectionStatus,
     pub id_token: Option<String>,
+    pub user_id: Option<i64>,
 }
 
 pub struct MainMenuUiChannels {
@@ -99,7 +106,10 @@ pub struct MainMenuUiChannels {
     pub auth_message_rx: UnboundedReceiver<AuthMessage>,
     pub connection_request_tx: UnboundedSender<bool>,
     pub status_rx: UnboundedReceiver<TcpConnectionStatus>,
+    pub matchmaker_request_tx: UnboundedSender<MatchmakerRequest>,
     pub matchmaker_message_rx: UnboundedReceiver<MatchmakerMessage>,
+    pub persistence_request_tx: UnboundedSender<PersistenceRequest>,
+    pub persistence_message_rx: UnboundedReceiver<PersistenceMessage>,
 }
 
 pub struct ServerToConnect(pub Server);
@@ -114,10 +124,6 @@ pub fn init_matchmaker_connection(mut commands: Commands, client_config: Res<Mud
     };
 
     let auth_config = AuthConfig {
-        persistence_url: client_config
-            .persistence_url
-            .clone()
-            .expect("Expected MUDDLE_PERSISTENCE_URL"),
         google_client_id: client_config
             .google_client_id
             .clone()
@@ -151,10 +157,18 @@ pub fn init_matchmaker_connection(mut commands: Commands, client_config: Res<Mud
     let (auth_message_tx, auth_message_rx) = unbounded_channel();
     let (connection_request_tx, connection_request_rx) = unbounded_channel();
     let (status_tx, status_rx) = unbounded_channel();
+    let (matchmaker_request_tx, matchmaker_request_rx) = unbounded_channel();
     let (matchmaker_message_tx, matchmaker_message_rx) = unbounded_channel();
+    let (persistence_request_tx, persistence_request_rx) = unbounded_channel();
+    let (persistence_message_tx, persistence_message_rx) = unbounded_channel();
 
     let auth_request_tx_clone = auth_request_tx.clone();
     let auth_message_tx_clone = auth_message_tx.clone();
+    let persistence_url = client_config
+        .persistence_url
+        .clone()
+        .expect("Expected MUDDLE_PUBLIC_PERSISTENCE_URL");
+    let persistence_client = PersistenceClient::new(Default::default(), persistence_url);
     run_async(async move {
         #[cfg(not(target_arch = "wasm32"))]
         let mut serve_redirect_uri_future =
@@ -165,18 +179,28 @@ pub fn init_matchmaker_connection(mut commands: Commands, client_config: Res<Mud
             tokio::task::spawn_local(listen_local_storage::serve(auth_request_tx_clone.clone()))
                 .fuse();
         let mut serve_auth_future = tokio::task::spawn_local(auth::serve_auth_requests(
+            persistence_client.clone(),
             auth_config,
             auth_request_rx,
             auth_message_tx_clone,
         ))
         .fuse();
-        let mut serve_matchmaker_future = tokio::task::spawn_local(serve_matchmaker_connection(
-            matchmaker_url,
+        let matchmaker_requests_handler = MatchmakerRequestsHandler {
+            url: matchmaker_url,
             connection_request_rx,
             status_tx,
             matchmaker_message_tx,
-        ))
-        .fuse();
+        };
+        let mut serve_matchmaker_future =
+            tokio::task::spawn_local(matchmaker_requests_handler.serve(matchmaker_request_rx))
+                .fuse();
+        let persistence_requests_handler = PersistenceRequestsHandler {
+            client: persistence_client.clone(),
+            request_rx: persistence_request_rx,
+            message_tx: persistence_message_tx,
+        };
+        let mut serve_persistence_future =
+            tokio::task::spawn_local(persistence_requests_handler.serve()).fuse();
         select! {
             _ = serve_redirect_uri_future => {
                 log::warn!("Redirect uri server task finished");
@@ -186,6 +210,9 @@ pub fn init_matchmaker_connection(mut commands: Commands, client_config: Res<Mud
             },
             _ = serve_matchmaker_future => {
                 log::warn!("Matchmaker task finished");
+            },
+            _ = serve_persistence_future => {
+                log::warn!("Persistence task finished");
             },
         }
     });
@@ -197,11 +224,15 @@ pub fn init_matchmaker_connection(mut commands: Commands, client_config: Res<Mud
         auth_message_rx,
         connection_request_tx,
         status_rx,
+        matchmaker_request_tx,
         matchmaker_message_rx,
+        persistence_request_tx,
+        persistence_message_rx,
     });
     commands.insert_resource(MatchmakerState {
         status: TcpConnectionStatus::Disconnected,
         id_token: None,
+        user_id: None,
     });
 }
 
@@ -240,123 +271,6 @@ where
             })
             .await;
     });
-}
-
-async fn serve_matchmaker_connection(
-    url: Url,
-    mut connection_request_rx: UnboundedReceiver<bool>,
-    status_tx: UnboundedSender<TcpConnectionStatus>,
-    matchmaker_message_tx: UnboundedSender<MatchmakerMessage>,
-) {
-    let mut current_state = false;
-
-    let mut disconnect_request_tx = None;
-    let (disconnect_tx, mut disconnect_rx) = tokio::sync::mpsc::unbounded_channel();
-    loop {
-        let connect = select! {
-            connect = connection_request_rx.recv().fuse() => connect,
-            _ = disconnect_rx.recv().fuse() => Some(false),
-        };
-        let connect = match connect {
-            Some(connect) => connect,
-            None => break,
-        };
-
-        if current_state == connect {
-            continue;
-        }
-
-        if connect {
-            log::info!("Connecting to the matchmaker service...");
-            let _ = status_tx.send(TcpConnectionStatus::Connecting);
-            let message_tx = matchmaker_message_tx.clone();
-            let url = url.clone();
-            let ws_status_tx = status_tx.clone();
-            let disconnect_request_channel = tokio::sync::oneshot::channel();
-            disconnect_request_tx = Some(disconnect_request_channel.0);
-            tokio::task::spawn_local(handle_matchmaker_connection(
-                message_tx,
-                url,
-                ws_status_tx,
-                disconnect_request_channel.1,
-                disconnect_tx.clone(),
-            ));
-        } else {
-            // If this fails, the connection is already closed.
-            if disconnect_request_tx.take().unwrap().send(()).is_ok() {
-                log::info!("Dropping the connection with the matchmaker service...");
-                let _ = status_tx.send(TcpConnectionStatus::Disconnected);
-            }
-        }
-
-        current_state = connect;
-    }
-    panic!("Failed to read from a channel (matchmaker connection request");
-}
-
-async fn handle_matchmaker_connection(
-    message_tx: UnboundedSender<MatchmakerMessage>,
-    url: Url,
-    ws_status_tx: UnboundedSender<TcpConnectionStatus>,
-    disconnect_request_rx: tokio::sync::oneshot::Receiver<()>,
-    disconnect_tx: tokio::sync::mpsc::UnboundedSender<()>,
-) {
-    let mut ws_stream = match WebSocketStream::connect(&url).await {
-        Ok(ws_stream) => ws_stream.fuse(),
-        Err(err) => {
-            log::error!("Failed to connect to matchmaker: {:?}", err);
-            let _ = ws_status_tx.send(TcpConnectionStatus::Disconnected);
-            disconnect_tx.send(()).unwrap();
-            return;
-        }
-    };
-    let mut disconnect_rx = disconnect_request_rx.fuse();
-
-    let _ = ws_status_tx.send(TcpConnectionStatus::Connected);
-    log::info!("Successfully connected to the matchmacker");
-
-    loop {
-        let message = select! {
-            message = ws_stream.try_next() => message,
-            _ = disconnect_rx => break,
-        };
-
-        let message: crate::websocket::Message = match message {
-            Ok(Some(message)) => message,
-            Ok(None) => {
-                // In practice, the stream is unlikely to get exhausted before receiving an error.
-                log::warn!("Matchmaker stream has exhausted, disconnecting");
-                break;
-            }
-            Err(err) => {
-                log::error!("Matchmaker connection error: {:?}", err);
-                break;
-            }
-        };
-
-        let matchmaker_message = match message {
-            crate::websocket::Message::Binary(data) => {
-                match bincode::deserialize::<MatchmakerMessage>(&data) {
-                    Ok(server_update) => server_update,
-                    Err(err) => {
-                        log::error!(
-                            "Failed to deserialize matchmaker message, disconnecting: {:?}",
-                            err
-                        );
-                        break;
-                    }
-                }
-            }
-            _ => continue,
-        };
-
-        if let Err(err) = message_tx.send(matchmaker_message) {
-            log::error!("Failed to send a matchmaker update: {:?}", err);
-        }
-    }
-
-    let _ = ws_status_tx.send(TcpConnectionStatus::Disconnected);
-    disconnect_tx.send(()).unwrap();
 }
 
 #[derive(SystemParam)]

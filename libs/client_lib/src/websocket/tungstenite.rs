@@ -1,4 +1,4 @@
-use futures::Stream;
+use futures::{Sink, Stream};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -121,12 +121,37 @@ impl WebSocketStream {
     }
 }
 
+impl Sink<super::Message> for WebSocketStream {
+    type Error = anyhow::Error;
+
+    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut self.ws_stream)
+            .poll_ready(cx)
+            .map_err(anyhow::Error::from)
+    }
+
+    fn start_send(mut self: Pin<&mut Self>, item: super::Message) -> Result<(), Self::Error> {
+        Ok(Pin::new(&mut self.ws_stream).start_send(item.into())?)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut self.ws_stream)
+            .poll_flush(cx)
+            .map_err(anyhow::Error::from)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut self.ws_stream)
+            .poll_close(cx)
+            .map_err(anyhow::Error::from)
+    }
+}
+
 impl Stream for WebSocketStream {
     type Item = anyhow::Result<super::Message>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let ws_stream = unsafe { self.map_unchecked_mut(|s| &mut s.ws_stream) };
-        match ws_stream.poll_next(cx) {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match Pin::new(&mut self.ws_stream).poll_next(cx) {
             Poll::Ready(Some(item)) => {
                 Poll::Ready(Some(item.map(|item| item.into()).map_err(|err| err.into())))
             }

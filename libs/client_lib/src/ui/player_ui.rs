@@ -10,7 +10,7 @@ use mr_shared_lib::{
 
 pub fn help_ui(
     time: Res<GameTime>,
-    egui_context: ResMut<EguiContext>,
+    mut egui_context: ResMut<EguiContext>,
     player_params: PlayerParams,
 ) {
     #[cfg(feature = "profiler")]
@@ -24,7 +24,7 @@ pub fn help_ui(
         .resizable(false)
         .anchor(egui::Align2::CENTER_BOTTOM, egui::Vec2::new(0.0, -40.0))
         .fixed_size(egui::Vec2::new(window_width, window_height))
-        .show(egui_context.ctx(), |ui| {
+        .show(egui_context.ctx_mut(), |ui| {
             let current_player = player_params.current_player();
 
             ui.centered_and_justified(|ui| {
@@ -58,7 +58,7 @@ impl Default for LeaderboardState {
 pub fn leaderboard_ui(
     mut state: Local<LeaderboardState>,
     keyboard_input: Res<Input<KeyCode>>,
-    egui_context: ResMut<EguiContext>,
+    mut egui_context: ResMut<EguiContext>,
     player_params: PlayerParams,
 ) {
     #[cfg(feature = "profiler")]
@@ -75,7 +75,7 @@ pub fn leaderboard_ui(
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::new(-35.0, 35.0))
-        .show(egui_context.ctx(), |ui| {
+        .show(egui_context.ctx_mut(), |ui| {
             egui::Grid::new("stats board")
                 .min_col_width(13.0)
                 .show(ui, |ui| {

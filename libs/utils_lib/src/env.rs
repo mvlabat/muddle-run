@@ -75,3 +75,13 @@ macro_rules! try_parse_from_env {
             })
     };
 }
+
+#[macro_export]
+macro_rules! var {
+    ($var_name:expr $(,)?) => {
+        std::env::var($var_name)
+            .ok()
+            .or_else(|| std::option_env!($var_name).map(str::to_owned))
+            .and_then(|value| if value.is_empty() { None } else { Some(value) })
+    };
+}

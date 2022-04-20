@@ -26,6 +26,176 @@
       ]
     }
   },
+  "293d1531b81f0f33870db0be747c11dead93ee40ba7e245239db2cc44ebbc352": {
+    "query": "\nSELECT l.id, l.title, u.id AS user_id, u.display_name AS user_name, l.parent_id, l.created_at, l.updated_at\nFROM levels AS l\nJOIN users AS u ON u.id = l.user_id\nWHERE l.parent_id = $1 AND l.is_autosaved = TRUE\n        ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "title",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 2,
+          "name": "user_id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 3,
+          "name": "user_name",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 4,
+          "name": "parent_id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 5,
+          "name": "created_at",
+          "type_info": "Timestamp"
+        },
+        {
+          "ordinal": 6,
+          "name": "updated_at",
+          "type_info": "Timestamp"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false
+      ]
+    }
+  },
+  "46a6a2449352d8a576f716ae42ca951b1f1985b15aac036900810e8c10630af6": {
+    "query": "\nDELETE FROM levels\nWHERE id NOT IN (\n    SELECT id\n    FROM levels\n    WHERE parent_id = $1 AND is_autosaved = TRUE\n    ORDER BY id DESC\n    LIMIT 5\n) AND parent_id = $1 AND is_autosaved = TRUE\n                ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "4d96a20112a51caa9db7b2d89180f45698483f3789637613aa8bc929c45ef73c": {
+    "query": "\nSELECT l.user_id, u.display_name AS user_name, l.created_at\nFROM level_permissions l\nJOIN users AS u ON u.id = l.user_id\nWHERE level_id = $1",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "user_id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "user_name",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 2,
+          "name": "created_at",
+          "type_info": "Timestamp"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": [
+        false,
+        true,
+        false
+      ]
+    }
+  },
+  "4ff440df5c5b5f337cce0a8234af4813ee8ce55c8c0debc76b4276347fda1eda": {
+    "query": "DELETE FROM levels WHERE id = $1",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "62573a23f0d5d56574f4af1a69b758984c413a33e98ee0a8b95a9c6c735f0c95": {
+    "query": "\nSELECT l.id as \"id!\", l.title as \"title!\", u.id AS \"user_id!\", u.display_name AS user_name, l.parent_id, l.created_at as \"created_at!\", l.updated_at as \"updated_at!\"\nFROM levels l\nINNER JOIN users AS u ON u.id = l.user_id\nWHERE ($1::bigint IS NULL OR u.id = $1) AND l.is_autosaved = FALSE\nLIMIT $2 OFFSET $3\n        ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id!",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "title!",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 2,
+          "name": "user_id!",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 3,
+          "name": "user_name",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 4,
+          "name": "parent_id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 5,
+          "name": "created_at!",
+          "type_info": "Timestamp"
+        },
+        {
+          "ordinal": 6,
+          "name": "updated_at!",
+          "type_info": "Timestamp"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Int8",
+          "Int8"
+        ]
+      },
+      "nullable": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    }
+  },
   "6385d89ed928f27750d1b3ed9cba1f18d874052eef6b325fcfd5216d86dd3a8f": {
     "query": "\nSELECT o.issuer, o.subject\nFROM users u\nJOIN openids AS o ON u.id = o.user_id\nWHERE u.id = $1\n        ",
     "describe": {
@@ -52,6 +222,64 @@
       ]
     }
   },
+  "63dfe4a6b09b78ae107821cbd6ee067e135ffd4c92c2b7daf9c59148f4233f22": {
+    "query": "\nSELECT l.id as \"id!\", l.title as \"title!\", u.id AS \"user_id!\", u.display_name AS user_name, l.parent_id, l.created_at as \"created_at!\", l.updated_at as \"updated_at!\"\nFROM levels l\nJOIN users AS u ON u.id = l.user_id\nJOIN level_permissions AS lp ON lp.level_id = l.id\nWHERE lp.user_id = $1 AND l.is_autosaved = FALSE\nLIMIT $2 OFFSET $3\n        ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id!",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "title!",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 2,
+          "name": "user_id!",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 3,
+          "name": "user_name",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 4,
+          "name": "parent_id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 5,
+          "name": "created_at!",
+          "type_info": "Timestamp"
+        },
+        {
+          "ordinal": 6,
+          "name": "updated_at!",
+          "type_info": "Timestamp"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Int8",
+          "Int8"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false
+      ]
+    }
+  },
   "6a6bec68b35012df41e6bb99b5afc11a90e3404fa29698fb04fa3ad18ad2025b": {
     "query": "UPDATE users SET display_name = $1 WHERE id = $2",
     "describe": {
@@ -59,6 +287,32 @@
       "parameters": {
         "Left": [
           "Varchar",
+          "Int8"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "6aad45ce7b3d2df5d1867b054a940fcb8de0cda8b71a66a362d32b5cccfaad67": {
+    "query": "UPDATE levels SET data = $1 WHERE id = $2",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Json",
+          "Int8"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "704f191f04689665d0d7cb752dcc127fa26d7883ae5d4a12086520164542d349": {
+    "query": "INSERT INTO level_permissions (user_id, level_id) VALUES ($1, $2)",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8",
           "Int8"
         ]
       },
@@ -88,6 +342,65 @@
           "ordinal": 3,
           "name": "subject",
           "type_info": "Varchar"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": [
+        false,
+        true,
+        false,
+        false
+      ]
+    }
+  },
+  "9d11c409062ab5e1e7fdff0578be602ac9d93232fd7cac4457e88c1e56d3d1a2": {
+    "query": "UPDATE levels SET title = $1 WHERE id = $2 RETURNING user_id",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "user_id",
+          "type_info": "Int8"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Varchar",
+          "Int8"
+        ]
+      },
+      "nullable": [
+        false
+      ]
+    }
+  },
+  "b0e1d2b6a8d44d81d15afb803813bc0cfa50b7c6ab77cd4f6bc455db9ae61de2": {
+    "query": "SELECT id, display_name, created_at, updated_at FROM users WHERE id = $1",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "display_name",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 2,
+          "name": "created_at",
+          "type_info": "Timestamp"
+        },
+        {
+          "ordinal": 3,
+          "name": "updated_at",
+          "type_info": "Timestamp"
         }
       ],
       "parameters": {
@@ -144,6 +457,88 @@
         true,
         true,
         false,
+        false
+      ]
+    }
+  },
+  "bc7828833db09bfab68d3b1f591c246cfe421d2127124320009cb9ea9ddf88ec": {
+    "query": "\nSELECT l.id, l.title, l.data, u.id AS user_id, u.display_name AS user_name, l.parent_id, l.created_at, l.updated_at\nFROM levels AS l\nJOIN users AS u ON u.id = l.user_id\nWHERE l.id = $1 AND l.is_autosaved = FALSE\n        ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "title",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 2,
+          "name": "data",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 3,
+          "name": "user_id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 4,
+          "name": "user_name",
+          "type_info": "Varchar"
+        },
+        {
+          "ordinal": 5,
+          "name": "parent_id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 6,
+          "name": "created_at",
+          "type_info": "Timestamp"
+        },
+        {
+          "ordinal": 7,
+          "name": "updated_at",
+          "type_info": "Timestamp"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false
+      ]
+    }
+  },
+  "d46b0369d279ee1b9040f228972e406992e983d587c9a43d38cbe4197527479a": {
+    "query": "SELECT user_id FROM levels WHERE id = $1",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "user_id",
+          "type_info": "Int8"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": [
         false
       ]
     }
@@ -212,6 +607,48 @@
       ]
     }
   },
+  "dbc6c8c67c9a046ea0dbfa0a06060cc7cd873fea2d8d2c0f8c03f8c4ad1dba03": {
+    "query": "\nINSERT INTO levels\n(title, user_id, parent_id, data, is_autosaved)\nVALUES ($1, $2, $3, $4, $5)\nRETURNING id, data, created_at, updated_at\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "data",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 2,
+          "name": "created_at",
+          "type_info": "Timestamp"
+        },
+        {
+          "ordinal": 3,
+          "name": "updated_at",
+          "type_info": "Timestamp"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Varchar",
+          "Int8",
+          "Int8",
+          "Json",
+          "Bool"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "df8f6e5a37edf47e9bf896ccf8a74e2377bd12cddab66fbfb3b66d372e152bf1": {
     "query": "\nINSERT INTO openids\n(user_id, issuer, subject, email)\nVALUES ($1, $2, $3, $4)\n        ",
     "describe": {
@@ -225,6 +662,27 @@
         ]
       },
       "nullable": []
+    }
+  },
+  "fcb2a33fa6d3e50fcce3f00700ffeb2b42a578dfd243fda6f236f68d550413f8": {
+    "query": "SELECT data FROM levels WHERE id = $1 AND is_autosaved = $2",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "data",
+          "type_info": "Json"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Bool"
+        ]
+      },
+      "nullable": [
+        false
+      ]
     }
   }
 }

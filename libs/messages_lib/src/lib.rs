@@ -1,78 +1,19 @@
+mod matchmaker;
+mod persistence;
+
+pub use matchmaker::*;
+pub use persistence::*;
+
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
-use std::net::SocketAddr;
+use serde_with::rust::display_fromstr::deserialize as deserialize_fromstr;
 
-pub const PLAYER_CAPACITY: u16 = 5;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum MatchmakerMessage {
-    /// Is sent when a client is connected, contains a list of active servers.
-    Init(Vec<Server>),
-    /// Is sent when a server is either added or modified.
-    ServerUpdated(Server),
-    /// Is sent when a server is closed, contains a server name.
-    ServerRemoved(String),
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Server {
-    pub name: String,
-    pub addr: SocketAddr,
-    pub player_capacity: u16,
-    pub player_count: u16,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RegisteredUser {
-    pub id: i64,
-    pub email: Option<String>,
-    pub display_name: Option<String>,
-    pub created_at: chrono::NaiveDateTime,
-    pub updated_at: chrono::NaiveDateTime,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "code", content = "data", rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum RegisterAccountError {
-    UserWithEmailAlreadyExists(LinkAccount),
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkAccountRequest {
-    pub existing_account_jwt: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkAccount {
-    pub user: RegisteredUser,
-    pub login_methods: Vec<LinkAccountLoginMethod>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkAccountLoginMethod {
-    pub issuer: String,
-    pub login_hint: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum LinkAccountError {
-    ClaimsMismatch,
-    AlreadyLinked,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PatchUserRequest {
-    pub display_name: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum PatchUserError {
-    DisplayNameTaken,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetUserRequest {
-    pub subject: String,
-    pub issuer: String,
+// See: https://docs.rs/serde_qs/0.9.1/serde_qs/index.html#flatten-workaround
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct PaginationParams {
+    #[serde(deserialize_with = "deserialize_fromstr")]
+    pub offset: i64,
+    #[serde(deserialize_with = "deserialize_fromstr")]
+    pub limit: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -128,5 +69,59 @@ impl<T: Clone + Serialize + DeserializeOwned> ErrorKind<T> {
             },
             serializer,
         )
+    }
+}
+
+pub fn serialize_binary<T: Serialize>(value: &T) -> bincode::Result<Vec<u8>> {
+    bincode::serialize(value)
+}
+
+pub fn deserialize_binary<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> bincode::Result<T> {
+    bincode::deserialize(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serialize_matchmaker_message() {
+        let messages = vec![
+            MatchmakerMessage::Init {
+                servers: vec![Server {
+                    name: "test".to_owned(),
+                    state: Default::default(),
+                    addr: "127.0.0.1:0".parse().unwrap(),
+                    player_capacity: 0,
+                    player_count: 0,
+                    request_id: Default::default(),
+                }],
+            },
+            MatchmakerMessage::ServerUpdated(Server {
+                name: "test".to_owned(),
+                state: Default::default(),
+                addr: "127.0.0.1:0".parse().unwrap(),
+                player_capacity: 0,
+                player_count: 0,
+                request_id: Default::default(),
+            }),
+            MatchmakerMessage::ServerRemoved("test".to_owned()),
+            MatchmakerMessage::InvalidJwt(Default::default()),
+        ];
+
+        for message in messages {
+            let serialized = serialize_binary(&message).unwrap();
+            let serialized_hex = hex::encode(&serialized);
+            let value: MatchmakerMessage = deserialize_binary(&serialized).unwrap_or_else(|err| {
+                panic!("Failed to deserialize {message:?} (binary: {serialized_hex}): {err:?}");
+            });
+            match value {
+                MatchmakerMessage::Init { .. }
+                | MatchmakerMessage::ServerUpdated(_)
+                | MatchmakerMessage::ServerRemoved(_)
+                | MatchmakerMessage::InvalidJwt(_) => {}
+            }
+            assert_eq!(message, value);
+        }
     }
 }

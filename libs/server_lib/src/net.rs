@@ -1,5 +1,6 @@
 use crate::{
     Agones, LastPlayerDisconnectedAt, MuddleServerConfig, PersistenceMessage, PersistenceRequest,
+    TOKIO,
 };
 use bevy::{
     ecs::system::SystemParam,
@@ -9,6 +10,7 @@ use bevy::{
 };
 use bevy_networking_turbulence::{ConnectionHandle, NetworkEvent, NetworkResource};
 use chrono::Utc;
+use mr_messages_lib::{GetLevelResponse, PLAYER_CAPACITY};
 use mr_shared_lib::{
     game::{
         commands::{self, DeferredPlayerQueues, DeferredQueue},
@@ -28,6 +30,7 @@ use mr_shared_lib::{
     server::level_spawn_location_service::LevelSpawnLocationService,
     GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
+use rymder::{futures_util::stream::StreamExt, GameServer};
 use std::{
     collections::hash_map::Entry,
     marker::PhantomData,
@@ -36,15 +39,65 @@ use std::{
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
+pub fn watch_agones_updates(
+    mut agones_sdk: rymder::Sdk,
+) -> tokio::sync::oneshot::Receiver<GameServer> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    TOKIO.spawn(async move {
+        let mut stream = match agones_sdk.watch_gameserver().await {
+            Ok(stream) => stream,
+            Err(err) => {
+                log::error!("Failed to start watching GameServer updates: {:?}", err);
+                return;
+            }
+        };
+        let mut tx = Some(tx);
+        while let Some(Ok(game_server)) = stream.next().await {
+            log::debug!("GameServer update: {:#?}", game_server);
+            if let Some(status) = game_server.status.as_ref() {
+                if let (rymder::gameserver::State::Ready, Some(tx)) = (status.state, tx.take()) {
+                    if let Err(err) = tx.send(game_server) {
+                        log::error!("Failed to send Agones allocation message: {:?}", err);
+                    }
+                }
+            }
+        }
+    });
+    rx
+}
+
 pub fn startup(
     config: Res<MuddleServerConfig>,
     mut net: ResMut<NetworkResource>,
     agones: Option<Res<Agones>>,
 ) {
     log::info!("Starting the server");
-    let agones_status = agones
-        .as_ref()
-        .and_then(|agones| agones.game_server.status.as_ref());
+    let agones_status = agones.as_ref().and_then(|agones| {
+        let mut sdk = agones.sdk.clone();
+        TOKIO.spawn(async move {
+            log::info!("Marking the GameServer as Ready...");
+            if let Err(err) = sdk.mark_ready().await {
+                log::error!(
+                    "Failed to mark the Game Server as Ready, exiting: {:?}",
+                    err
+                );
+                std::process::exit(1);
+            }
+            log::info!(
+                "Setting GameServer player capacity to {}...",
+                PLAYER_CAPACITY
+            );
+            if let Err(err) = sdk.set_player_capacity(PLAYER_CAPACITY as u64).await {
+                log::error!(
+                    "Failed to set Game Server player capacity, exiting: {:?}",
+                    err
+                );
+                std::process::exit(1);
+            }
+        });
+
+        agones.game_server.status.as_ref()
+    });
     let (listen, public) = listen_addr(&config, agones_status)
         .zip(public_id_addr(&config, agones_status))
         .expect("Expected MUDDLE_LISTEN_PORT and MUDDLE_PUBLIC_IP_ADDR env variables");
@@ -195,6 +248,9 @@ pub fn process_network_events(
                     );
                     connection_state.set_status(ConnectionStatus::Handshaking);
                     connection_state.last_message_received_at = Utc::now();
+                }
+                PersistenceMessage::SaveLevelResponse(_) => {
+                    log::warn!("TODO: cover `PersistenceMessage::SaveLevelResponse`");
                 }
             }
         }
@@ -742,10 +798,18 @@ pub struct DeferredMessageQueues<'w, 's> {
     marker: PhantomData<&'s ()>,
 }
 
+#[derive(SystemParam)]
+pub struct LevelParams<'w, 's> {
+    level_info: Option<Res<'w, GetLevelResponse>>,
+    level_state: Res<'w, LevelState>,
+    #[system_param(ignore)]
+    marker: PhantomData<&'s ()>,
+}
+
 pub fn send_network_updates(
     mut network_params: NetworkParams,
     time: Res<SimulationTime>,
-    level_state: Res<LevelState>,
+    level_params: LevelParams,
     players: Res<HashMap<PlayerNetId, Player>>,
     player_entities: Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
     players_registry: Res<EntityRegistry<PlayerNetId>>,
@@ -761,7 +825,8 @@ pub fn send_network_updates(
     broadcast_start_game_messages(
         &mut network_params,
         &time,
-        &level_state,
+        level_params.level_info.as_deref(),
+        &level_params.level_state,
         &players,
         &player_entities,
         &players_registry,
@@ -987,6 +1052,7 @@ fn send_new_player_messages(
 fn broadcast_start_game_messages(
     network_params: &mut NetworkParams,
     time: &SimulationTime,
+    level_info: Option<&GetLevelResponse>,
     level_state: &LevelState,
     players: &HashMap<PlayerNetId, Player>,
     player_entities: &Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
@@ -1038,6 +1104,7 @@ fn broadcast_start_game_messages(
             net_id: *connected_player_net_id,
             uuid: connected_player.uuid.clone(),
             nickname: connected_player.nickname.clone(),
+            level_id: level_info.map(|level_info| level_info.level.id),
             objects: level_state
                 .objects
                 .iter()
@@ -1057,6 +1124,14 @@ fn broadcast_start_game_messages(
                 players: players_state,
             },
         });
+
+        log::info!(
+            "Sending the StartGame message to player {}: (handle: {}, session_id: {}, handshake_id: {})",
+            connected_player_connection_handle,
+            connected_player_net_id.0,
+            connection_state.session_id,
+            connection_state.handshake_id
+        );
 
         let result = network_params.net.send_message(
             *connected_player_connection_handle,

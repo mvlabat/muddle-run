@@ -60,7 +60,7 @@ impl PaintItemJob {
 
         ui.painter().rect(
             self.rect,
-            self.item_visuals.corner_radius,
+            self.item_visuals.rounding,
             self.item_visuals.bg_fill,
             self.item_visuals.bg_stroke,
         );
@@ -131,7 +131,7 @@ pub fn sortable_list<
 
     let cross_galley = ui.fonts().layout_no_wrap(
         cross_text.to_owned(),
-        egui::TextStyle::Button,
+        egui::TextStyle::Button.resolve(ui.style()),
         ui.visuals().text_color(),
     );
     let total_extra = egui::Vec2::new(cross_galley.size().x, 0.0)
@@ -170,7 +170,7 @@ pub fn sortable_list<
 
             let label_galley = ui.fonts().layout(
                 list_item.label.clone(),
-                egui::TextStyle::Button,
+                egui::TextStyle::Button.resolve(ui.style()),
                 ui.visuals().text_color(),
                 available_width - total_extra.x,
             );
@@ -227,7 +227,7 @@ pub fn sortable_list<
 
             let cross_galley = ui.fonts().layout_no_wrap(
                 cross_text.to_owned(),
-                egui::TextStyle::Button,
+                egui::TextStyle::Button.resolve(ui.style()),
                 cross_color,
             );
 

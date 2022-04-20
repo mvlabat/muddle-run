@@ -1,9 +1,15 @@
 use bevy::{app::App, log};
-use mr_server_lib::{Agones, MuddleServerConfig, MuddleServerPlugin, PlayerEvent, TOKIO};
+use mr_server_lib::{
+    init_level_data, watch_agones_updates, Agones, MuddleServerConfig, MuddleServerPlugin,
+    PlayerEvent, TOKIO,
+};
 use mr_utils_lib::try_parse_from_env;
 use std::{ops::Deref, time::Duration};
 
 fn main() {
+    let mut app = App::new();
+    app.add_plugin(bevy::log::LogPlugin::default());
+
     mr_utils_lib::env::load_env();
 
     // We want to exit the process on any panic (in any thread), so this is why the custom hook.
@@ -119,17 +125,26 @@ fn main() {
             .unwrap()
     });
 
-    let mut app = App::new();
-    if let Some(agones) = agones {
+    let game_server = agones.map(|agones| {
+        let allocated_game_server_rx = watch_agones_updates(agones.sdk.clone());
         app.insert_resource(agones);
         app.insert_resource(player_tracking_tx);
-    }
+        match allocated_game_server_rx.blocking_recv() {
+            Ok(game_server) => game_server,
+            Err(err) => {
+                log::error!("Failed to receive Agones allocation status: {:?}", err);
+                std::process::exit(1);
+            }
+        }
+    });
     app.insert_resource(MuddleServerConfig {
-        persistence_url: try_parse_from_env!("MUDDLE_PERSISTENCE_URL"),
+        public_persistence_url: try_parse_from_env!("MUDDLE_PUBLIC_PERSISTENCE_URL"),
+        private_persistence_url: try_parse_from_env!("MUDDLE_PRIVATE_PERSISTENCE_URL"),
         idle_timeout_millis: try_parse_from_env!("MUDDLE_IDLE_TIMEOUT"),
         listen_port: try_parse_from_env!("MUDDLE_LISTEN_PORT"),
         listen_ip_addr: try_parse_from_env!("MUDDLE_LISTEN_IP_ADDR"),
         public_ip_addr: try_parse_from_env!("MUDDLE_PUBLIC_IP_ADDR"),
     });
+    TOKIO.block_on(async { init_level_data(&mut app, game_server).await });
     app.add_plugin(MuddleServerPlugin).run();
 }

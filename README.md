@@ -97,10 +97,11 @@ with an environment variable.
 - `MUDDLE_LISTEN_PORT` (mandatory if outside Agones cluster)
 - `MUDDLE_IDLE_TIMEOUT` (defaults to 300)
   - Specifies the time in milliseconds after which a server will be closed if there are no connected players.
-- `MUDDLE_PERSISTENCE_URL` (optional)
-- `MUDDLE_GOOGLE_WEB_CLIENT_ID` (mandatory if `MUDDLE_PERSISTENCE_URL` is set)
-- `MUDDLE_GOOGLE_DESKTOP_CLIENT_ID` (mandatory if `MUDDLE_PERSISTENCE_URL` is set)
-- `MUDDLE_AUTH0_CLIENT_ID` (mandatory if `MUDDLE_PERSISTENCE_URL` is set)
+- `MUDDLE_PUBLIC_PERSISTENCE_URL` (optional)
+- `MUDDLE_PRIVATE_PERSISTENCE_URL` (optional)
+- `MUDDLE_GOOGLE_WEB_CLIENT_ID` (mandatory if persistence urls are set)
+- `MUDDLE_GOOGLE_DESKTOP_CLIENT_ID` (mandatory if persistence urls are set)
+- `MUDDLE_AUTH0_CLIENT_ID` (mandatory if persistence urls are set)
 
 #### `mr_desktop_client` and `mr_web_client`
 
@@ -110,7 +111,7 @@ with an environment variable.
   - If this variable is passed, `MUDDLE_SERVER_IP_ADDR` and `MUDDLE_SERVER_PORT` are still read,
   but the server is displayed in the list only if `MUDDLE_SERVER_IP_ADDR` is passed explicitly
   (the default value is ignored).
-- `MUDDLE_PERSISTENCE_URL` (mandatory if `MUDDLE_MATCHMAKER_URL` is set)
+- `MUDDLE_PUBLIC_PERSISTENCE_URL` (mandatory if `MUDDLE_MATCHMAKER_URL` is set)
 - `MUDDLE_GOOGLE_CLIENT_ID` (mandatory if `MUDDLE_MATCHMAKER_URL` is set)
 - `MUDDLE_GOOGLE_CLIENT_SECRET` (mandatory for the desktop client if `MUDDLE_MATCHMAKER_URL` is set)
   - Google only considers Desktop clients as public ones, also requiring client secrets in the requests.
