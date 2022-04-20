@@ -3,6 +3,7 @@ use kube_derive::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(CustomResource, Debug, Serialize, Deserialize, Default, Clone, JsonSchema)]
 #[kube(
@@ -34,6 +35,7 @@ pub struct GameServerMetadata {
 
 #[derive(Clone)]
 pub struct PostGameServerAllocationParams {
+    pub request_id: Uuid,
     pub user_id: Option<i64>,
     pub level_title: Option<String>,
     pub level_parent_id: Option<i64>,
@@ -60,6 +62,7 @@ pub async fn post_game_server_allocation(
                     labels: Default::default(),
                     annotations: {
                         let mut metadata = HashMap::new();
+                        metadata.insert("request_id".to_owned(), params.request_id.to_string());
                         if let Some(user_id) = params.user_id {
                             metadata.insert("user_id".to_owned(), user_id.to_string());
                         }

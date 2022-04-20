@@ -75,10 +75,10 @@ pub fn startup(
     let agones_status = agones.as_ref().and_then(|agones| {
         let mut sdk = agones.sdk.clone();
         TOKIO.spawn(async move {
-            log::info!("Marking the GameServer as Allocated...");
-            if let Err(err) = sdk.allocate().await {
+            log::info!("Marking the GameServer as Ready...");
+            if let Err(err) = sdk.mark_ready().await {
                 log::error!(
-                    "Failed to mark the Game Server as Allocated, exiting: {:?}",
+                    "Failed to mark the Game Server as Ready, exiting: {:?}",
                     err
                 );
                 std::process::exit(1);

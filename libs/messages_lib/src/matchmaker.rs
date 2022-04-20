@@ -35,6 +35,14 @@ pub enum MatchmakerRequest {
     },
 }
 
+impl MatchmakerRequest {
+    pub fn request_id(&self) -> uuid::Uuid {
+        match self {
+            Self::CreateServer { request_id, .. } => *request_id,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Server {
     pub name: String,

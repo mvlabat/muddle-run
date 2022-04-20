@@ -11,7 +11,7 @@ use crate::{
     persistence::get_registered_user,
 };
 use future::FutureExt;
-use futures::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{future, pin_mut, stream::BoxStream, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
 use kube::{
     api::{Api, ListParams, WatchEvent},
     Client,
@@ -132,7 +132,7 @@ impl Servers {
         let servers = self.servers.lock().await;
         servers
             .values()
-            // .filter(|server| server.state == GameServerState::Allocated)
+            .filter(|server| server.state == GameServerState::Allocated)
             .count()
     }
 }
@@ -239,40 +239,23 @@ async fn main() {
 
 async fn watch_game_servers(client: Client, tx: Sender<MatchmakerMessage>, servers: Servers) {
     let game_servers: Api<GameServer> = Api::namespaced(client, "default");
-
-    let lp = ListParams::default().labels("app=mr_server").timeout(0);
-    let mut stream = game_servers
-        .watch(&lp, "0")
-        .await
-        .expect("Failed to start watching game servers")
-        .boxed();
-
     log::info!("Watching GameServer updates...");
+    let mut stream = init_stream_and_watch(game_servers.clone(), servers.clone()).await;
 
-    let initial_list = game_servers
-        .list(&lp)
-        .await
-        .expect("Failed to get a list of running game servers")
-        .items
-        .into_iter()
-        .filter_map(|gs| {
-            if let Some(ServerCommand::Update(server)) = server_command_from_resource(&gs) {
-                Some(server)
-            } else {
-                None
+    loop {
+        let status = match stream
+            .try_next()
+            .await
+            .expect("Failed to read from the k8s stream")
+        {
+            Some(status) => status,
+            None => {
+                log::info!("The k8s stream has ended, re-subscribing");
+                stream = init_stream_and_watch(game_servers.clone(), servers.clone()).await;
+                continue;
             }
-        })
-        .collect::<Vec<_>>();
-    let list_len = initial_list.len();
-    servers.init(initial_list).await;
+        };
 
-    log::info!("Initialized the server list ({} servers)", list_len);
-
-    while let Some(status) = stream
-        .try_next()
-        .await
-        .expect("Failed to read from the k8s stream")
-    {
         let message = match status {
             WatchEvent::Added(resource) | WatchEvent::Modified(resource) => {
                 if let Some(server_command) = server_command_from_resource(&resource) {
@@ -325,8 +308,39 @@ async fn watch_game_servers(client: Client, tx: Sender<MatchmakerMessage>, serve
             let _ = tx.send(message);
         }
     }
+}
 
-    log::warn!("The k8s stream has ended");
+async fn init_stream_and_watch<'a>(
+    game_servers: Api<GameServer>,
+    servers: Servers,
+) -> BoxStream<'a, kube::Result<WatchEvent<GameServer>>> {
+    let lp = ListParams::default().labels("app=mr_server").timeout(0);
+    let stream = game_servers
+        .watch(&lp, "0")
+        .await
+        .expect("Failed to start watching game servers")
+        .boxed();
+
+    let initial_list = game_servers
+        .list(&lp)
+        .await
+        .expect("Failed to get a list of running game servers")
+        .items
+        .into_iter()
+        .filter_map(|gs| {
+            if let Some(ServerCommand::Update(server)) = server_command_from_resource(&gs) {
+                Some(server)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let list_len = initial_list.len();
+    servers.init(initial_list).await;
+
+    log::info!("Initialized the server list ({list_len} servers)");
+
+    stream
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -533,6 +547,7 @@ async fn handle_connection(
                     request_id,
                     id_token,
                 } => {
+                    log::info!("Received a request to create a server: {request_id}");
                     let user_id = if let Some(id_token) = id_token {
                         let jwt = match params
                             .jwks
@@ -585,12 +600,14 @@ async fn handle_connection(
 
                     let post_game_server_allocation_params = match init_level {
                         InitLevel::Create { title, parent_id } => PostGameServerAllocationParams {
+                            request_id,
                             user_id,
                             level_title: Some(title),
                             level_parent_id: parent_id,
                             level_id: None,
                         },
                         InitLevel::Existing(level_id) => PostGameServerAllocationParams {
+                            request_id,
                             user_id,
                             level_title: None,
                             level_parent_id: None,
@@ -670,9 +687,12 @@ fn server_command_from_resource(resource: &GameServer) -> Option<ServerCommand> 
                 }
             };
 
-            if status.state != GameServerState::Allocated {
+            if !matches!(
+                status.state,
+                GameServerState::Ready | GameServerState::Allocated
+            ) {
                 log::info!(
-                    "GameServer {} is not in the Allocated state (current: {:?}), deleting",
+                    "GameServer {} is not in the Ready or Allocated state (current: {:?}), deleting",
                     name,
                     status.state
                 );
@@ -714,7 +734,7 @@ fn server_command_from_resource(resource: &GameServer) -> Option<ServerCommand> 
 
             Some(ServerCommand::Update(Server {
                 name,
-                state: GameServerState::PortAllocation,
+                state: status.state,
                 addr: SocketAddr::new(ip_addr, port),
                 player_capacity: status.players.capacity as u16,
                 player_count: status.players.count as u16,
