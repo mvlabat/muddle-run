@@ -42,7 +42,7 @@ pub struct Server {
     pub addr: SocketAddr,
     pub player_capacity: u16,
     pub player_count: u16,
-    // If request id is empty, it means that the server isn't allocated yet.
+    // If a request id is empty, it means that a server isn't allocated yet.
     pub request_id: uuid::Uuid,
 }
 

@@ -4,7 +4,7 @@ use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
 
 pub fn connection_status_overlay(
-    egui_context: ResMut<EguiContext>,
+    mut egui_context: ResMut<EguiContext>,
     connection_state: Res<ConnectionState>,
     server_to_connect: Res<Option<ServerToConnect>>,
 ) {
@@ -21,7 +21,7 @@ pub fn connection_status_overlay(
     let window_width = 200.0;
     let window_height = 100.0;
 
-    let ctx = egui_context.ctx();
+    let ctx = egui_context.ctx_mut();
     egui::CentralPanel::default()
         .frame(egui::Frame::none().fill(egui::Color32::from_black_alpha(200)))
         .show(ctx, |ui| {
@@ -33,7 +33,7 @@ pub fn connection_status_overlay(
                 .fixed_size(egui::Vec2::new(window_width, window_height))
                 .show(ui.ctx(), |ui| {
                     ui.centered_and_justified(|ui| {
-                        ui.style_mut().body_text_style = egui::TextStyle::Heading;
+                        ui.style_mut().override_text_style = Some(egui::TextStyle::Heading);
                         ui.label(format!("{:?}", connection_state.status()));
                     });
                 });

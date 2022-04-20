@@ -4,12 +4,17 @@ use crate::{
         MainMenuUiChannels, MatchmakerState, PersistenceMessagePayload, PersistenceRequest,
         ServerToConnect, TcpConnectionStatus,
     },
+    ui::{
+        widgets::list_menu::{button_panel, MenuListItem, PanelButton},
+        without_item_spacing,
+    },
     MuddleClientConfig, OfflineAuthConfig,
 };
 use bevy::{
     ecs::system::{Local, Res, ResMut, SystemParam},
     log,
     utils::{HashMap, Instant, Uuid},
+    window::Windows,
 };
 use bevy_egui::{egui, egui::Widget, EguiContext};
 use mr_messages_lib::{
@@ -177,7 +182,7 @@ impl InputField {
                     .noninteractive
                     .fg_stroke
                     .color = ERROR_COLOR;
-                ui.style_mut().body_text_style = egui::TextStyle::Button;
+                ui.style_mut().override_text_style = Some(egui::TextStyle::Button);
                 for error in &self.errors {
                     ui.label(format!(" • {}", error));
                 }
@@ -221,13 +226,25 @@ pub struct MatchmakerUiState {
     selected_server: Option<String>,
     levels: BTreeMap<i64, LevelsListItem>,
     levels_list_filter: LevelsListFilter,
-    selected_level_id: Option<i64>,
+    selected_level: SelectedLevel,
     selected_level_data: Option<GetLevelResponse>,
-    new_level_title: String,
     screen: MatchmakerUiScreen,
     request_id_counter: MessageId,
     current_request_id: Option<MessageId>,
     request_error_message: Option<String>,
+}
+
+#[derive(Clone, PartialEq)]
+enum SelectedLevel {
+    NewLevel(String),
+    Existing(i64),
+    None,
+}
+
+impl Default for SelectedLevel {
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 pub enum MatchmakerUiScreen {
@@ -278,12 +295,20 @@ pub struct Configs<'w, 's> {
     client_config: Res<'w, MuddleClientConfig>,
     offline_auth_config: Res<'w, OfflineAuthConfig>,
     #[system_param(ignore)]
-    marker: PhantomData<&'s ()>,
+    _marker: PhantomData<&'s ()>,
+}
+
+#[derive(SystemParam)]
+pub struct UiContext<'w, 's> {
+    egui_context: ResMut<'w, EguiContext>,
+    windows: Res<'w, Windows>,
+    #[system_param(ignore)]
+    _marker: PhantomData<&'s ()>,
 }
 
 pub fn main_menu_ui(
     mut main_menu_ui_state: Local<MainMenuUiState>,
-    egui_context: ResMut<EguiContext>,
+    mut ui_context: UiContext,
     matchmaker_state: Option<ResMut<MatchmakerState>>,
     configs: Configs,
     main_menu_ui_channels: Option<ResMut<MainMenuUiChannels>>,
@@ -344,20 +369,24 @@ pub fn main_menu_ui(
         main_menu_ui_state.matchmaker.observed_empty_servers_at = Some(Instant::now());
     }
 
+    let screen_height = ui_context.windows.get_primary().unwrap().height();
+
     let window_width = 400.0;
     let window_height = 600.0;
+    let offset_y = (200.0 - (200.0 + window_height - screen_height).max(0.0)).max(0.0);
 
-    let ctx = egui_context.ctx();
+    let ctx = ui_context.egui_context.ctx_mut();
     egui::CentralPanel::default()
         .frame(egui::Frame::none().fill(egui::Color32::from_black_alpha(200)))
         .show(ctx, |ui| {
-            ui.spacing_mut().window_padding = egui::Vec2::splat(ui.visuals().window_stroke().width);
+            ui.spacing_mut().window_margin =
+                egui::style::Margin::same(ui.visuals().window_stroke().width);
             egui::Window::new("Server browser")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
                 .frame(egui::Frame::window(ui.style()))
-                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .anchor(egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, offset_y))
                 .fixed_size(egui::Vec2::new(window_width, window_height))
                 .show(ui.ctx(), |ui| {
                     let MainMenuUiState {
@@ -394,7 +423,7 @@ pub fn main_menu_ui(
                     match main_menu_ui_screen {
                         MainMenuUiScreen::Auth => {
                             egui::containers::Frame::none()
-                                .margin([25.0, 15.0])
+                                .margin(egui::style::Margin::symmetric(25.0, 15.0))
                                 .show(ui, |ui| {
                                     let confirm = authentication_screen(
                                         ui,
@@ -624,8 +653,9 @@ fn authentication_screen(
                 egui::Layout::top_down_justified(egui::Align::Center),
                 |ui| {
                     ui.label("You've been logged in as");
-                    ui.style_mut().body_text_style = egui::TextStyle::Heading;
+                    ui.style_mut().override_text_style = Some(egui::TextStyle::Heading);
                     ui.label(auth_ui_state.logged_in_as.as_ref().unwrap());
+                    ui.style_mut().override_text_style = None;
 
                     ui.add_space(10.0);
 
@@ -641,7 +671,6 @@ fn authentication_screen(
                         auth_ui_state.logged_in_as = None;
                     }
 
-                    ui.style_mut().body_text_style = egui::TextStyle::Body;
                     ui.style_mut()
                         .visuals
                         .widgets
@@ -965,59 +994,94 @@ fn matchmaker_servers_list_screen(
         // Server list.
         let mut sorted_servers = matchmaker_ui_state.servers.values().collect::<Vec<_>>();
         sorted_servers.sort_by(|a, b| a.name.cmp(&b.name));
-        egui::containers::ScrollArea::vertical()
-            .max_height(500.0)
-            .show(ui, |ui| {
-                server_list(
-                    ui,
-                    &sorted_servers,
-                    &mut matchmaker_ui_state.selected_server,
-                );
-            });
+
+        without_item_spacing(ui, |ui| {
+            egui::containers::ScrollArea::vertical()
+                .max_height(500.0)
+                .show(ui, |ui| {
+                    let response = MenuListItem::new("Create a server")
+                        .secondary_widget(|ui| {
+                            ui.label("Create a server to let other players join");
+                        })
+                        .image_widget(plus_image)
+                        .show(ui);
+                    if response.item.clicked() {
+                        matchmaker_ui_state.selected_server = None;
+                        matchmaker_ui_state.screen = MatchmakerUiScreen::CreateServer;
+                        let request_id = matchmaker_ui_state.request_id_counter.increment();
+                        matchmaker_ui_state.current_request_id = Some(request_id);
+                        persistence_requests_tx
+                            .send(PersistenceRequest::GetLevels {
+                                request_id,
+                                body: GetLevelsRequest {
+                                    user_filter: None,
+                                    pagination: PaginationParams {
+                                        offset: 0,
+                                        limit: 20,
+                                    },
+                                },
+                            })
+                            .expect("Failed to write to a channel (persistence request)");
+                    }
+
+                    server_list(
+                        ui,
+                        &sorted_servers,
+                        &mut matchmaker_ui_state.selected_server,
+                    );
+                });
+        });
     }
 
-    // Button coordinates.
-    let button_size = egui::Vec2::new(100.0, 30.0);
-    let margin = 10.0;
     let is_selected = matchmaker_ui_state
         .selected_server
         .as_ref()
         .map_or(false, |selected| {
             matchmaker_ui_state.servers.contains_key(selected)
         });
-    let (outer_rect, _) = ui.allocate_exact_size(
-        egui::Vec2::new(
-            ui.available_size_before_wrap().x,
-            button_size.y + margin * 2.0,
-        ),
-        egui::Sense::hover(),
-    );
-    let one_third_width = outer_rect.size().x / 3.0;
-    let one_third = egui::Vec2::new(outer_rect.min.x + one_third_width, outer_rect.center().y);
-    let two_third = one_third + egui::Vec2::new(one_third_width, 0.0);
 
-    // Play button.
-    let button_response = ui.add_enabled_ui(is_selected, |ui| {
-        ui.put(
-            egui::Rect::from_min_size(one_third.to_pos2() - button_size / 2.0, button_size),
-            egui::widgets::Button::new("Play"),
-        )
-        .on_disabled_hover_text("Select a server from the list or Create a new one")
-    });
-    if button_response.inner.clicked() {
+    let [play_response] = button_panel(
+        ui,
+        100.0,
+        [PanelButton::new(egui::widgets::Button::new("Play"))
+            .enabled(is_selected)
+            .on_disabled_hover_text("Select a server from the list or Create a new one")],
+    );
+    if play_response.clicked() {
         *server_to_connect = Some(ServerToConnect(
             matchmaker_ui_state.servers[matchmaker_ui_state.selected_server.as_ref().unwrap()]
                 .clone(),
         ));
     }
+}
 
-    // Create button.
-    let button_response = ui.put(
-        egui::Rect::from_min_size(two_third.to_pos2() - button_size / 2.0, button_size),
-        egui::widgets::Button::new("Create"),
+fn matchmaker_create_server_screen(
+    ui: &mut egui::Ui,
+    matchmaker_state: &MatchmakerState,
+    matchmaker_ui_state: &mut MatchmakerUiState,
+    matchmaker_requests_tx: UnboundedSender<MatchmakerRequest>,
+    persistence_requests_tx: UnboundedSender<PersistenceRequest>,
+) {
+    ui.set_enabled(matchmaker_ui_state.current_request_id.is_none());
+
+    let padding = egui::Vec2::new(10.0, 5.0);
+    let panel_height = 30.0;
+    let mut panel_ui = ui.child_ui(
+        egui::Rect::from_min_size(
+            ui.min_rect().left_bottom() + padding,
+            egui::Vec2::new(ui.available_width(), panel_height) - padding,
+        ),
+        egui::Layout::left_to_right(),
     );
-    if button_response.clicked() {
-        matchmaker_ui_state.screen = MatchmakerUiScreen::CreateServer;
+    if panel_ui
+        .selectable_value(
+            &mut matchmaker_ui_state.levels_list_filter,
+            LevelsListFilter::All,
+            "All",
+        )
+        .clicked()
+    {
+        matchmaker_ui_state.selected_level = SelectedLevel::None;
         let request_id = matchmaker_ui_state.request_id_counter.increment();
         matchmaker_ui_state.current_request_id = Some(request_id);
         persistence_requests_tx
@@ -1033,157 +1097,129 @@ fn matchmaker_servers_list_screen(
             })
             .expect("Failed to write to a channel (persistence request)");
     }
-}
-
-fn matchmaker_create_server_screen(
-    ui: &mut egui::Ui,
-    matchmaker_state: &MatchmakerState,
-    matchmaker_ui_state: &mut MatchmakerUiState,
-    matchmaker_requests_tx: UnboundedSender<MatchmakerRequest>,
-    persistence_requests_tx: UnboundedSender<PersistenceRequest>,
-) {
-    if ui.button("Back").clicked() {
-        matchmaker_ui_state.screen = MatchmakerUiScreen::ServersList;
-    }
-    ui.separator();
-
-    ui.set_enabled(matchmaker_ui_state.current_request_id.is_none());
-
-    ui.horizontal(|ui| {
-        if ui
-            .selectable_value(
-                &mut matchmaker_ui_state.levels_list_filter,
-                LevelsListFilter::All,
-                "All",
-            )
-            .clicked()
-        {
-            let request_id = matchmaker_ui_state.request_id_counter.increment();
-            matchmaker_ui_state.current_request_id = Some(request_id);
-            persistence_requests_tx
-                .send(PersistenceRequest::GetLevels {
-                    request_id,
-                    body: GetLevelsRequest {
-                        user_filter: None,
-                        pagination: PaginationParams {
-                            offset: 0,
-                            limit: 20,
-                        },
-                    },
-                })
-                .expect("Failed to write to a channel (persistence request)");
-        }
-        ui.set_enabled(matchmaker_state.user_id.is_some());
-        if ui
-            .selectable_value(
-                &mut matchmaker_ui_state.levels_list_filter,
-                LevelsListFilter::Owned,
-                "Owned",
-            )
-            .clicked()
-        {
-            let request_id = matchmaker_ui_state.request_id_counter.increment();
-            matchmaker_ui_state.current_request_id = Some(request_id);
-            persistence_requests_tx
-                .send(PersistenceRequest::GetLevels {
-                    request_id,
-                    body: GetLevelsRequest {
-                        user_filter: Some(GetLevelsUserFilter::AuthorId(
-                            matchmaker_state.user_id.unwrap(),
-                        )),
-                        pagination: PaginationParams {
-                            offset: 0,
-                            limit: 20,
-                        },
-                    },
-                })
-                .expect("Failed to write to a channel (persistence request)");
-        }
-        if ui
-            .selectable_value(
-                &mut matchmaker_ui_state.levels_list_filter,
-                LevelsListFilter::Builder,
-                "Builder",
-            )
-            .clicked()
-        {
-            let request_id = matchmaker_ui_state.request_id_counter.increment();
-            matchmaker_ui_state.current_request_id = Some(request_id);
-            persistence_requests_tx
-                .send(PersistenceRequest::GetLevels {
-                    request_id,
-                    body: GetLevelsRequest {
-                        user_filter: Some(GetLevelsUserFilter::BuilderId(
-                            matchmaker_state.user_id.unwrap(),
-                        )),
-                        pagination: PaginationParams {
-                            offset: 0,
-                            limit: 20,
-                        },
-                    },
-                })
-                .expect("Failed to write to a channel (persistence request)");
-        }
-    });
-    ui.separator();
-
-    ui.text_edit_singleline(&mut matchmaker_ui_state.new_level_title);
-    if ui
-        .add_enabled(
-            !matchmaker_ui_state.new_level_title.is_empty(),
-            egui::Button::new("New level"),
+    panel_ui.set_enabled(matchmaker_state.user_id.is_some());
+    if panel_ui
+        .selectable_value(
+            &mut matchmaker_ui_state.levels_list_filter,
+            LevelsListFilter::Owned,
+            "Owned",
         )
         .clicked()
     {
-        matchmaker_requests_tx
-            .send(MatchmakerRequest::CreateServer {
-                init_level: InitLevel::Create {
-                    title: std::mem::take(&mut matchmaker_ui_state.new_level_title),
-                    parent_id: None,
+        matchmaker_ui_state.selected_level = SelectedLevel::None;
+        let request_id = matchmaker_ui_state.request_id_counter.increment();
+        matchmaker_ui_state.current_request_id = Some(request_id);
+        persistence_requests_tx
+            .send(PersistenceRequest::GetLevels {
+                request_id,
+                body: GetLevelsRequest {
+                    user_filter: Some(GetLevelsUserFilter::AuthorId(
+                        matchmaker_state.user_id.unwrap(),
+                    )),
+                    pagination: PaginationParams {
+                        offset: 0,
+                        limit: 20,
+                    },
                 },
-                request_id: Uuid::new_v4(),
-                id_token: matchmaker_state.id_token.clone(),
             })
-            .expect("Failed to write to a channel (matchmaker request)");
+            .expect("Failed to write to a channel (persistence request)");
+    }
+    if panel_ui
+        .selectable_value(
+            &mut matchmaker_ui_state.levels_list_filter,
+            LevelsListFilter::Builder,
+            "Builder",
+        )
+        .clicked()
+    {
+        matchmaker_ui_state.selected_level = SelectedLevel::None;
+        let request_id = matchmaker_ui_state.request_id_counter.increment();
+        matchmaker_ui_state.current_request_id = Some(request_id);
+        persistence_requests_tx
+            .send(PersistenceRequest::GetLevels {
+                request_id,
+                body: GetLevelsRequest {
+                    user_filter: Some(GetLevelsUserFilter::BuilderId(
+                        matchmaker_state.user_id.unwrap(),
+                    )),
+                    pagination: PaginationParams {
+                        offset: 0,
+                        limit: 20,
+                    },
+                },
+            })
+            .expect("Failed to write to a channel (persistence request)");
+    }
+
+    without_item_spacing(ui, |ui| {
+        ui.allocate_rect(panel_ui.min_rect().expand2(padding), egui::Sense::hover());
+        ui.separator();
+    });
+
+    let response = MenuListItem::new("New level")
+        .selected(matches!(
+            matchmaker_ui_state.selected_level,
+            SelectedLevel::NewLevel(_)
+        ))
+        .image_widget(plus_image)
+        .secondary_widget(|ui| {
+            if let SelectedLevel::NewLevel(ref mut level_title) = matchmaker_ui_state.selected_level
+            {
+                ui.style_mut().visuals.widgets.inactive.bg_stroke =
+                    ui.style_mut().visuals.window_stroke();
+                ui.text_edit_singleline(level_title);
+            }
+        })
+        .show(ui);
+    if response.item.clicked()
+        && !matches!(
+            matchmaker_ui_state.selected_level,
+            SelectedLevel::NewLevel(_)
+        )
+    {
+        matchmaker_ui_state.selected_level = SelectedLevel::NewLevel("My new level".to_owned());
     }
 
     for level in matchmaker_ui_state.levels.values() {
-        let open = match matchmaker_ui_state.selected_level_id {
-            Some(level_id) if level_id == level.id => None,
-            Some(_level_id) => Some(false),
-            None => None,
-        };
-        let response = egui::CollapsingHeader::new(&level.title)
-            .open(open)
-            .show(ui, |ui| {
+        let selected = matchmaker_ui_state.selected_level == SelectedLevel::Existing(level.id);
+        let response = MenuListItem::new(&level.title)
+            .with_id(level.id)
+            .selected(selected)
+            .secondary_widget(|ui| {
                 ui.label(format!(
                     "Author: {}",
                     level.user_name.as_deref().unwrap_or_default()
                 ));
+            })
+            .collapsing_widget(|ui| {
                 let builders = matchmaker_ui_state
                     .selected_level_data
                     .as_ref()
                     .map(|level| level.level_permissions.clone())
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|user| user.user_name.unwrap_or_default())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                ui.label(format!("Builders: {builders}",));
-                if ui.button("Host").clicked() {
-                    matchmaker_requests_tx
-                        .send(MatchmakerRequest::CreateServer {
-                            init_level: InitLevel::Existing(level.id),
-                            request_id: Uuid::new_v4(),
-                            id_token: matchmaker_state.id_token.clone(),
-                        })
-                        .expect("Failed to write to a channel (matchmaker request)");
+                    .unwrap_or_default();
+                if !builders.is_empty() {
+                    let builders = builders
+                        .into_iter()
+                        .map(|user| user.user_name.unwrap_or_default())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    ui.label(format!("Builders: {builders}"));
                 }
-            });
-        if response.header_response.clicked()
-            && matchmaker_ui_state.selected_level_id != Some(level.id)
+                ui.label(format!(
+                    "Created at: {}",
+                    level.created_at.format("%Y-%m-%d %H:%M:%S")
+                ));
+                ui.label(format!(
+                    "Updated at: {}",
+                    level.updated_at.format("%Y-%m-%d %H:%M:%S")
+                ));
+            })
+            .show(ui);
+
+        if response.item.clicked()
+            && matchmaker_ui_state.selected_level != SelectedLevel::Existing(level.id)
         {
-            matchmaker_ui_state.selected_level_id = Some(level.id);
+            matchmaker_ui_state.selected_level = SelectedLevel::Existing(level.id);
             matchmaker_ui_state.selected_level_data = None;
             let request_id = matchmaker_ui_state.request_id_counter.increment();
             matchmaker_ui_state.current_request_id = Some(request_id);
@@ -1195,6 +1231,72 @@ fn matchmaker_create_server_screen(
                 .expect("Failed to write to a channel (persistence request)");
         }
     }
+
+    let host_enabled = match &matchmaker_ui_state.selected_level {
+        SelectedLevel::NewLevel(title) if !title.is_empty() => true,
+        SelectedLevel::Existing(_) => true,
+        _ => false,
+    };
+    let fork_enabled = match &matchmaker_ui_state.selected_level {
+        SelectedLevel::NewLevel(_) => false,
+        SelectedLevel::Existing(_) => true,
+        SelectedLevel::None => false,
+    };
+
+    let [back_response, host_response, fork_response] = button_panel(
+        ui,
+        70.0,
+        [
+            PanelButton::new(egui::Button::new("Back")),
+            PanelButton::new(egui::Button::new("Create"))
+                .enabled(host_enabled)
+                .on_disabled_hover_text("Select a level to create a server"),
+            PanelButton::new(egui::Button::new("Fork"))
+                .enabled(fork_enabled)
+                .on_hover_text("Clone and host the selected level")
+                .on_disabled_hover_text("Clone and host the selected level"),
+        ],
+    );
+
+    if back_response.clicked() {
+        matchmaker_ui_state.screen = MatchmakerUiScreen::ServersList;
+        matchmaker_ui_state.selected_level = SelectedLevel::None;
+    }
+
+    if host_response.clicked() {
+        let init_level = match &matchmaker_ui_state.selected_level {
+            SelectedLevel::NewLevel(level_title) => InitLevel::Create {
+                title: level_title.clone(),
+                parent_id: None,
+            },
+            SelectedLevel::Existing(level_id) => InitLevel::Existing(*level_id),
+            SelectedLevel::None => unreachable!(),
+        };
+        matchmaker_requests_tx
+            .send(MatchmakerRequest::CreateServer {
+                init_level,
+                request_id: Uuid::new_v4(),
+                id_token: matchmaker_state.id_token.clone(),
+            })
+            .expect("Failed to write to a channel (matchmaker request)");
+    }
+
+    if fork_response.clicked() {
+        let init_level = match &matchmaker_ui_state.selected_level {
+            SelectedLevel::Existing(level_id) => InitLevel::Create {
+                title: matchmaker_ui_state.levels[level_id].title.clone(),
+                parent_id: Some(*level_id),
+            },
+            _ => unreachable!(),
+        };
+        matchmaker_requests_tx
+            .send(MatchmakerRequest::CreateServer {
+                init_level,
+                request_id: Uuid::new_v4(),
+                id_token: matchmaker_state.id_token.clone(),
+            })
+            .expect("Failed to write to a channel (matchmaker request)");
+    }
 }
 
 fn server_list(ui: &mut egui::Ui, servers: &[&Server], selected: &mut Option<String>) {
@@ -1202,59 +1304,18 @@ fn server_list(ui: &mut egui::Ui, servers: &[&Server], selected: &mut Option<Str
         let is_selected = selected
             .as_ref()
             .map_or(false, |selected| &server.name == selected);
-
-        let padding = 10.0;
-        let spacing = 5.0;
-        let (outer_rect, response) = ui.allocate_exact_size(
-            egui::Vec2::new(ui.max_rect().width(), 60.0),
-            egui::Sense::click(),
-        );
-
-        let inner_rect = outer_rect.shrink(padding);
-
-        let fill = if is_selected {
-            Some(ui.style().visuals.extreme_bg_color)
-        } else if response.hovered() {
-            Some(ui.style().visuals.faint_bg_color)
-        } else {
-            None
-        };
-
-        let server_name_galley = ui.fonts().layout_no_wrap(
-            server.name.clone(),
-            egui::TextStyle::Heading,
-            ui.visuals().text_color(),
-        );
-        let server_name_cursor = inner_rect.min;
-
-        let players_galley = ui.fonts().layout_no_wrap(
-            format!(
-                "Players: {}/{}",
-                server.player_count, server.player_capacity
-            ),
-            egui::TextStyle::Body,
-            ui.visuals().text_color(),
-        );
-        let players_cursor =
-            inner_rect.min + egui::Vec2::new(0.0, server_name_galley.size().y + spacing);
-
-        if let Some(fill) = fill {
-            ui.painter().rect_filled(outer_rect, 0.0, fill);
-        }
-        ui.painter().line_segment(
-            [
-                egui::Pos2::new(outer_rect.min.x, outer_rect.max.y),
-                egui::Pos2::new(outer_rect.max.x, outer_rect.max.y),
-            ],
-            ui.style().visuals.window_stroke(),
-        );
-        ui.painter().galley(server_name_cursor, server_name_galley);
-        ui.painter().galley(players_cursor, players_galley);
-
-        if response.clicked() {
+        let response = MenuListItem::new(&server.name)
+            .secondary_widget(|ui| {
+                ui.label(format!(
+                    "Players: {}/{}",
+                    server.player_count, server.player_capacity
+                ));
+            })
+            .selected(is_selected)
+            .show(ui);
+        if response.item.clicked() {
             *selected = Some(server.name.clone());
         }
-        response.on_hover_cursor(egui::CursorIcon::PointingHand);
     }
 }
 
@@ -1265,17 +1326,17 @@ fn status_bar(ui: &mut egui::Ui, label: impl ToString, progress: f32) {
         ui.allocate_exact_size(egui::Vec2::new(desired_width, height), egui::Sense::hover());
 
     if progress > 0.0 {
-        let corner_radius = ui.style().visuals.window_corner_radius;
+        let rounding = ui.style().visuals.window_rounding;
         let size = outer_rect
             .size()
             .mul(egui::Vec2::new(progress, 1.0))
-            .max(egui::Vec2::new(corner_radius * 2.0, outer_rect.height()));
+            .max(egui::Vec2::new(rounding.ne * 2.0, outer_rect.height()));
         let fill = egui::Color32::from_rgb(23, 98, 3);
         let stroke = egui::Stroke::new(0.0, egui::Color32::TRANSPARENT);
 
         ui.painter().add(egui::Shape::Rect(egui::epaint::RectShape {
             rect: egui::Rect::from_min_size(outer_rect.min, size),
-            corner_radius,
+            rounding,
             fill,
             stroke,
         }));
@@ -1284,17 +1345,17 @@ fn status_bar(ui: &mut egui::Ui, label: impl ToString, progress: f32) {
                 outer_rect.min.add(egui::Vec2::new(0.0, size.y / 2.0)),
                 size.mul(egui::Vec2::new(1.0, 0.5)),
             ),
-            corner_radius: 0.0,
+            rounding: egui::Rounding::same(0.0),
             fill,
             stroke,
         }));
-        if size.x < outer_rect.size().sub(egui::Vec2::new(corner_radius, 0.0)).x {
+        if size.x < outer_rect.size().sub(egui::Vec2::new(rounding.ne, 0.0)).x {
             ui.painter().add(egui::Shape::Rect(egui::epaint::RectShape {
                 rect: egui::Rect::from_min_size(
-                    outer_rect.min.add(egui::Vec2::new(corner_radius, 0.0)),
-                    size.sub(egui::Vec2::new(corner_radius, 0.0)),
+                    outer_rect.min.add(egui::Vec2::new(rounding.ne, 0.0)),
+                    size.sub(egui::Vec2::new(rounding.ne, 0.0)),
                 ),
-                corner_radius: 0.0,
+                rounding: egui::Rounding::same(0.0),
                 fill,
                 stroke,
             }));
@@ -1305,7 +1366,17 @@ fn status_bar(ui: &mut egui::Ui, label: impl ToString, progress: f32) {
         outer_rect.center(),
         egui::Align2::CENTER_CENTER,
         label,
-        ui.style().body_text_style,
+        egui::TextStyle::Body.resolve(ui.style()),
         ui.visuals().text_color(),
     );
+}
+
+fn plus_image(ui: &mut egui::Ui) {
+    let horizontal =
+        egui::Rect::from_center_size(ui.max_rect().center(), egui::Vec2::new(16.0, 4.0));
+    let vertical = egui::Rect::from_center_size(ui.max_rect().center(), egui::Vec2::new(4.0, 16.0));
+    ui.painter()
+        .rect_filled(horizontal, 0.0, ui.visuals().widgets.inactive.bg_fill);
+    ui.painter()
+        .rect_filled(vertical, 0.0, ui.visuals().widgets.inactive.bg_fill);
 }
