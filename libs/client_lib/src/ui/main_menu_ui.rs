@@ -567,6 +567,41 @@ fn process_matchmaker_messages(
     server_to_connect: &mut Option<ServerToConnect>,
 ) {
     loop {
+        if let Some(request) = main_menu_ui_state
+            .matchmaker
+            .pending_create_server_request
+            .clone()
+        {
+            if main_menu_ui_state
+                .matchmaker
+                .create_server_request_sent_at
+                .map_or(true, |sent_at| {
+                    Instant::now().duration_since(sent_at) > Duration::from_secs(5)
+                })
+            {
+                if main_menu_ui_state.matchmaker.has_ready_server() {
+                    log::info!("Sending an allocation request: {}", request.request_id());
+                    main_menu_ui_state.matchmaker.create_server_request_sent_at =
+                        Some(Instant::now());
+                    main_menu_ui_channels
+                        .matchmaker_request_tx
+                        .send(request)
+                        .expect("Failed to write to a channel (matchmaker request)");
+                }
+            } else {
+                let requested_server = main_menu_ui_state
+                    .matchmaker
+                    .servers
+                    .values()
+                    .find(|server| server.request_id == request.request_id())
+                    .cloned();
+                if let Some(requested_server) = requested_server {
+                    main_menu_ui_state.matchmaker.pending_create_server_request = None;
+                    *server_to_connect = Some(ServerToConnect(requested_server));
+                }
+            }
+        }
+
         match main_menu_ui_channels.matchmaker_message_rx.try_recv() {
             Ok(MatchmakerMessage::Init {
                 servers: mut init_list,
@@ -611,41 +646,6 @@ fn process_matchmaker_messages(
             Err(TryRecvError::Empty) => return,
             Err(TryRecvError::Disconnected) => {
                 panic!("Failed to read from a channel (matchmaker messages)")
-            }
-        }
-
-        if let Some(request) = main_menu_ui_state
-            .matchmaker
-            .pending_create_server_request
-            .clone()
-        {
-            if main_menu_ui_state
-                .matchmaker
-                .create_server_request_sent_at
-                .map_or(true, |sent_at| {
-                    Instant::now().duration_since(sent_at) > Duration::from_secs(5)
-                })
-            {
-                if main_menu_ui_state.matchmaker.has_ready_server() {
-                    log::info!("Sending an allocation request: {}", request.request_id());
-                    main_menu_ui_state.matchmaker.create_server_request_sent_at =
-                        Some(Instant::now());
-                    main_menu_ui_channels
-                        .matchmaker_request_tx
-                        .send(request)
-                        .expect("Failed to write to a channel (matchmaker request)");
-                }
-            } else {
-                let requested_server = main_menu_ui_state
-                    .matchmaker
-                    .servers
-                    .values()
-                    .find(|server| server.request_id == request.request_id())
-                    .cloned();
-                if let Some(requested_server) = requested_server {
-                    main_menu_ui_state.matchmaker.pending_create_server_request = None;
-                    *server_to_connect = Some(ServerToConnect(requested_server));
-                }
             }
         }
     }
@@ -1373,7 +1373,6 @@ fn matchmaker_create_server_screen(
 }
 
 fn server_list(ui: &mut egui::Ui, servers: &[&Server], selected: &mut Option<String>) {
-    log::debug!("{:?}", servers);
     for server in servers {
         let is_selected = selected
             .as_ref()
