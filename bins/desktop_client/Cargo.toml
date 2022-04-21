@@ -11,7 +11,7 @@ mr_client_lib = { path = "../../libs/client_lib", features = ["use-udp", "profil
 mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 
 bevy = "0.6"
-sentry = "0.23.0"
+sentry = "0.25.0"
 
 [build-dependencies]
 mr_build_dotenv = { path = "../../libs/build_dotenv" }
