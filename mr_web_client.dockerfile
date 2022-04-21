@@ -13,14 +13,12 @@ COPY libs/client_lib/Cargo.toml libs/client_lib/
 COPY libs/server_lib/Cargo.toml libs/server_lib/
 COPY libs/shared_lib/Cargo.toml libs/shared_lib/
 COPY libs/utils_lib/Cargo.toml libs/utils_lib/
-COPY libs/unstoppable_resolution/Cargo.toml libs/unstoppable_resolution/
 COPY libs/docker_dummy/src/lib.rs libs/build_dotenv/src/
 COPY libs/docker_dummy/src/lib.rs libs/messages_lib/src/
 COPY libs/docker_dummy/src/lib.rs libs/client_lib/src/
 COPY libs/docker_dummy/src/lib.rs libs/server_lib/src/
 COPY libs/docker_dummy/src/lib.rs libs/shared_lib/src/
 COPY libs/docker_dummy/src/lib.rs libs/utils_lib/src/
-COPY libs/docker_dummy/src/lib.rs libs/unstoppable_resolution/src/
 # bins
 COPY bins/desktop_client/Cargo.toml bins/desktop_client/
 COPY bins/server/Cargo.toml bins/server/

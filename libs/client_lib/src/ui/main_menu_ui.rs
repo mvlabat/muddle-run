@@ -43,8 +43,6 @@ pub struct AuthUiState {
     email: InputField,
     password: InputField,
     display_name: InputField,
-    #[cfg_attr(not(feature = "unstoppable_resolution"), allow(dead_code))]
-    domain: String,
     error_message: String,
     handler_is_ready: bool,
     pending_request: bool,
@@ -71,7 +69,6 @@ impl Default for AuthUiState {
                 label: "Display name",
                 ..Default::default()
             },
-            domain: "".to_owned(),
             error_message: "".to_owned(),
             handler_is_ready: false,
             pending_request: false,
@@ -128,7 +125,6 @@ impl AuthUiState {
         self.email.reset();
         self.password.reset();
         self.display_name.reset();
-        self.domain.clear();
         self.error_message.clear();
     }
 
@@ -152,7 +148,7 @@ impl AuthUiState {
             return true;
         }
 
-        self.login_method_is_available("google") || cfg!(feature = "unstoppable_resolution")
+        self.login_method_is_available("google")
     }
 }
 
@@ -209,7 +205,6 @@ pub enum AuthUiScreen {
     LinkAccount,
     SetDisplayName,
     GoogleOpenID,
-    UnstoppableDomainsOpenID,
 }
 
 impl Default for AuthUiScreen {
@@ -483,12 +478,6 @@ fn process_auth_messages(
                 main_menu_ui_state.auth.reset_form();
                 matchmaker_state.id_token = Some(id_token);
                 matchmaker_state.user_id = Some(user_id);
-            }
-            #[cfg(feature = "unstoppable_resolution")]
-            Ok(AuthMessage::InvalidDomainError) => {
-                main_menu_ui_state
-                    .auth
-                    .respond_with_error("The requested domain isn't registered");
             }
             Ok(AuthMessage::DisplayNameTakenError) => {
                 log::debug!("Display name is already taken");
@@ -839,10 +828,7 @@ fn authentication_screen(
             }
 
             let google_is_available = auth_ui_state.login_method_is_available("google");
-            // TODO: such kind of method check won't work for custom OIDC providers.
-            let ud_is_available = cfg!(feature = "unstoppable_resolution")
-                && auth_ui_state.login_method_is_available("unstoppable");
-            if google_is_available || ud_is_available {
+            if google_is_available {
                 ui.separator();
                 ui.label("Continue with an auth provider");
 
@@ -857,10 +843,6 @@ fn authentication_screen(
                         auth_request_tx
                             .send(AuthRequest::RequestGoogleAuth)
                             .expect("Failed to write to a channel (auth request)");
-                    }
-
-                    if ud_is_available && ui.button("Unstoppable Domains").clicked() {
-                        new_screen = Some(AuthUiScreen::UnstoppableDomainsOpenID);
                     }
                 });
             }
@@ -941,7 +923,7 @@ fn authentication_screen(
                 },
             );
         }
-        AuthUiScreen::GoogleOpenID | AuthUiScreen::UnstoppableDomainsOpenID => {
+        AuthUiScreen::GoogleOpenID => {
             ui.horizontal(|ui| {
                 if ui.button("Back").clicked() {
                     if auth_ui_state.linked_account.is_some() {
@@ -966,28 +948,6 @@ fn authentication_screen(
 
             ui.set_enabled(!auth_ui_state.pending_request);
 
-            #[cfg(feature = "unstoppable_resolution")]
-            if !auth_ui_state.pending_request
-                && matches!(auth_ui_state.screen, AuthUiScreen::UnstoppableDomainsOpenID)
-            {
-                ui.label("Domain name");
-
-                ui.with_layout(
-                    egui::Layout::top_down_justified(egui::Align::Center),
-                    |ui| {
-                        ui.text_edit_singleline(&mut auth_ui_state.domain);
-                        ui.add_space(5.0);
-                        if ui.button("Continue").clicked() {
-                            auth_ui_state.pending_request = true;
-                            auth_request_tx
-                                .send(AuthRequest::RequestUnstoppableDomainsAuth {
-                                    username: auth_ui_state.domain.clone(),
-                                })
-                                .expect("Failed to write to a channel (auth request)");
-                        }
-                    },
-                );
-            }
             if let Some(logged_in_as) = auth_ui_state.logged_in_as.as_ref() {
                 ui.with_layout(
                     egui::Layout::top_down_justified(egui::Align::Center),

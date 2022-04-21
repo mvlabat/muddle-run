@@ -6,7 +6,6 @@ members = [
     "libs/build_dotenv",
     "libs/server_lib",
     "libs/shared_lib",
-    "libs/unstoppable_resolution",
     "libs/utils_lib",
     "bins/desktop_client",
     "bins/web_client",

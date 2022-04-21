@@ -133,16 +133,6 @@ pub fn init_matchmaker_connection(mut commands: Commands, client_config: Res<Mud
             .auth0_client_id
             .clone()
             .expect("Expected MUDDLE_AUTH0_CLIENT_ID"),
-        #[cfg(feature = "unstoppable_resolution")]
-        ud_client_id: client_config
-            .ud_client_id
-            .clone()
-            .expect("Expected MUDDLE_UD_CLIENT_ID"),
-        #[cfg(feature = "unstoppable_resolution")]
-        ud_secret_id: client_config
-            .ud_client_secret
-            .clone()
-            .expect("Expected MUDDLE_UD_CLIENT_SECRET"),
     };
     if cfg!(not(target_arch = "wasm32")) {
         auth_config

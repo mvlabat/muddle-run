@@ -168,8 +168,6 @@ pub struct MuddleClientConfig {
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
     pub auth0_client_id: Option<String>,
-    pub ud_client_id: Option<String>,
-    pub ud_client_secret: Option<String>,
     pub matchmaker_url: Option<Url>,
     pub server_addr: Option<SocketAddr>,
 }

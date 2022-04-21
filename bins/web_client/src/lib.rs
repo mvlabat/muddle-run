@@ -14,8 +14,6 @@ pub fn main() {
             google_client_id: try_parse_from_env!("MUDDLE_GOOGLE_CLIENT_ID"),
             google_client_secret: try_parse_from_env!("MUDDLE_GOOGLE_CLIENT_SECRET"),
             auth0_client_id: try_parse_from_env!("MUDDLE_AUTH0_CLIENT_ID"),
-            ud_client_id: try_parse_from_env!("MUDDLE_UD_CLIENT_ID"),
-            ud_client_secret: try_parse_from_env!("MUDDLE_UD_CLIENT_SECRET"),
             matchmaker_url: try_parse_from_env!("MUDDLE_MATCHMAKER_URL"),
             server_addr: server_addr(),
         })

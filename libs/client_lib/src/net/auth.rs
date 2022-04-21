@@ -175,10 +175,6 @@ pub enum AuthRequest {
     UseDifferentAccount,
     CancelOpenIDRequest,
     RequestGoogleAuth,
-    #[cfg(feature = "unstoppable_resolution")]
-    RequestUnstoppableDomainsAuth {
-        username: String,
-    },
     RefreshAuth(OfflineAuthConfig),
     HandleOAuthResponse {
         state: String,
@@ -196,8 +192,6 @@ pub enum AuthMessage {
     },
     WrongPasswordError,
     SignUpFailedError,
-    #[cfg(feature = "unstoppable_resolution")]
-    InvalidDomainError,
     DisplayNameTakenError,
     UnavailableError,
     InvalidOrExpiredAuthError,
@@ -213,10 +207,6 @@ pub struct AuthConfig {
     // Google OAuth requires it for desktop clients.
     pub google_client_secret: Option<String>,
     pub auth0_client_id: String,
-    #[cfg(feature = "unstoppable_resolution")]
-    pub ud_client_id: String,
-    #[cfg(feature = "unstoppable_resolution")]
-    pub ud_secret_id: String,
 }
 
 pub struct PendingOAuthRequest {
@@ -249,20 +239,6 @@ pub async fn serve_auth_requests(
 ) {
     let client = reqwest::Client::new();
 
-    #[cfg(feature = "unstoppable_resolution")]
-    let resolution = {
-        let ethereum_rpc_url =
-            Url::parse("https://mainnet.infura.io/v3/c4bb906ed6904c42b19c95825fe55f39").unwrap();
-        let polygon_rpc_url =
-            Url::parse("https://polygon-mainnet.infura.io/v3/c4bb906ed6904c42b19c95825fe55f39")
-                .unwrap();
-        unstoppable_resolution::UnsResolutionProvider {
-            http_client: client.clone(),
-            ethereum_rpc_url: std::sync::Arc::new(ethereum_rpc_url),
-            polygon_rpc_url: std::sync::Arc::new(polygon_rpc_url),
-        }
-    };
-
     let mut handler = AuthRequestsHandler {
         persistence_client,
         client,
@@ -273,8 +249,6 @@ pub async fn serve_auth_requests(
         pending_request: None,
         req_redirect_uri: None,
         id_token: None,
-        #[cfg(feature = "unstoppable_resolution")]
-        resolution,
     };
     handler.serve().await
 }
@@ -289,8 +263,6 @@ pub struct AuthRequestsHandler {
     pending_request: Option<PendingOAuthRequest>,
     req_redirect_uri: Option<String>,
     id_token: Option<String>,
-    #[cfg(feature = "unstoppable_resolution")]
-    resolution: unstoppable_resolution::UnsResolutionProvider,
 }
 
 enum RequestParams<T> {
@@ -390,10 +362,6 @@ impl AuthRequestsHandler {
 
                     webbrowser::open(&url).expect("Failed to open a URL in browser");
                 }
-                #[cfg(feature = "unstoppable_resolution")]
-                Some(AuthRequest::RequestUnstoppableDomainsAuth { username }) => {
-                    self.request_ud_auth(username).await;
-                }
                 Some(AuthRequest::RefreshAuth(offline_auth_config)) => {
                     self.refresh_auth(offline_auth_config).await;
                 }
@@ -448,22 +416,8 @@ impl AuthRequestsHandler {
         } else if offline_auth_config.token_uri.contains("auth0") {
             (self.auth_config.auth0_client_id.clone(), None)
         } else {
-            #[allow(unused_mut, unused_assignments)]
-            let mut result = None;
-            #[cfg(feature = "unstoppable_resolution")]
-            {
-                result = Some((
-                    self.auth_config.ud_client_id.clone(),
-                    Some(self.auth_config.ud_secret_id.clone()),
-                ));
-            }
-            match result {
-                Some(result) => result,
-                None => {
-                    self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
-                    return;
-                }
-            }
+            self.send_auth_message(AuthMessage::InvalidOrExpiredAuthError);
+            return;
         };
 
         self.refresh_auth_token(
@@ -476,82 +430,6 @@ impl AuthRequestsHandler {
             },
         )
         .await;
-    }
-
-    #[cfg(feature = "unstoppable_resolution")]
-    async fn request_ud_auth(&mut self, username: String) {
-        let rel = "http://openid.net/specs/connect/1.0/issuer";
-        let (user, domain) = username.split_once('@').unwrap_or(("", username.as_str()));
-        let jrd = match self.resolution.domain_jrd(domain, user, rel, None).await {
-            Ok(jrd) => jrd,
-            Err(unstoppable_resolution::WebFingerResponseError::InvalidDomainName) => {
-                self.send_auth_message(AuthMessage::InvalidDomainError);
-                return;
-            }
-            Err(err) => {
-                log::error!("WebFinger error: {:?}", err);
-                return;
-            }
-        };
-        log::debug!("Domain JRD: {:#?}", jrd);
-        let Some(openid_config) = self.fetch_openid_config(rel, &jrd).await else {
-            self.send_auth_message(AuthMessage::UnavailableError);
-            return;
-        };
-
-        let Some(token_uri) = openid_config.token_endpoint else {
-            self.send_auth_message(AuthMessage::UnavailableError);
-            return;
-        };
-
-        let (code_verifier, code_challenge) = code_challenge();
-        let request = PendingOAuthRequest {
-            username: Some(username.clone()),
-            login_hint: Some(domain.to_owned()),
-            client_id: self.auth_config.ud_client_id.clone(),
-            client_secret: None,
-            state_token: state_token(),
-            code_verifier,
-            token_uri,
-            redirect_uri: self.req_redirect_uri.clone().unwrap(),
-        };
-
-        let params = AuthRequestParams {
-            client_id: request.client_id.clone(),
-            login_hint: request.login_hint.clone(),
-            redirect_uri: self.req_redirect_uri.clone().unwrap(),
-            response_type: "code".to_owned(),
-            scope: "openid email wallet offline_access".to_owned(),
-            code_challenge,
-            code_challenge_method: "S256".to_owned(),
-            state: request.state_token.clone(),
-            access_type: "offline".to_owned(),
-        };
-
-        self.pending_request = Some(request);
-
-        let url = format!(
-            "{}?{}",
-            openid_config.authorization_endpoint,
-            serde_urlencoded::to_string(params).unwrap()
-        );
-
-        webbrowser::open(&url).expect("Failed to open a URL in browser");
-    }
-
-    #[cfg(feature = "unstoppable_resolution")]
-    async fn fetch_openid_config(
-        &self,
-        rel: &str,
-        jrd: &unstoppable_resolution::JrdDocument,
-    ) -> Option<OpenIdConnectConfig> {
-        let link = jrd.links.iter().find(|link| link.rel == rel)?;
-        let url = link
-            .href
-            .as_ref()?
-            .join(".well-known/openid-configuration")
-            .ok()?;
-        self.client.get(url).send().await.ok()?.json().await.ok()
     }
 
     async fn sign_up(&mut self, params: &SignUpRequestParams) {
