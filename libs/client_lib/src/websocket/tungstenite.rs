@@ -23,6 +23,7 @@ impl From<Message> for super::Message {
             Message::Ping(payload) => super::Message::Ping(payload),
             Message::Pong(payload) => super::Message::Pong(payload),
             Message::Close(payload) => super::Message::Close(payload.map(|payload| payload.into())),
+            Message::Frame(_) => unreachable!(),
         }
     }
 }
