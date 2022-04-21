@@ -29,7 +29,7 @@ rymder = "0.4.0"
 serde = "1.0.133"
 serde_json = "1.0.74"
 tokio = "1.15.0"
-uuid = "0.8.2"
+uuid = "1.0.0"
 
 [dependencies.mr_messages_lib]
 version = "*"
