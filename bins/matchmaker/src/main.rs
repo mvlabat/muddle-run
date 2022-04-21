@@ -212,12 +212,8 @@ async fn main() {
         servers.clone(),
     ))
     .fuse();
-    let mut serve_webhook_service = tokio::spawn(serve_webhook_service(
-        tx.clone(),
-        servers.clone(),
-        create_server_requests.clone(),
-    ))
-    .fuse();
+    let mut serve_webhook_service =
+        tokio::spawn(serve_webhook_service(tx.clone(), servers.clone())).fuse();
     let mut listen_websocket = tokio::spawn(listen_websocket(HandleConnectionParams {
         tx,
         kube_client: client,
@@ -373,11 +369,7 @@ struct FleetStatus {
     allocated_replicas: u32,
 }
 
-async fn serve_webhook_service(
-    tx: Sender<MatchmakerMessage>,
-    servers: Servers,
-    create_server_requests: CreateServerRequests,
-) {
+async fn serve_webhook_service(tx: Sender<MatchmakerMessage>, servers: Servers) {
     let make_svc = hyper::service::make_service_fn(move |_conn| {
         fn bad_request() -> hyper::Response<hyper::Body> {
             hyper::Response::builder()
@@ -388,12 +380,10 @@ async fn serve_webhook_service(
 
         let tx = tx.clone();
         let servers = servers.clone();
-        let create_server_requests = create_server_requests.clone();
 
         let serve = move |req: hyper::Request<hyper::Body>| {
             let tx = tx.clone();
             let servers = servers.clone();
-            let create_server_requests = create_server_requests.clone();
             async move {
                 let json_string = match hyper::body::aggregate(req)
                     .await
@@ -424,9 +414,7 @@ async fn serve_webhook_service(
 
                 let active_players = tx.receiver_count() as u32;
                 let allocated_servers = servers.allocated_count().await as u32;
-                let create_server_requests = create_server_requests.lock().await.len() as u32;
-                let desired_replicas_count =
-                    active_players.max(1) + allocated_servers + create_server_requests;
+                let desired_replicas_count = active_players.max(1) + allocated_servers;
                 fleet_autoscale_review.response = Some(FleetAutoscaleResponse {
                     uid: fleet_autoscale_review.request.uid.clone(),
                     scale: desired_replicas_count != fleet_autoscale_review.request.status.replicas,
@@ -434,10 +422,9 @@ async fn serve_webhook_service(
                 });
 
                 log::info!(
-                    "Webhook response (active players: {}, allocated servers: {}, create server requests: {}): {:?}",
+                    "Webhook response (active players: {}, allocated servers: {}): {:?}",
                     active_players,
                     allocated_servers,
-                    create_server_requests,
                     fleet_autoscale_review.response.as_ref().unwrap()
                 );
 
