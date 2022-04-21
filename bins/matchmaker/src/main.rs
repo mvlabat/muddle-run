@@ -413,7 +413,7 @@ async fn serve_webhook_service(tx: Sender<MatchmakerMessage>, servers: Servers) 
 
                 let active_players = tx.receiver_count() as u32;
                 let allocated_servers = servers.allocated_count().await as u32;
-                let desired_replicas_count = active_players.max(1) + allocated_servers;
+                let desired_replicas_count = active_players.min(1) + allocated_servers;
                 fleet_autoscale_review.response = Some(FleetAutoscaleResponse {
                     uid: fleet_autoscale_review.request.uid.clone(),
                     scale: desired_replicas_count != fleet_autoscale_review.request.status.replicas,
