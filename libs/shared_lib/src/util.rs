@@ -11,7 +11,7 @@ pub fn player_respawn_time() -> FrameNumber {
 }
 
 pub fn player_sensor_outline() -> Vec<Vec2> {
-    let sensors_count = 24;
+    let sensors_count = 8;
     let step = std::f32::consts::PI * 2.0 / sensors_count as f32;
     (0..sensors_count)
         .map(|i| {
