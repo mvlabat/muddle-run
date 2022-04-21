@@ -77,6 +77,7 @@ pub async fn load_level(
     persistence_url: Url,
     level_id: i64,
 ) -> anyhow::Result<(GetLevelResponse, InitLevelObjects)> {
+    log::info!("Loading a level: {level_id}...");
     let client = reqwest::Client::new();
 
     let result = client

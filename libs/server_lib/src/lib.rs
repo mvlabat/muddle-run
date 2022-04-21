@@ -105,15 +105,7 @@ impl Plugin for MuddleServerPlugin {
             .clone();
         let persistence_urls: Option<(Url, Url)> = server_config
             .public_persistence_url
-            .zip(server_config.private_persistence_url)
-            .or_else(|| {
-                TOKIO.block_on(async {
-                    let client = Client::try_default()
-                        .await
-                        .expect("Unable to detect kubernetes environment");
-                    kube_discovery::discover_persistence(client).await
-                })
-            });
+            .zip(server_config.private_persistence_url);
         if let Some((public_url, private_url)) = persistence_urls {
             let config = PersistenceConfig {
                 public_url,
@@ -230,7 +222,24 @@ pub async fn init_level_data(app: &mut App, game_server: Option<GameServer>) {
         }
     };
 
-    let server_config = app.world.get_resource::<MuddleServerConfig>().unwrap();
+    let mut server_config = app.world.get_resource_mut::<MuddleServerConfig>().unwrap();
+    if server_config.public_persistence_url.is_none()
+        || server_config.private_persistence_url.is_none()
+    {
+        match Client::try_default().await {
+            Ok(client) => {
+                let persistence_urls = kube_discovery::discover_persistence(client).await;
+                if let Some((public_persistence_url, private_persistence_url)) = persistence_urls {
+                    server_config.public_persistence_url = Some(public_persistence_url);
+                    server_config.private_persistence_url = Some(private_persistence_url);
+                }
+            }
+            Err(err) => {
+                log::warn!("Unable to detect kubernetes environment: {err:?}");
+            }
+        }
+    }
+
     let public_persistence_url = server_config
         .public_persistence_url
         .clone()
