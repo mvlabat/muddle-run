@@ -623,10 +623,11 @@ fn process_matchmaker_messages(
                 .matchmaker
                 .create_server_request_sent_at
                 .map_or(true, |sent_at| {
-                    Instant::now().duration_since(sent_at) > Duration::from_secs(1)
+                    Instant::now().duration_since(sent_at) > Duration::from_secs(5)
                 })
             {
                 if main_menu_ui_state.matchmaker.has_ready_server() {
+                    log::info!("Sending an allocation request: {}", request.request_id());
                     main_menu_ui_state.matchmaker.create_server_request_sent_at =
                         Some(Instant::now());
                     main_menu_ui_channels
@@ -1291,30 +1292,40 @@ fn matchmaker_create_server_screen(
         }
     }
 
-    let host_enabled = match &matchmaker_ui_state.selected_level {
-        SelectedLevel::NewLevel(title) if !title.is_empty() => true,
-        SelectedLevel::Existing(_) => true,
-        _ => false,
+    let matchmaker_is_connected = matches!(matchmaker_state.status, TcpConnectionStatus::Connected);
+    let is_authenticated = matchmaker_state.id_token.is_some();
+    let (create_enabled, create_disabled_reason) = match &matchmaker_ui_state.selected_level {
+        _ if !matchmaker_is_connected => (false, "Not connected to the matchmaker"),
+        SelectedLevel::NewLevel(_) if !is_authenticated => {
+            (false, "You must be logged in to create new levels")
+        }
+        SelectedLevel::NewLevel(title) if title.is_empty() => {
+            (false, "New level title cannot be empty")
+        }
+        SelectedLevel::NewLevel(_) => (true, ""),
+        SelectedLevel::Existing(_) => (true, ""),
+        SelectedLevel::None => (false, "Select a level to create a server"),
     };
-    let fork_enabled = match &matchmaker_ui_state.selected_level {
-        SelectedLevel::NewLevel(_) => false,
-        SelectedLevel::Existing(_) => true,
-        SelectedLevel::None => false,
+    let (fork_enabled, fork_disabled_reason) = match &matchmaker_ui_state.selected_level {
+        _ if !matchmaker_is_connected => (false, "Not connected to the matchmaker"),
+        _ if !is_authenticated => (false, "You must be logged in to fork levels"),
+        SelectedLevel::NewLevel(_) => (false, "You can fork only an existing level"),
+        SelectedLevel::Existing(_) => (true, ""),
+        SelectedLevel::None => (false, "Select a level to create a server"),
     };
 
-    let matchmaker_is_connected = matches!(matchmaker_state.status, TcpConnectionStatus::Connected);
     let [back_response, create_response, fork_response] = button_panel(
         ui,
         70.0,
         [
             PanelButton::new(egui::Button::new("Back")),
             PanelButton::new(egui::Button::new("Create"))
-                .enabled(host_enabled && matchmaker_is_connected)
-                .on_disabled_hover_text("Select a level to create a server"),
+                .enabled(create_enabled)
+                .on_disabled_hover_text(create_disabled_reason),
             PanelButton::new(egui::Button::new("Fork"))
-                .enabled(fork_enabled && matchmaker_is_connected)
+                .enabled(fork_enabled)
                 .on_hover_text("Clone and host the selected level")
-                .on_disabled_hover_text("Clone and host the selected level"),
+                .on_disabled_hover_text(fork_disabled_reason),
         ],
     );
 
@@ -1324,6 +1335,8 @@ fn matchmaker_create_server_screen(
     }
 
     if create_response.clicked() {
+        let request_id = Uuid::new_v4();
+        log::info!("Scheduling a create level request: {request_id}");
         let init_level = match &matchmaker_ui_state.selected_level {
             SelectedLevel::NewLevel(level_title) => InitLevel::Create {
                 title: level_title.clone(),
@@ -1334,13 +1347,15 @@ fn matchmaker_create_server_screen(
         };
         let request = MatchmakerRequest::CreateServer {
             init_level,
-            request_id: Uuid::new_v4(),
+            request_id,
             id_token: matchmaker_state.id_token.clone(),
         };
         matchmaker_ui_state.pending_create_server_request = Some(request);
     }
 
     if fork_response.clicked() {
+        let request_id = Uuid::new_v4();
+        log::info!("Scheduling a fork level request: {request_id}");
         let init_level = match &matchmaker_ui_state.selected_level {
             SelectedLevel::Existing(level_id) => InitLevel::Create {
                 title: matchmaker_ui_state.levels[level_id].title.clone(),
@@ -1350,7 +1365,7 @@ fn matchmaker_create_server_screen(
         };
         let request = MatchmakerRequest::CreateServer {
             init_level,
-            request_id: Uuid::new_v4(),
+            request_id,
             id_token: matchmaker_state.id_token.clone(),
         };
         matchmaker_ui_state.pending_create_server_request = Some(request);
