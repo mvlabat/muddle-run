@@ -31,7 +31,7 @@ impl PersistenceClient {
         method: reqwest::Method,
         path: &str,
         id_token: Option<T>,
-        body: &B,
+        body: Option<&B>,
     ) -> Option<Result<R, ErrorResponse<E>>> {
         let mut request = self
             .client
@@ -39,7 +39,10 @@ impl PersistenceClient {
         if let Some(id_token) = id_token {
             request = request.bearer_auth(id_token);
         }
-        let result = request.json(body).send().await;
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        let result = request.send().await;
 
         let (data, status) = match result {
             Ok(result) => {
@@ -102,7 +105,7 @@ impl PersistenceClient {
             reqwest::Method::GET,
             &format!("/levels?{query}"),
             Option::<&str>::None,
-            &(),
+            Option::<&()>::None,
         )
         .await
     }
@@ -115,7 +118,7 @@ impl PersistenceClient {
             reqwest::Method::GET,
             &format!("/levels/{level_id}"),
             Option::<&str>::None,
-            &(),
+            Option::<&()>::None,
         )
         .await
     }

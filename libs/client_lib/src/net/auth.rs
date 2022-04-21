@@ -919,7 +919,7 @@ impl AuthRequestsHandler {
                         .clone()
                         .expect("Expected initialized id_token"),
                 ),
-                body,
+                Some(body),
             )
             .await
     }
