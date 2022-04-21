@@ -54,6 +54,11 @@ RUN RUSTFLAGS=-g cargo build --release
 
 FROM debian:stable-slim
 
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates
+
+RUN update-ca-certificates
+
 COPY --from=builder /usr/src/muddle-run/target/release/mr_matchmaker /usr/local/bin/
 
 ARG muddle_auth0_client_id
