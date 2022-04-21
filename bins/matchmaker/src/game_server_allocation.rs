@@ -1,5 +1,4 @@
-use kube::Client;
-use kube_derive::CustomResource;
+use kube::{Client, CustomResource};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

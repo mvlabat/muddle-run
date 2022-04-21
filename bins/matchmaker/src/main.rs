@@ -14,9 +14,8 @@ use future::FutureExt;
 use futures::{future, pin_mut, stream::BoxStream, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
 use kube::{
     api::{Api, ListParams, WatchEvent},
-    Client,
+    Client, CustomResource,
 };
-use kube_derive::CustomResource;
 use mr_messages_lib::{
     deserialize_binary, serialize_binary, GameServerState, GetRegisteredUserQuery, InitLevel,
     MatchmakerMessage, MatchmakerRequest, Server,
