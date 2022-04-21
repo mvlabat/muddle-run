@@ -9,7 +9,7 @@
     <option name="withSudo" value="false" />
     <option name="backtrace" value="SHORT" />
     <envs>
-      <env name="RUST_LOG" value="mr_shared_lib=debug,mr_server_lib=debug,mr_utils_lib=debug" />
+      <env name="RUST_LOG" value="mr_server=debug,mr_shared_lib=debug,mr_server_lib=debug,mr_utils_lib=debug" />
     </envs>
     <option name="isRedirectInput" value="false" />
     <option name="redirectInputPath" value="" />

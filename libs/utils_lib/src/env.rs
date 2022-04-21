@@ -2,7 +2,7 @@
 use bevy::log;
 
 pub fn load_env() {
-    // Sync this with of `build_dotenv`.
+    // Sync this with `build_dotenv`.
     let muddle_env = std::env::var("MUDDLE_ENV").unwrap_or_else(|_| {
         match std::env::var("PROFILE").as_deref() {
             Ok("release") => "production",
