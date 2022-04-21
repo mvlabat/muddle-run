@@ -33,6 +33,3 @@ features = [
 
 [build-dependencies]
 mr_build_dotenv = { path = "../../libs/build_dotenv" }
-
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false
