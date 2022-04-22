@@ -11,9 +11,13 @@ use crate::{
     MuddleClientConfig, PlayerDelay, TargetFramesAhead,
 };
 use auth::{AuthMessage, AuthRequest};
-use bevy::{ecs::system::SystemParam, log, prelude::*, utils::HashMap};
+use bevy::{
+    ecs::system::SystemParam,
+    log,
+    prelude::*,
+    utils::{HashMap, Instant},
+};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
-use chrono::Utc;
 use futures::{select, FutureExt};
 use mr_messages_lib::{MatchmakerMessage, MatchmakerRequest, Server};
 use mr_shared_lib::{
@@ -42,6 +46,7 @@ use std::{
     future::Future,
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    time::Duration,
 };
 use tokio::sync::mpsc::{
     error::TryRecvError, unbounded_channel, UnboundedReceiver, UnboundedSender,
@@ -329,7 +334,6 @@ pub fn process_network_events(
                 handle,
                 message
             );
-            network_params.connection_state.last_message_received_at = Utc::now();
             let Message {
                 message,
                 session_id,
@@ -370,7 +374,7 @@ pub fn process_network_events(
                     network_params
                         .connection_state
                         .set_status(ConnectionStatus::Handshaking);
-                    update_params.initial_rtt.received_at = Some(Utc::now());
+                    update_params.initial_rtt.received_at = Some(Instant::now());
                     let id_token = matchmaker_params
                         .matchmaker_state
                         .as_ref()
@@ -414,16 +418,19 @@ pub fn process_network_events(
                         {
                             Err(err @ AcknowledgeError::OutOfRange { .. }) => {
                                 log::warn!(
-                                    "Can't apply acknowledgments for frame {} (current frame: {}): {:?}",
+                                    "Can't apply acknowledgments for frame {} (current frame: {}), skipping: {:?}",
                                     ack_frame_number,
                                     update_params.game_time.frame_number,
                                     err
                                 );
                                 skip_update = true;
                             }
-                            Err(err) => {
-                                log::error!(
-                                    "Can't apply acknowledgment for frame {} (current frame: {}): {:?}",
+                            Err(
+                                err @ AcknowledgeError::Inconsistent
+                                | err @ AcknowledgeError::InvalidStep,
+                            ) => {
+                                log::warn!(
+                                    "Can't apply acknowledgment for frame {} (current frame: {}), disconnecting: {:?}",
                                     ack_frame_number,
                                     update_params.game_time.frame_number,
                                     err
@@ -435,33 +442,36 @@ pub fn process_network_events(
                                 );
                                 return;
                             }
-                            _ => {}
+                            Ok(_) => {}
                         }
                     }
                     skip_update = skip_update || current_player_net_id.0.is_none();
-                    if !skip_update {
-                        if !can_process_delta_update_message(&update_params.game_time, &update) {
-                            log::error!(
-                                "Can't process update for frame {} (current frame: {})",
-                                update.frame_number,
-                                update_params.game_time.frame_number
-                            );
-                            network_params.connection_state.set_status(
-                                ConnectionStatus::Disconnecting(DisconnectReason::InvalidUpdate),
-                            );
-                            return;
-                        }
-
-                        process_delta_update_message(
-                            update,
-                            &network_params.connection_state,
-                            current_player_net_id.0,
-                            &mut players,
-                            &mut update_params,
-                        );
+                    if skip_update {
+                        continue;
                     }
+
+                    if !can_process_delta_update_message(&update_params.game_time, &update) {
+                        log::warn!(
+                            "Can't process update for frame {} (current frame: {}), skipping",
+                            update.frame_number,
+                            update_params.game_time.frame_number
+                        );
+                        continue;
+                    }
+
+                    process_delta_update_message(
+                        update,
+                        &network_params.connection_state,
+                        current_player_net_id.0,
+                        &mut players,
+                        &mut update_params,
+                    );
                 }
             }
+
+            network_params
+                .connection_state
+                .last_valid_message_received_at = Instant::now();
         }
 
         while let Some(message) = channels.recv::<Message<ReliableServerMessage>>() {
@@ -470,7 +480,6 @@ pub fn process_network_events(
                 handle,
                 message
             );
-            network_params.connection_state.last_message_received_at = Utc::now();
             let Message {
                 message,
                 session_id,
@@ -510,7 +519,7 @@ pub fn process_network_events(
                             ),
                         },
                     ));
-                    update_params.initial_rtt.sent_at = Some(Utc::now());
+                    update_params.initial_rtt.sent_at = Some(Instant::now());
                     network_params.connection_state.handshake_id += MessageId::new(1);
                     network_params
                         .connection_state
@@ -634,6 +643,10 @@ pub fn process_network_events(
                     return;
                 }
             }
+
+            network_params
+                .connection_state
+                .last_valid_message_received_at = Instant::now();
         }
 
         while channels
@@ -712,11 +725,11 @@ pub fn maintain_connection(
     // TODO: if a client isn't getting any updates, we may also want to pause the game and wait for
     //  some time for a server to respond.
 
-    let connection_timeout = Utc::now()
-        .signed_duration_since(network_params.connection_state.last_message_received_at)
-        .to_std()
-        .unwrap()
-        > std::time::Duration::from_millis(CONNECTION_TIMEOUT_MILLIS);
+    let connection_timeout = Instant::now().duration_since(
+        network_params
+            .connection_state
+            .last_valid_message_received_at,
+    ) > Duration::from_millis(CONNECTION_TIMEOUT_MILLIS);
 
     if connection_timeout && !connection_is_uninitialized {
         log::warn!("Connection timeout, resetting");
@@ -828,7 +841,7 @@ pub fn send_network_updates(
     network_params
         .connection_state
         // Clients don't resend updates, so we can forget about unacknowledged packets.
-        .add_outgoing_packet(time.frame_number, Utc::now());
+        .add_outgoing_packet(time.frame_number, Instant::now());
 
     let inputs = match player.role {
         PlayerRole::Runner => {

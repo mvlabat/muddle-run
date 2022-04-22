@@ -6,10 +6,9 @@ use bevy::{
     ecs::system::SystemParam,
     log,
     prelude::*,
-    utils::{HashMap, HashSet},
+    utils::{HashMap, HashSet, Instant},
 };
 use bevy_networking_turbulence::{ConnectionHandle, NetworkEvent, NetworkResource};
-use chrono::Utc;
 use mr_messages_lib::{GetLevelResponse, PLAYER_CAPACITY};
 use mr_shared_lib::{
     game::{
@@ -35,7 +34,7 @@ use std::{
     collections::hash_map::Entry,
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    time::Instant,
+    time::Duration,
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -249,7 +248,6 @@ pub fn process_network_events(
                         *handle,
                     );
                     connection_state.set_status(ConnectionStatus::Handshaking);
-                    connection_state.last_message_received_at = Utc::now();
                 }
                 PersistenceMessage::SaveLevelResponse(_) => {
                     log::warn!("TODO: cover `PersistenceMessage::SaveLevelResponse`");
@@ -262,9 +260,7 @@ pub fn process_network_events(
     for (handle, connection) in network_params.net.connections.iter_mut() {
         let channels = connection.channels().unwrap();
 
-        'channel: while let Some(client_message) =
-            channels.recv::<Message<UnreliableClientMessage>>()
-        {
+        while let Some(client_message) = channels.recv::<Message<UnreliableClientMessage>>() {
             log::trace!(
                 "UnreliableClientMessage received on [{}]: {:?}",
                 handle,
@@ -314,7 +310,7 @@ pub fn process_network_events(
 
                 connection_state.set_status(ConnectionStatus::Connecting);
                 connection_state.handshake_id = *message_id;
-                connection_state.last_message_received_at = Utc::now();
+                connection_state.last_valid_message_received_at = Instant::now();
                 handshake_messages_to_send.push((
                     *handle,
                     Message {
@@ -336,7 +332,6 @@ pub fn process_network_events(
                     break;
                 }
             };
-            connection_state.last_message_received_at = Utc::now();
 
             if !matches!(connection_state.status(), ConnectionStatus::Connected) {
                 log::warn!(
@@ -363,59 +358,55 @@ pub fn process_network_events(
                 UnreliableClientMessage::PlayerUpdate(update) => {
                     log::trace!("Incoming update message: {:?}", update);
                     if let Err(err) = connection_state.acknowledge_incoming(update.frame_number) {
-                        connection_state.set_status(ConnectionStatus::Disconnecting(
-                            DisconnectReason::InvalidUpdate,
-                        ));
-                        log::error!(
-                            "Failed to acknowledge an incoming packet (player: {}, update frame: {}, current frame: {}), disconnecting: {:?}",
+                        log::debug!(
+                            "Failed to acknowledge an incoming packet (player: {}, update frame: {}, current frame: {}): {:?}",
                             player_net_id.0,
                                     update.frame_number,
                             time.frame_number,
                             err
                         );
-                        break 'channel;
+                        continue;
                     }
                     if let (Some(frame_number), ack_bit_set) = update.acknowledgments {
                         if let Err(err) = connection_state
                             .apply_outgoing_acknowledgements(frame_number, ack_bit_set)
                         {
-                            connection_state.set_status(ConnectionStatus::Disconnecting(
-                                DisconnectReason::InvalidUpdate,
-                            ));
-                            log::error!(
-                                "Failed to apply outgoing packet acknowledgments (player: {}, update frame: {}, current frame: {}), disconnecting: {:?}",
+                            log::debug!(
+                                "Failed to apply outgoing packet acknowledgments (player: {}, update frame: {}, current frame: {}): {:?}",
                                 player_net_id.0,
                                 update.frame_number,
                                 time.frame_number,
                                 err
                             );
-                            break 'channel;
+                            continue;
                         }
                     }
+
+                    // Builders don't send any useful inputs that we need to track with unreliable
+                    // messages atm.
                     if let PlayerInputs::Runner { inputs } = update.inputs {
                         for input in inputs {
                             if input.frame_number.diff_abs(time.frame_number).value()
-                                > COMPONENT_FRAMEBUFFER_LIMIT / 2
+                                <= COMPONENT_FRAMEBUFFER_LIMIT / 2
                             {
+                                update_params
+                                    .deferred_player_updates
+                                    .push(player_net_id, input);
+                            } else {
                                 log::warn!(
-                                    "Player {} is out of sync (input frame {}, current frame: {}), disconnecting",
+                                    "Player {} is out of sync (input frame {}, current frame: {}), skipping the update",
                                     player_net_id.0,
                                     input.frame_number,
                                     time.frame_number
                                 );
-                                connection_state.set_status(ConnectionStatus::Disconnecting(
-                                    DisconnectReason::InvalidUpdate,
-                                ));
-                                break 'channel;
+                                continue;
                             }
-                            update_params
-                                .deferred_player_updates
-                                .push(player_net_id, input);
                         }
                     }
                 }
                 UnreliableClientMessage::Connect(_) => {}
             }
+            connection_state.last_valid_message_received_at = Instant::now();
         }
 
         while let Some(client_message) = channels.recv::<Message<ReliableClientMessage>>() {
@@ -509,7 +500,6 @@ pub fn process_network_events(
                         *handle,
                     );
                     connection_state.set_status(ConnectionStatus::Handshaking);
-                    connection_state.last_message_received_at = Utc::now();
                 }
                 ReliableClientMessage::SwitchRole(role) => {
                     log::info!("Client ({}) requests to switch role to {:?}", handle, role);
@@ -589,6 +579,10 @@ pub fn process_network_events(
                         .despawn_level_object_requests
                         .push(player_net_id, despawned_level_object_net_id);
                 }
+            }
+
+            if let Some(connection_state) = network_params.connection_states.get_mut(handle) {
+                connection_state.last_valid_message_received_at = Instant::now();
             }
         }
 
@@ -700,34 +694,27 @@ fn disconnect_players(
         let (last_incoming_frame, _) = connection_state.incoming_acknowledgments();
         if let Some(last_incoming_frame) = last_incoming_frame {
             // If the difference between last incoming frame and the current one is more
-            // than 5 secs, we disconnect the client. Both lagging behind and being far ahead
-            // isn't right.
-            if time.frame_number.diff_abs(last_incoming_frame).value()
-                > COMPONENT_FRAMEBUFFER_LIMIT / 2
+            // than 10 secs, we disconnect the client. Neither lagging behind, nor being far ahead
+            // is right.
+            if time.frame_number.diff_abs(last_incoming_frame).value() > COMPONENT_FRAMEBUFFER_LIMIT
             {
                 log::warn!("Disconnecting {}: lagging or falling behind", handle);
                 connection_state
                     .set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
             }
-        } else if Utc::now()
-            .signed_duration_since(connection_state.status_updated_at())
-            .to_std()
-            .unwrap()
-            > std::time::Duration::from_secs(5)
+        } else if Instant::now().duration_since(connection_state.status_updated_at())
+            > Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
         {
             // Disconnect players that haven't sent any updates at all (they are likely
             // in the `Connecting` or `Handshaking` status) if they are staying in this state
-            // for 5 seconds.
+            // for 10 seconds.
             log::warn!("Disconnecting {}: handshake timeout", handle);
             connection_state.set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
         }
 
         // Disconnecting players that haven't sent any message for `CONNECTION_TIMEOUT_MILLIS`.
-        if Utc::now()
-            .signed_duration_since(connection_state.last_message_received_at)
-            .to_std()
-            .unwrap()
-            > std::time::Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
+        if Instant::now().duration_since(connection_state.last_valid_message_received_at)
+            > Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
         {
             log::warn!("Disconnecting {}: idle", handle);
             connection_state.set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
@@ -1023,7 +1010,7 @@ fn broadcast_delta_update_messages(
         log::error!("Failed to send a message: {:?}", err);
     }
 
-    connection_state.add_outgoing_packet(time.server_frame, Utc::now());
+    connection_state.add_outgoing_packet(time.server_frame, Instant::now());
 }
 
 fn send_new_player_messages(
@@ -1188,7 +1175,12 @@ fn create_player_state(
         }
     }
     if inputs.is_empty() && player_direction.buffer.len() > 1 {
-        log::error!("Missing updates for Player {} (updates start frame: {}, last player direction frame: {:?})", net_id.0, updates_start_frame, player_direction.buffer.end_frame());
+        log::debug!(
+            "Missing updates for Player {} (updates start frame: {}, last player direction frame: {:?})",
+            net_id.0,
+            updates_start_frame,
+            player_direction.buffer.end_frame(),
+        );
     }
 
     let start_position_frame = inputs.first().map_or_else(

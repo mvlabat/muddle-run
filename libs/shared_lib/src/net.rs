@@ -7,16 +7,15 @@ use crate::{
     wrapped_counter::WrappedCounter,
     TICKS_PER_NETWORK_BROADCAST,
 };
-use bevy::ecs::system::ResMut;
+use bevy::{ecs::system::ResMut, utils::Instant};
 use bevy_networking_turbulence::{
     ConnectionChannelsBuilder, MessageChannelMode, MessageChannelSettings, NetworkResource,
     ReliableChannelSettings,
 };
-use chrono::{DateTime, Duration, Utc};
-use std::collections::VecDeque;
+use std::{collections::VecDeque, time::Duration};
 use thiserror::Error;
 
-pub const CONNECTION_TIMEOUT_MILLIS: u64 = 3000;
+pub const CONNECTION_TIMEOUT_MILLIS: u64 = 10000;
 const RTT_UPDATE_FACTOR: f32 = 0.2;
 const JITTER_DECREASE_THRESHOLD_SECS: u64 = 1;
 
@@ -43,10 +42,7 @@ pub enum AcknowledgeError {
     #[error("invalid frame step for an incoming acknowledgment")]
     InvalidStep,
     #[error("acknowledged frame is out of stored range")]
-    OutOfRange {
-        start: Option<FrameNumber>,
-        end: Option<FrameNumber>,
-    },
+    OutOfRange { start: Option<FrameNumber> },
     #[error("acknowledgement for outgoing packets is inconsistent with the previous one")]
     Inconsistent,
 }
@@ -62,19 +58,21 @@ pub enum AddOutgoingPacketError {
 pub struct ConnectionState {
     pub handshake_id: MessageId,
     pub session_id: SessionId,
-    pub last_message_received_at: DateTime<Utc>,
+    pub last_valid_message_received_at: Instant,
     status: ConnectionStatus,
-    status_updated_at: DateTime<Utc>,
+    status_updated_at: Instant,
     newest_acknowledged_incoming_packet: Option<FrameNumber>,
     // Packets that are incoming to us (not to a peer on the other side of a connection).
     // We acknowledge these packets on receiving an unreliable message and send send the acks later.
+    // The least significant bit represents the newest acknowledgement (latest frame).
     incoming_packets_acks: u64,
-    // Packets that we send to a peer represented by this connection.
-    // Here we store acks sent to us by that peer.
+    // Packets that we send to a peer represented by this connection. Here we store acks sent to us
+    // by that peer.
+    // The first ack is the oldest one.
     outgoing_packets_acks: VecDeque<Acknowledgment>,
     packet_loss: f32,
     jitter_millis: f32,
-    last_increased_jitter: DateTime<Utc>,
+    last_increased_jitter: Instant,
     rtt_millis: f32,
 }
 
@@ -83,19 +81,16 @@ impl Default for ConnectionState {
         Self {
             handshake_id: MessageId::new(0),
             session_id: SessionId::new(0),
-            last_message_received_at: Utc::now(),
+            last_valid_message_received_at: Instant::now(),
             status: ConnectionStatus::Uninitialized,
-            status_updated_at: Utc::now(),
+            status_updated_at: Instant::now(),
             newest_acknowledged_incoming_packet: None,
             incoming_packets_acks: u64::MAX - 1,
             outgoing_packets_acks: VecDeque::new(),
             packet_loss: 0.0,
             jitter_millis: 0.0,
-            last_increased_jitter: Utc::now()
-                - Duration::from_std(std::time::Duration::from_secs(
-                    JITTER_DECREASE_THRESHOLD_SECS,
-                ))
-                .unwrap(),
+            last_increased_jitter: Instant::now()
+                - Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS),
             rtt_millis: 100.0,
         }
     }
@@ -106,7 +101,7 @@ impl ConnectionState {
         self.status
     }
 
-    pub fn status_updated_at(&self) -> DateTime<Utc> {
+    pub fn status_updated_at(&self) -> Instant {
         self.status_updated_at
     }
 
@@ -135,11 +130,11 @@ impl ConnectionState {
 
     pub fn outgoing_acknowledgments_bit_set(&self) -> u64 {
         std::iter::repeat(true)
-            .take(self.frames_to_fill())
+            .take(self.outgoing_packets_to_fill())
             .chain(
                 self.outgoing_packets_acks
                     .iter()
-                    .map(|ack| ack.acknowledged),
+                    .map(|ack| ack.is_acknowledged),
             )
             .fold(0, |bitset, ack| bitset << 1 | ack as u64)
     }
@@ -147,7 +142,7 @@ impl ConnectionState {
     pub fn first_unacknowledged_outgoing_packet(&self) -> Option<FrameNumber> {
         self.outgoing_packets_acks
             .iter()
-            .find(|ack| !ack.acknowledged)
+            .find(|ack| !ack.is_acknowledged)
             .map(|ack| ack.frame_number)
     }
 
@@ -157,12 +152,12 @@ impl ConnectionState {
 
         *self = Self::default();
         self.status = status;
-        self.status_updated_at = Utc::now();
+        self.status_updated_at = Instant::now();
         self.session_id = session_id;
         self.handshake_id = handshake_id;
     }
 
-    pub fn add_outgoing_packet(&mut self, frame_number: FrameNumber, sent: DateTime<Utc>) {
+    pub fn add_outgoing_packet(&mut self, frame_number: FrameNumber, sent: Instant) {
         if self.outgoing_packets_acks.len() == 64 {
             self.outgoing_packets_acks.pop_front();
         }
@@ -170,7 +165,8 @@ impl ConnectionState {
             if prev_packet.frame_number + FrameNumber::new(TICKS_PER_NETWORK_BROADCAST)
                 != frame_number
             {
-                // TODO: don't panic. Clients might be able to DoS?
+                // This function is expected to receive only a local frame number, which can't
+                // have an inconsistent step.
                 panic!(
                     "Inconsistent packet step (latest: {}, new: {})",
                     prev_packet.frame_number.value(),
@@ -180,7 +176,7 @@ impl ConnectionState {
         }
         self.outgoing_packets_acks.push_back(Acknowledgment {
             frame_number,
-            acknowledged: false,
+            is_acknowledged: false,
             acknowledged_at: None,
             sent_at: sent,
         });
@@ -193,38 +189,49 @@ impl ConnectionState {
         let newest_acknowledged = self
             .newest_acknowledged_incoming_packet
             .unwrap_or_else(|| frame_number - FrameNumber::new(TICKS_PER_NETWORK_BROADCAST));
+        // We always store 63 more acks before the newest one.
         let start = newest_acknowledged - FrameNumber::new(TICKS_PER_NETWORK_BROADCAST * 63);
-        let end = newest_acknowledged + FrameNumber::new(TICKS_PER_NETWORK_BROADCAST * 64);
-        let can_acknowledge_frame = (start..=end).contains(&frame_number);
-        if !can_acknowledge_frame {
-            return Err(AcknowledgeError::OutOfRange {
-                start: Some(start),
-                end: Some(end),
-            });
+        // We aren't interested in outdated acks, but we are fine to accept acks from far ahead
+        // in future, even if it'll make the whole buffer filled with zeroes (except for the newest
+        // ack).
+        if frame_number < start {
+            return Err(AcknowledgeError::OutOfRange { start: Some(start) });
         }
 
+        // Accepts a number of frames, returns how many acks it'll take in the buffer.
         fn bits_for_frame_diff(d: u16) -> Result<u16, AcknowledgeError> {
             if d % TICKS_PER_NETWORK_BROADCAST > 0 {
                 return Err(AcknowledgeError::InvalidStep);
             }
             Ok(d / TICKS_PER_NETWORK_BROADCAST)
         }
-        let (shift_lhs, shift_rhs) = match self.newest_acknowledged_incoming_packet {
+
+        let (old_acks_to_drop, shift_new_ack) = match self.newest_acknowledged_incoming_packet {
+            // The update is too far ahead, so we need to zero the buffer.
+            Some(newest_acknowledged)
+                if frame_number > newest_acknowledged + FrameNumber::new(63) =>
+            {
+                self.incoming_packets_acks = 0;
+                (0, 0)
+            }
+            // The ack is not the newest one, so don't need to shift out any old acks.
             Some(newest_acknowledged) if newest_acknowledged >= frame_number => {
                 let d = (newest_acknowledged - frame_number).value();
                 let bits = bits_for_frame_diff(d)?;
                 (0, bits)
             }
+            // The ack is newer than the latest one, so we need to shift out some old ones.
             Some(newest_acknowledged) => {
                 let d = (frame_number - newest_acknowledged).value();
                 let bits = bits_for_frame_diff(d)?;
                 (bits, 0)
             }
+            // This is the first ack.
             None => (0, 0),
         };
 
-        // TODO: debug the rare `attempt to shift left with overflow` panic.
-        self.incoming_packets_acks = self.incoming_packets_acks << shift_lhs | 1 << shift_rhs;
+        self.incoming_packets_acks =
+            self.incoming_packets_acks << old_acks_to_drop | 1 << shift_new_ack;
         if newest_acknowledged < frame_number {
             self.newest_acknowledged_incoming_packet = Some(frame_number);
         }
@@ -232,42 +239,48 @@ impl ConnectionState {
         Ok(())
     }
 
+    /// Applies acknowledgements (sent to us by another peer) of our outgoing packets.
     pub fn apply_outgoing_acknowledgements(
         &mut self,
         frame_number: FrameNumber,
         mut acknowledgment_bit_set: u64,
     ) -> Result<(), AcknowledgeError> {
-        let now = Utc::now();
+        let now = Instant::now();
+        // We haven't sent any packets.
         if self.outgoing_packets_acks.is_empty() {
             return Ok(());
         }
-        let last_bit_is_set = acknowledgment_bit_set & 1 == 1u64;
-        if !last_bit_is_set {
+        // The least significant bit represents the last frame that a peer acknowledged, so it can't
+        // be zero.
+        let least_significant_bit_is_set = acknowledgment_bit_set & 1 == 1u64;
+        if !least_significant_bit_is_set {
             return Err(AcknowledgeError::Inconsistent);
         }
 
-        let requested_frame_position = self
+        let acknowledged_frame_position = self
             .outgoing_packets_acks
             .iter()
             .rev()
             .position(|ack| ack.frame_number == frame_number);
-        let skip = match requested_frame_position {
+        // A difference between the newest frame that a peer acknowledged and the newest one that
+        // we've sent.
+        let skip = match acknowledged_frame_position {
             Some(position) => position,
             None => {
+                // A client is either lagging behind or is faulty and sends us acks of packets we
+                // haven't even sent yet.
                 return Err(AcknowledgeError::OutOfRange {
                     start: self
                         .outgoing_packets_acks
                         .front()
                         .map(|ack| ack.frame_number),
-                    end: self
-                        .outgoing_packets_acks
-                        .back()
-                        .map(|ack| ack.frame_number),
-                })
+                });
             }
         };
 
-        let frames_to_forget = skip + self.frames_to_fill();
+        // How many acks are no longer relevant to us (as they are too old).
+        let frames_to_forget = skip + self.outgoing_packets_to_fill();
+        // How many acks we'll actually write.
         let frames_to_set = self.outgoing_packets_acks.len() - skip;
 
         acknowledgment_bit_set <<= frames_to_forget;
@@ -276,27 +289,34 @@ impl ConnectionState {
             as f32
             / frames_to_set as f32;
 
-        let last_acknowledged = self
+        let newest_acknowledged = self
             .outgoing_packets_acks
             .iter()
-            .rfind(|ack| ack.acknowledged)
+            .rfind(|ack| ack.is_acknowledged)
             .map(|ack| ack.frame_number);
-        for acknowledgment in self.outgoing_packets_acks.iter_mut().take(frames_to_set) {
-            let acknowledged = acknowledgment_bit_set >> 63 != 0;
-            let is_not_outdated =
-                last_acknowledged.map_or(true, |last_ack_frame| frame_number > last_ack_frame);
-            if !acknowledged && acknowledgment.acknowledged && is_not_outdated {
-                return Err(AcknowledgeError::Inconsistent);
+        // Tests whether the processed ack is older than the newest one that we received. If it is,
+        // we don't need to process it.
+        let is_outdated =
+            newest_acknowledged.map_or(false, |newest_ack_frame| newest_ack_frame > frame_number);
+
+        if !is_outdated {
+            for acknowledgment in self.outgoing_packets_acks.iter_mut().take(frames_to_set) {
+                let is_acknowledged = acknowledgment_bit_set >> 63 == 1;
+                // Newer acks can't be in conflict with previously sent ones.
+                if !is_acknowledged && acknowledgment.is_acknowledged {
+                    return Err(AcknowledgeError::Inconsistent);
+                }
+                if is_acknowledged && !acknowledgment.is_acknowledged {
+                    acknowledgment.is_acknowledged = true;
+                }
+                acknowledgment_bit_set <<= 1;
             }
-            if acknowledged && !acknowledgment.acknowledged {
-                acknowledgment.acknowledged = true;
-            }
-            acknowledgment_bit_set <<= 1;
         }
 
         assert!(frames_to_set > 0);
         let ack = &mut self.outgoing_packets_acks[frames_to_set - 1];
         assert_eq!(ack.frame_number, frame_number);
+        // We want to remember when all acks were received exactly, even if they come unordered.
         ack.acknowledged_at = Some(now);
 
         self.update_stats(frame_number);
@@ -318,7 +338,7 @@ impl ConnectionState {
             .outgoing_packets_acks
             .iter()
             .take(expected_acknowledged_count)
-            .fold(0u32, |acc, ack| acc + !ack.acknowledged as u32);
+            .fold(0u32, |acc, ack| acc + !ack.is_acknowledged as u32);
         let incoming_unacknowledged_count = self.incoming_packets_acks.count_zeros();
         self.packet_loss = (outgoing_unacknowledged_count + incoming_unacknowledged_count) as f32
             / (expected_acknowledged_count + 64) as f32;
@@ -334,8 +354,6 @@ impl ConnectionState {
                 .acknowledged_at
                 .expect("Expected the currently acknowledged frame to have a timestamp")
                 - acknowledged_frame.sent_at)
-                .to_std()
-                .unwrap()
                 .as_secs_f32()
                 * 1000.0;
             self.rtt_millis += (rtt - self.rtt_millis) * RTT_UPDATE_FACTOR;
@@ -364,19 +382,17 @@ impl ConnectionState {
             jitter = jitter.max((avg_rtt - rtt).abs() * 1.1);
         }
         if jitter > self.jitter_millis {
-            self.last_increased_jitter = Utc::now();
+            self.last_increased_jitter = Instant::now();
             self.jitter_millis = jitter;
-        } else if Utc::now()
-            .signed_duration_since(self.last_increased_jitter)
-            .to_std()
-            .unwrap()
-            > std::time::Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS)
+        } else if Instant::now().duration_since(self.last_increased_jitter)
+            > Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS)
         {
             self.jitter_millis = self.jitter_millis + (jitter - self.jitter_millis) * 0.1;
         }
     }
 
-    fn frames_to_fill(&self) -> usize {
+    /// How many elements we can still add to the buffer without shifting old packets out.
+    fn outgoing_packets_to_fill(&self) -> usize {
         64 - self.outgoing_packets_acks.len()
     }
 }
@@ -384,22 +400,18 @@ impl ConnectionState {
 #[derive(Debug)]
 struct Acknowledgment {
     frame_number: FrameNumber,
-    acknowledged: bool,
+    is_acknowledged: bool,
     /// This field will be left empty if a package was lost.
-    /// Even if we receive related updates later, `acknowledged_at` will remain being set to `None`.
-    acknowledged_at: Option<DateTime<Utc>>,
-    sent_at: DateTime<Utc>,
+    /// Even if we receive acks including this frame later (when it's not the leading one),
+    /// `acknowledged_at` will remain being set to `None`.
+    acknowledged_at: Option<Instant>,
+    sent_at: Instant,
 }
 
 impl Acknowledgment {
     pub fn rtt_millis(&self) -> Option<f32> {
-        self.acknowledged_at.map(|acknowledged_at| {
-            (acknowledged_at - self.sent_at)
-                .to_std()
-                .unwrap()
-                .as_secs_f32()
-                * 1000.0
-        })
+        self.acknowledged_at
+            .map(|acknowledged_at| (acknowledged_at - self.sent_at).as_secs_f32() * 1000.0)
     }
 }
 
@@ -423,8 +435,8 @@ pub fn network_setup(mut net: ResMut<NetworkResource>) {
 const CLIENT_INPUT_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
     channel: 0,
     channel_mode: MessageChannelMode::Unreliable,
-    message_buffer_size: 32,
-    packet_buffer_size: 32,
+    message_buffer_size: 128,
+    packet_buffer_size: 128,
 };
 
 const CLIENT_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
@@ -436,16 +448,16 @@ const CLIENT_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelS
             send_window_size: 1024,
             burst_bandwidth: 1024,
             init_send: 512,
-            wakeup_time: std::time::Duration::from_millis(100),
-            initial_rtt: std::time::Duration::from_millis(200),
-            max_rtt: std::time::Duration::from_secs(2),
+            wakeup_time: Duration::from_millis(100),
+            initial_rtt: Duration::from_millis(200),
+            max_rtt: Duration::from_secs(2),
             rtt_update_factor: 0.1,
             rtt_resend_factor: 1.5,
         },
         max_message_len: 1024,
     },
-    message_buffer_size: 128,
-    packet_buffer_size: 128,
+    message_buffer_size: 1024,
+    packet_buffer_size: 1024,
 };
 
 const SERVER_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
@@ -457,23 +469,23 @@ const SERVER_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelS
             send_window_size: 1024,
             burst_bandwidth: 1024,
             init_send: 512,
-            wakeup_time: std::time::Duration::from_millis(100),
-            initial_rtt: std::time::Duration::from_millis(200),
-            max_rtt: std::time::Duration::from_secs(2),
+            wakeup_time: Duration::from_millis(100),
+            initial_rtt: Duration::from_millis(200),
+            max_rtt: Duration::from_secs(2),
             rtt_update_factor: 0.1,
             rtt_resend_factor: 1.5,
         },
         max_message_len: 1024,
     },
-    message_buffer_size: 128,
-    packet_buffer_size: 128,
+    message_buffer_size: 1024,
+    packet_buffer_size: 1024,
 };
 
 const SERVER_DELTA_UPDATE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
     channel: 3,
     channel_mode: MessageChannelMode::Unreliable,
-    message_buffer_size: 32,
-    packet_buffer_size: 32,
+    message_buffer_size: 128,
+    packet_buffer_size: 128,
 };
 
 #[cfg(test)]
@@ -483,7 +495,7 @@ mod tests {
         net::{Acknowledgment, ConnectionState, ConnectionStatus, MessageId, SessionId},
         TICKS_PER_NETWORK_BROADCAST,
     };
-    use chrono::Utc;
+    use bevy::utils::Instant;
     use std::collections::VecDeque;
 
     macro_rules! assert_eq_bitset {
@@ -502,13 +514,13 @@ mod tests {
     fn init_connection_state(acknowledgments: Option<Vec<bool>>) -> ConnectionState {
         let acknowledgments = acknowledgments.unwrap_or_else(|| vec![true; 64]);
         assert!(acknowledgments.len() <= 64);
-        let now = Utc::now();
+        let now = Instant::now();
         let acknowledgments = acknowledgments
             .iter()
             .enumerate()
             .map(|(i, &acknowledged)| Acknowledgment {
-                frame_number: FrameNumber::new(i as u16),
-                acknowledged,
+                frame_number: FrameNumber::new(i as u16 * 2),
+                is_acknowledged: acknowledged,
                 acknowledged_at: if acknowledged { Some(now) } else { None },
                 sent_at: now,
             })
@@ -517,15 +529,15 @@ mod tests {
         ConnectionState {
             handshake_id: MessageId::new(0),
             session_id: SessionId::new(0),
-            last_message_received_at: Utc::now(),
+            last_valid_message_received_at: Instant::now(),
             status: ConnectionStatus::Uninitialized,
-            status_updated_at: Utc::now(),
+            status_updated_at: Instant::now(),
             newest_acknowledged_incoming_packet: None,
             incoming_packets_acks: 0,
             outgoing_packets_acks: VecDeque::from(acknowledgments),
             packet_loss: 0.0,
             jitter_millis: 0.0,
-            last_increased_jitter: Utc::now(),
+            last_increased_jitter: Instant::now(),
             rtt_millis: 0.0,
         }
     }
@@ -629,8 +641,13 @@ mod tests {
             connection_state.outgoing_acknowledgments_bit_set(),
             0b1111111111111111111111111111111111111111111111111111111111111001,
         );
+        connection_state.add_outgoing_packet(FrameNumber::new(6), Instant::now());
+        assert_eq_bitset!(
+            connection_state.outgoing_acknowledgments_bit_set(),
+            0b1111111111111111111111111111111111111111111111111111111111110010,
+        );
         connection_state
-            .apply_outgoing_acknowledgements(FrameNumber::new(1), u64::MAX - 2)
+            .apply_outgoing_acknowledgements(FrameNumber::new(6), u64::MAX - 4)
             .unwrap();
         assert_eq_bitset!(
             connection_state.outgoing_acknowledgments_bit_set(),
@@ -644,7 +661,7 @@ mod tests {
         );
         connection_state
             .apply_outgoing_acknowledgements(
-                FrameNumber::new(15),
+                FrameNumber::new(30),
                 0b1111111111111111000000000000000000000000000000000000000000000001,
             )
             .unwrap();
@@ -654,7 +671,7 @@ mod tests {
         );
         connection_state
             .apply_outgoing_acknowledgements(
-                FrameNumber::new(63),
+                FrameNumber::new(126),
                 0b1111111100000001000000000000000000000000000000000000000000000001,
             )
             .unwrap();
@@ -664,7 +681,7 @@ mod tests {
         );
         connection_state
             .apply_outgoing_acknowledgements(
-                FrameNumber::new(63),
+                FrameNumber::new(126),
                 0b1111111111111111000000000000000000000000000000000000000000000001,
             )
             .unwrap();

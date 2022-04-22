@@ -94,8 +94,6 @@ pub fn read_movement_updates(
             let direction_update = player_updates
                 .get_direction_mut(player_net_id, frame_number, COMPONENT_FRAMEBUFFER_LIMIT)
                 .get_mut(frame_number);
-            // TODO: make sure that we don't leave all buffer filled with `None` (i.e. disconnect a player earlier).
-            //  Document the implemented guarantees.
             let current_direction = player_direction
                 .buffer
                 .get(frame_number)
@@ -177,20 +175,14 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
             .buffer
             .get_with_extrapolation(frame_number)
             .unwrap_or_else(|| {
-                if cfg!(debug_assertions) {
-                    // We might have an edge-case when a client had been frozen for several seconds,
-                    // didn't get any updates from a server, but failed to pause the game or
-                    // disconnect. We want to avoid such cases (i.e. we want our clients to
-                    // disconnect), but it's very difficult to catch every single one of them.
-                    // In debug this scenario is unlikely, so we're probably catching some real
-                    // bug, but in production we don't want our clients to panic.
-                    panic!(
-                        "Expected player (entity: {:?}) direction for frame {}",
-                        entity, frame_number
-                    )
-                } else {
-                    (FrameNumber::new(0), &zero_vec)
-                }
+                // We haven't received updates about a player for too long, so we assume that it
+                // stopped moving.
+                log::debug!(
+                    "No player (entity: {:?}) direction for frame {}",
+                    entity,
+                    frame_number
+                );
+                (FrameNumber::new(0), &zero_vec)
             });
         let current_direction_norm =
             current_direction.normalize_or_zero() * player_movement_speed();
