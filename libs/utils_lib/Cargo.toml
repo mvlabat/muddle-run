@@ -10,7 +10,7 @@ kube_discovery = ["kube", "k8s-openapi", "reqwest"]
 jwks = ["anyhow", "headers", "jwt-compact", "reqwest", "tokio"]
 
 [dependencies]
-anyhow = { version = "1.0.52", optional = true }
+anyhow = { version = "1.0.57", optional = true }
 bevy = { version = "0.6", optional = true, default-features = false }
 dotenv = "0.15.0"
 headers = { version = "0.3.5", optional = true }
