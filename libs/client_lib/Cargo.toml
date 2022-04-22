@@ -18,7 +18,7 @@ anyhow = "1.0.52"
 base64 = "0.20.0-alpha.1"
 bevy = "0.6"
 bevy-inspector-egui = { version = "0.8" }
-bevy_egui = "0.12.1"
+bevy_egui = "0.13.0"
 bevy_mod_picking = { version = "0.5.4" }
 bevy_networking_turbulence = { version = "0.4", default-features = false }
 bevy_rapier2d = { version = "0.12", features = ["wasm-bindgen"] }
