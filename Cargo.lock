@@ -803,7 +803,7 @@ dependencies = [
  "bytemuck",
  "egui",
  "thread_local",
- "webbrowser",
+ "webbrowser 0.5.5",
  "wgpu",
  "winit",
 ]
@@ -3510,7 +3510,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-timer",
  "web-sys",
- "webbrowser",
+ "webbrowser 0.6.0",
  "whoami",
  "ws_stream_wasm",
 ]
@@ -6373,7 +6373,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecad156490d6b620308ed411cfee90d280b3cbd13e189ea0d3fada8acc89158a"
 dependencies = [
  "web-sys",
- "widestring",
+ "widestring 0.4.3",
+ "winapi",
+]
+
+[[package]]
+name = "webbrowser"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9c28b6b6a78440b02647358625e3febc90724126480b9da6a967b5f674b3554"
+dependencies = [
+ "jni",
+ "ndk-glue 0.6.1",
+ "url",
+ "web-sys",
+ "widestring 0.5.1",
  "winapi",
 ]
 
@@ -6526,6 +6540,12 @@ name = "widestring"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c168940144dd21fd8046987c16a46a33d5fc84eec29ef9dcddc2ac9e31526b7c"
+
+[[package]]
+name = "widestring"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17882f045410753661207383517a6f62ec3dbeb6a4ed2acce01f0728238d1983"
 
 [[package]]
 name = "winapi"
