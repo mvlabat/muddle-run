@@ -356,7 +356,11 @@ pub fn process_network_events(
 
             match client_message {
                 UnreliableClientMessage::PlayerUpdate(update) => {
-                    log::trace!("Incoming update message: {:?}", update);
+                    log::trace!(
+                        "Incoming update message (frame: {}): {:?}",
+                        time.frame_number,
+                        update
+                    );
                     if let Err(err) = connection_state.acknowledge_incoming(update.frame_number) {
                         log::debug!(
                             "Failed to acknowledge an incoming packet (player: {}, update frame: {}, current frame: {}): {:?}",

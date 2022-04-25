@@ -62,7 +62,7 @@ pub struct ConnectionState {
     status: ConnectionStatus,
     status_updated_at: Instant,
     newest_acknowledged_incoming_packet: Option<FrameNumber>,
-    // Packets that are incoming to us (not to a peer on the other side of a connection).
+    // Packets that are coming to us (not to a peer on the other side of a connection).
     // We acknowledge these packets on receiving an unreliable message and send send the acks later.
     // The least significant bit represents the newest acknowledgement (latest frame).
     incoming_packets_acks: u64,
