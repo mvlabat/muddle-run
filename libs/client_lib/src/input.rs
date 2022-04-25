@@ -8,11 +8,10 @@ use bevy::{
     log,
     prelude::*,
     render::camera::CameraProjection,
-    utils::HashMap,
+    utils::{HashMap, Instant},
 };
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::WorldInspectorParams;
-use chrono::{DateTime, Utc};
 use mr_shared_lib::{
     game::{components::Spawned, level::LevelObject},
     messages::{EntityNetId, PlayerNetId, SpawnLevelObjectRequest},
@@ -22,7 +21,7 @@ use mr_shared_lib::{
 };
 use std::marker::PhantomData;
 
-const SWITCH_ROLE_COOLDOWN_SECS: i64 = 1;
+const SWITCH_ROLE_COOLDOWN_SECS: u64 = 1;
 
 /// Is drained by `send_requests`.
 #[derive(Default)]
@@ -69,7 +68,7 @@ impl Default for MouseRay {
 
 #[derive(SystemParam)]
 pub struct PlayerUpdatesParams<'w, 's> {
-    switched_role_at: Local<'s, Option<DateTime<Utc>>>,
+    switched_role_at: Local<'s, Option<Instant>>,
     current_player_net_id: Res<'w, CurrentPlayerNetId>,
     players: Res<'w, HashMap<PlayerNetId, Player>>,
     player_registry: Res<'w, EntityRegistry<PlayerNetId>>,
@@ -238,9 +237,7 @@ fn process_hotkeys(
             player_updates_params
                 .switched_role_at
                 .map_or(false, |switched_role_at| {
-                    Utc::now()
-                        .signed_duration_since(switched_role_at)
-                        .num_seconds()
+                    Instant::now().duration_since(switched_role_at).as_secs()
                         < SWITCH_ROLE_COOLDOWN_SECS
                 });
         if keyboard_input.just_pressed(KeyCode::Escape) && !active_cooldown {
@@ -252,7 +249,7 @@ fn process_hotkeys(
                 .player_requests
                 .switch_role
                 .push(new_role);
-            *player_updates_params.switched_role_at = Some(Utc::now());
+            *player_updates_params.switched_role_at = Some(Instant::now());
         }
     }
 }

@@ -5,7 +5,6 @@ use crate::{
     utils::parse_jwt,
 };
 use bevy::{ecs::system::ResMut, log};
-use chrono::{Duration, Utc};
 use core::slice::SlicePattern;
 use mr_messages_lib::{
     ErrorKind, ErrorResponse, LinkAccount, LinkAccountError, LinkAccountLoginMethod,
@@ -399,9 +398,9 @@ impl AuthRequestsHandler {
     async fn refresh_auth(&mut self, offline_auth_config: OfflineAuthConfig) {
         let token_data = offline_auth_config.parse_token_data();
         let is_actual = token_data.as_ref().map_or(false, |token_data| {
-            token_data
-                .expiration
-                .map_or(false, |exp| exp > Utc::now() - Duration::minutes(1))
+            token_data.expiration.map_or(false, |exp| {
+                exp > chrono::Utc::now() - chrono::Duration::minutes(1)
+            })
         });
         if is_actual {
             self.finish_auth(offline_auth_config.id_token).await;

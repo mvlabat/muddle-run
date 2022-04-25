@@ -403,7 +403,7 @@ pub struct GameTime {
     pub frame_number: FrameNumber,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct SimulationTime {
     /// Is expected to be ahead of `server_frame` on the client side, is equal to `server_frame`
     /// on the server side.
@@ -411,6 +411,17 @@ pub struct SimulationTime {
     pub player_generation: u64,
     pub server_frame: FrameNumber,
     pub server_generation: u64,
+}
+
+impl Default for SimulationTime {
+    fn default() -> Self {
+        Self {
+            player_frame: Default::default(),
+            player_generation: 1,
+            server_frame: Default::default(),
+            server_generation: 1,
+        }
+    }
 }
 
 impl SimulationTime {
@@ -436,7 +447,8 @@ impl SimulationTime {
             > u16::MAX / 2
             && self.server_frame > frame_number
         {
-            // TODO: overflow happens here.
+            // This shouldn't overflow as we start counting from 1, and we never decrement more than
+            // once without incrementing.
             self.server_generation -= 1;
         }
         self.server_frame = self.server_frame.min(frame_number);
@@ -455,10 +467,12 @@ impl SimulationTime {
     }
 
     pub fn prev_frame(&self) -> SimulationTime {
+        // Just make sure that we won't overflow.
         assert!(
             (self.player_frame.value() > 0 || self.player_generation > 0)
                 && (self.server_frame.value() > 0 || self.server_generation > 0)
         );
+
         let player_generation = if self.player_frame == FrameNumber::new(0) {
             self.player_generation - 1
         } else {

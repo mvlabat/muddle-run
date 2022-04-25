@@ -164,6 +164,7 @@ pub struct DisconnectedPlayer {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DeltaUpdate {
     pub frame_number: FrameNumber,
+    /// Frame number is `None` if a player hasn't sent any input yet.
     pub acknowledgments: (Option<FrameNumber>, u64),
     pub players: Vec<PlayerState>,
 }

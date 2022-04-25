@@ -3611,7 +3611,6 @@ dependencies = [
  "bevy",
  "bevy_networking_turbulence",
  "bevy_rapier2d",
- "chrono",
  "jwt-compact",
  "k8s-openapi",
  "kube",
