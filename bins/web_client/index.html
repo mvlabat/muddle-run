@@ -117,6 +117,8 @@
             records.forEach(function (record) {
                 for (const node of record.addedNodes) {
                     if (node.nodeName === 'CANVAS') {
+                        // Hide the context menu.
+                        node.setAttribute('oncontextmenu', "return false;");
                         // Auto-focus canvas.
                         node.focus();
                     }
