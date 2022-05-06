@@ -4,12 +4,22 @@ use std::collections::VecDeque;
 
 pub type FrameNumber = WrappedCounter<u16>;
 
-#[derive(Debug)]
 pub struct Framebuffer<T> {
     start_frame: FrameNumber,
     /// Stores a frame number as the first element of the tuple.
     buffer: VecDeque<T>,
     limit: FrameNumber,
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Framebuffer<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("Position")
+            .field("start_frame", &self.start_frame())
+            .field("end_frame", &self.end_frame())
+            .field("limit", &self.limit())
+            .field("last", &self.last())
+            .finish()
+    }
 }
 
 impl<T> Framebuffer<T> {

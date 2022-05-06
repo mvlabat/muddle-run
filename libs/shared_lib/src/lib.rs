@@ -31,8 +31,8 @@ use crate::{
     registry::EntityRegistry,
 };
 use bevy::{
-    app::Events,
     ecs::{
+        event::Events,
         schedule::{ParallelSystemDescriptorCoercion, ShouldRun},
         system::IntoSystem,
     },
@@ -42,18 +42,10 @@ use bevy::{
 };
 use bevy_networking_turbulence::{LinkConditionerConfig, NetworkingPlugin};
 use bevy_rapier2d::{
-    physics,
-    physics::{
-        JointsEntityMap, ModificationTracker, NoUserData, PhysicsHooksWithQueryObject,
-        RapierConfiguration, SimulationToRenderTime, TimestepMode,
-    },
-    rapier::{
-        dynamics::{
-            CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet,
-        },
-        geometry::{BroadPhase, ContactEvent, IntersectionEvent, NarrowPhase},
-        math::Vector,
-        pipeline::{PhysicsPipeline, QueryPipeline},
+    pipeline::{CollisionEvent, PhysicsHooksWithQueryResource},
+    plugin::{
+        systems as rapier_systems, RapierConfiguration, RapierContext, SimulationToRenderTime,
+        TimestepMode,
     },
 };
 use messages::{EntityNetId, PlayerNetId};
@@ -169,14 +161,13 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .lock()
             .expect("Can't initialize the plugin more than once");
 
-        #[allow(unused_mut)]
+        #[cfg_attr(not(feature = "profiler"), allow(unused_mut))]
         let mut simulation_schedule = Schedule::default()
             .with_run_criteria(IntoSystem::into_system(simulation_tick_run_criteria))
             .with_stage(
                 stage::SPAWN,
                 SystemStage::parallel()
-                    .with_system(Events::<IntersectionEvent>::update_system)
-                    .with_system(Events::<ContactEvent>::update_system)
+                    .with_system(Events::<CollisionEvent>::update_system)
                     .with_system(Events::<PlayerFinish>::update_system)
                     .with_system(Events::<PlayerDeath>::update_system)
                     .with_system(switch_player_role.label("player_role"))
@@ -185,41 +176,26 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                             .label("despawn_players")
                             .after("player_role"),
                     )
-                    .with_system(despawn_level_objects.label("despawn_level_objects"))
+                    .with_system(despawn_level_objects)
                     // Updating level objects might despawn entities completely if they are
                     // updated with replacement. Running it before `despawn_level_objects` might
                     // result into an edge-case where changes to the `Spawned` component are not
                     // propagated.
-                    .with_system(
-                        update_level_objects
-                            .label("update_level_objects")
-                            .after("despawn_level_objects"),
-                    )
+                    .with_system(update_level_objects.after(despawn_level_objects))
                     // Adding components to an entity if there's a command to remove it the queue
                     // will lead to crash. Executing this system before `update_level_objects` helps
                     // to avoid this scenario.
-                    .with_system(poll_calculating_shapes.before("update_level_objects"))
-                    .with_system(
-                        maintain_available_spawn_areas
-                            .label("maintain_available_spawn_areas")
-                            .after("update_level_objects"),
-                    )
+                    .with_system(poll_calculating_shapes.before(update_level_objects))
+                    .with_system(maintain_available_spawn_areas.after(update_level_objects))
                     .with_system(
                         spawn_players
-                            .after("despawn_players")
-                            .after("maintain_available_spawn_areas"),
+                            .after(despawn_players)
+                            .after(maintain_available_spawn_areas),
                     ),
             )
             .with_stage(
                 stage::PRE_GAME,
-                SystemStage::parallel()
-                    .with_system(update_level_object_movement_route_settings)
-                    .with_system(physics::attach_bodies_and_colliders_system)
-                    .with_system(physics::create_joints_system),
-            )
-            .with_stage(
-                stage::FINALIZE_PHYSICS,
-                SystemStage::parallel().with_system(physics::finalize_collider_attach_to_bodies),
+                SystemStage::parallel().with_system(update_level_object_movement_route_settings),
             )
             .with_stage(
                 stage::GAME,
@@ -230,7 +206,45 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::PHYSICS,
-                SystemStage::parallel().with_system(physics::step_world_system::<NoUserData>),
+                SystemStage::parallel()
+                    .with_system(rapier_systems::init_async_colliders)
+                    .with_system(
+                        rapier_systems::apply_scale.after(rapier_systems::init_async_colliders),
+                    )
+                    .with_system(
+                        rapier_systems::apply_collider_user_changes
+                            .after(rapier_systems::apply_scale),
+                    )
+                    .with_system(
+                        rapier_systems::apply_rigid_body_user_changes
+                            .after(rapier_systems::apply_collider_user_changes),
+                    )
+                    .with_system(
+                        rapier_systems::apply_joint_user_changes
+                            .after(rapier_systems::apply_rigid_body_user_changes),
+                    )
+                    .with_system(
+                        rapier_systems::init_rigid_bodies
+                            .after(rapier_systems::apply_joint_user_changes),
+                    )
+                    .with_system(
+                        rapier_systems::init_colliders
+                            .after(rapier_systems::init_rigid_bodies)
+                            .after(rapier_systems::init_async_colliders),
+                    )
+                    .with_system(rapier_systems::init_joints.after(rapier_systems::init_colliders))
+                    .with_system(rapier_systems::sync_removals.after(rapier_systems::init_joints))
+                    .with_system(
+                        rapier_systems::step_simulation::<()>.after(rapier_systems::sync_removals),
+                    )
+                    .with_system(
+                        rapier_systems::update_colliding_entities
+                            .after(rapier_systems::step_simulation::<()>),
+                    )
+                    .with_system(
+                        rapier_systems::writeback_rigid_bodies
+                            .after(rapier_systems::step_simulation::<()>),
+                    ),
             )
             .with_stage(
                 stage::POST_PHYSICS,
@@ -238,8 +252,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                     .with_system(
                         process_collision_events.chain(process_players_with_new_collisions),
                     )
-                    .with_system(physics::sync_transforms.label("sync_transforms"))
-                    .with_system(sync_position.after("sync_transforms")),
+                    .with_system(sync_position)
+                    .with_system(rapier_systems::sync_removals),
             )
             .with_stage(
                 stage::POST_GAME,
@@ -254,7 +268,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         #[cfg(feature = "profiler")]
         crate::util::profile_schedule(&mut simulation_schedule);
 
-        #[allow(unused_mut)]
+        #[cfg_attr(not(feature = "profiler"), allow(unused_mut))]
         let mut main_schedule = Schedule::default()
             .with_run_criteria(
                 main_run_criteria
@@ -281,8 +295,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 stage::POST_TICK,
                 post_tick_stage
                     .take()
-                    .expect("Can't initialize the plugin more than once")
-                    .with_system(physics::collect_removals),
+                    .expect("Can't initialize the plugin more than once"), // .with_system(physics::collect_removals),
             );
         #[cfg(feature = "profiler")]
         crate::util::profile_schedule(&mut main_schedule);
@@ -362,26 +375,18 @@ pub struct RapierResourcesPlugin;
 impl Plugin for RapierResourcesPlugin {
     fn build(&self, builder: &mut App) {
         builder
-            .insert_resource(PhysicsPipeline::new())
-            .insert_resource(QueryPipeline::new())
             .insert_resource(RapierConfiguration {
-                gravity: Vector::new(0.0, 0.0),
-                timestep_mode: TimestepMode::FixedTimestep,
+                gravity: Vec2::ZERO,
+                timestep_mode: TimestepMode::Fixed {
+                    dt: 1.0 / simulations_per_second() as f32,
+                    substeps: 1,
+                },
                 ..RapierConfiguration::default()
             })
-            .insert_resource(IntegrationParameters::default())
-            .insert_resource(BroadPhase::new())
-            .insert_resource(NarrowPhase::new())
-            .insert_resource(IslandManager::new())
-            .insert_resource(ImpulseJointSet::new())
-            .insert_resource(MultibodyJointSet::new())
-            .insert_resource(CCDSolver::new())
-            .insert_resource(PhysicsHooksWithQueryObject::<NoUserData>(Box::new(())))
-            .insert_resource(Events::<IntersectionEvent>::default())
-            .insert_resource(Events::<ContactEvent>::default())
             .insert_resource(SimulationToRenderTime::default())
-            .insert_resource(JointsEntityMap::default())
-            .insert_resource(ModificationTracker::default());
+            .insert_resource(RapierContext::default())
+            .insert_resource(Events::<CollisionEvent>::default())
+            .insert_resource(PhysicsHooksWithQueryResource::<()>(Box::new(())));
     }
 }
 

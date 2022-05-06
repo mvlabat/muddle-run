@@ -10,18 +10,15 @@ use crate::{
     SimulationTime,
 };
 use bevy::{
-    app::{EventReader, EventWriter},
     ecs::{
         entity::Entity,
+        event::{EventReader, EventWriter},
         system::{In, Query, RemovedComponents, Res, SystemParam},
     },
     log,
     utils::HashSet,
 };
-use bevy_rapier2d::{
-    physics::IntoEntity,
-    rapier::geometry::{ContactEvent, IntersectionEvent},
-};
+use bevy_rapier2d::pipeline::CollisionEvent;
 
 #[derive(SystemParam)]
 pub struct CollisionQueries<'w, 's> {
@@ -41,8 +38,7 @@ pub struct CollisionQueries<'w, 's> {
 /// The system returns player entities whose intersections were changed.
 pub fn process_collision_events(
     time: Res<SimulationTime>,
-    mut contact_events: EventReader<ContactEvent>,
-    mut intersection_events: EventReader<IntersectionEvent>,
+    mut collision_events: EventReader<CollisionEvent>,
     mut collision_logic_changed_events: EventReader<CollisionLogicChanged>,
     mut queries: CollisionQueries,
     removed_level_objects: RemovedComponents<LevelObjectTag>,
@@ -51,20 +47,11 @@ pub fn process_collision_events(
     let mut changed_players = HashSet::default();
     let removed_level_objects = removed_level_objects.iter().collect::<Vec<_>>();
 
-    let mut all_events: Vec<(bool, Entity, Entity)> = Vec::new();
-    all_events.extend(intersection_events.iter().map(|event| {
-        (
-            event.intersecting,
-            event.collider1.entity(),
-            event.collider2.entity(),
-        )
-    }));
-    all_events.extend(contact_events.iter().map(|event| match event {
-        ContactEvent::Started(c1, c2) => (true, c1.entity(), c2.entity()),
-        ContactEvent::Stopped(c1, c2) => (false, c1.entity(), c2.entity()),
-    }));
-
-    for (contacting, entity1, entity2) in all_events.into_iter() {
+    for event in collision_events.iter() {
+        let (contacting, entity1, entity2) = match event {
+            CollisionEvent::Started(e1, e2, _flags) => (true, *e1, *e2),
+            CollisionEvent::Stopped(e1, e2, _flags) => (false, *e1, *e2),
+        };
         let (level_object_entity, level_object, other_entity) = match (
             level.level_object_by_entity(entity1),
             level.level_object_by_entity(entity2),

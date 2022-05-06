@@ -1,6 +1,8 @@
 use bevy::{
-    app::EventReader,
-    ecs::system::{Res, ResMut},
+    ecs::{
+        event::EventReader,
+        system::{Res, ResMut},
+    },
     utils::HashMap,
 };
 use mr_shared_lib::{

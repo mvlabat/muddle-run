@@ -4,14 +4,27 @@ use crate::{
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use bevy::{
-    ecs::{component::Component, entity::Entity},
+    ecs::{bundle::Bundle, component::Component, entity::Entity},
     math::Vec2,
     utils::HashSet,
+};
+use bevy_rapier2d::{
+    dynamics::{LockedAxes, RigidBody},
+    geometry::{Collider, CollisionGroups, Sensor},
 };
 use std::collections::VecDeque;
 
 // NOTE: After adding components for new archetypes, make sure that related entities are cleaned up
 // in the `restart_game` system.
+
+#[derive(Bundle)]
+pub struct PhysicsBundle {
+    pub rigid_body: RigidBody,
+    pub collider: Collider,
+    pub sensor: Sensor,
+    pub collision_groups: CollisionGroups,
+    pub locked_axes: LockedAxes,
+}
 
 #[derive(Component)]
 pub struct PlayerTag;
@@ -73,7 +86,7 @@ pub struct LevelObjectStaticGhost(pub Entity);
 pub struct LevelObjectStaticGhostParent(pub Entity);
 
 /// Represents Player's input (not an actual direction of entity's movement).
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct PlayerDirection {
     /// `None` indicates a missing network input.
     pub buffer: Framebuffer<Option<Vec2>>,
@@ -90,7 +103,7 @@ impl PlayerDirection {
 }
 
 /// Represents start positions before moving an entity.
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct Position {
     pub buffer: Framebuffer<Vec2>,
 }
@@ -114,7 +127,7 @@ impl Position {
 /// Is used only by the client, to lerp the position if an authoritative update arrives from the
 /// server. Using this component only makes sense if it's movement is not deterministic (i.e. it
 /// can be affected by collisions with other entities or is controlled by a player, etc).
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct PredictedPosition {
     pub value: Vec2,
 }
@@ -201,7 +214,7 @@ impl Spawned {
 }
 
 /// Marks an entity to be simulated with using `SimulationTime::player_frame`.
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct PlayerFrameSimulated;
 
 #[derive(Component, Clone)]

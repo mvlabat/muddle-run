@@ -3,7 +3,7 @@ use crate::{
     PLAYER_SENSOR_RADIUS,
 };
 use bevy::math::Vec2;
-use bevy_rapier2d::rapier::geometry::TypedShape;
+use bevy_rapier2d::geometry::ColliderView;
 use rand::Rng;
 
 pub fn player_respawn_time() -> FrameNumber {
@@ -23,21 +23,21 @@ pub fn player_sensor_outline() -> Vec<Vec2> {
         .collect()
 }
 
-pub fn random_point_inside_shape(shape: TypedShape, object_radius: f32) -> Vec2 {
+pub fn random_point_inside_shape(shape: ColliderView, object_radius: f32) -> Vec2 {
     let mut rng = rand::thread_rng();
     match shape {
-        TypedShape::Ball(ball) => rotate(
+        ColliderView::Ball(ball) => rotate(
             Vec2::new(
-                rng.gen::<f32>() * (ball.radius - object_radius).max(0.0),
+                rng.gen::<f32>() * (ball.radius() - object_radius).max(0.0),
                 0.0,
             ),
             rng.gen_range(0.0..std::f32::consts::PI * 2.0),
         ),
-        TypedShape::Cuboid(cuboid) => {
+        ColliderView::Cuboid(cuboid) => {
             Vec2::new(
-                rng.gen::<f32>() * (cuboid.half_extents.x * 2.0 - object_radius).max(0.0),
-                rng.gen::<f32>() * (cuboid.half_extents.y * 2.0 - object_radius).max(0.0),
-            ) - Vec2::from(cuboid.half_extents)
+                rng.gen::<f32>() * (cuboid.half_extents().x * 2.0 - object_radius).max(0.0),
+                rng.gen::<f32>() * (cuboid.half_extents().y * 2.0 - object_radius).max(0.0),
+            ) - cuboid.half_extents()
         }
         _ => unimplemented!(),
     }
@@ -59,7 +59,7 @@ where
 }
 
 #[cfg(feature = "profiler")]
-thread_local!(static PUFFIN_SCOPES: std::cell::RefCell<bevy::utils::HashMap<Box<dyn bevy::ecs::schedule::StageLabel>, puffin::ProfilerScope>> = std::cell::RefCell::new(bevy::utils::HashMap::default()));
+thread_local!(static PUFFIN_SCOPES: std::cell::RefCell<bevy::utils::HashMap<bevy::ecs::schedule::BoxedStageLabel, puffin::ProfilerScope>> = std::cell::RefCell::new(bevy::utils::HashMap::default()));
 
 #[cfg(feature = "profiler")]
 pub fn profile_schedule(schedule: &mut bevy::ecs::schedule::Schedule) {

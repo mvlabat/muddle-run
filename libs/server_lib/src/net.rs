@@ -6,7 +6,7 @@ use bevy::{
     ecs::system::SystemParam,
     log,
     prelude::*,
-    utils::{HashMap, HashSet, Instant},
+    utils::{Entry, HashMap, HashSet, Instant},
 };
 use bevy_networking_turbulence::{ConnectionHandle, NetworkEvent, NetworkResource};
 use mr_messages_lib::{GetLevelResponse, PLAYER_CAPACITY};
@@ -31,7 +31,6 @@ use mr_shared_lib::{
 };
 use rymder::{futures_util::stream::StreamExt, GameServer};
 use std::{
-    collections::hash_map::Entry,
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::Duration,
@@ -1199,10 +1198,12 @@ fn create_player_state(
             .get(start_position_frame)
             .unwrap_or_else(|| {
                 panic!(
-                    "Player ({}) position for frame {} doesn't exist (current frame: {})",
+                    "Player ({}) position for frame {} doesn't exist (current frame: {}, entity: {:?}): {:?}",
                     net_id.0,
                     start_position_frame.value(),
-                    time.server_frame.value()
+                    time.server_frame.value(),
+                    entity,
+                    position.buffer,
                 )
             }),
         inputs,

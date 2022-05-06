@@ -1,7 +1,5 @@
-#[cfg(feature = "client")]
-use crate::game::components::PlayerFrameSimulated;
 use crate::{
-    collider_flags::{player_interaction_groups, player_sensor_interaction_groups},
+    collider_flags::{player_collision_groups, player_sensor_collision_groups},
     framebuffer::FrameNumber,
     game::{
         client_factories::{
@@ -14,8 +12,8 @@ use crate::{
         },
         components::{
             LevelObjectLabel, LevelObjectStaticGhost, LevelObjectStaticGhostParent, LevelObjectTag,
-            PlayerDirection, PlayerSensor, PlayerSensorState, PlayerSensors, PlayerTag, Position,
-            SpawnCommand, Spawned,
+            PhysicsBundle, PlayerDirection, PlayerFrameSimulated, PlayerSensor, PlayerSensorState,
+            PlayerSensors, PlayerTag, Position, SpawnCommand, Spawned,
         },
         level::{ColliderShapeResponse, LevelObject, LevelObjectDesc, LevelState},
     },
@@ -25,40 +23,71 @@ use crate::{
     GameTime, SimulationTime, PLAYER_RADIUS, PLAYER_SENSOR_RADIUS,
 };
 use bevy::{
-    ecs::system::{EntityCommands, SystemParam},
+    ecs::{
+        query::WorldQuery,
+        system::{EntityCommands, SystemParam},
+    },
     log,
     prelude::*,
     tasks::AsyncComputeTaskPool,
 };
 use bevy_rapier2d::{
-    physics::{
-        wrapper::{ColliderFlagsComponent, ColliderParentComponent, RigidBodyPositionComponent},
-        ColliderBundle, ColliderPositionSync, IntoHandle, RigidBodyBundle,
-    },
-    rapier::{
-        dynamics::{RigidBodyHandle, RigidBodyMassProps, RigidBodyMassPropsFlags},
-        geometry::{ColliderFlags, ColliderParent, ColliderShape, ColliderType, InteractionGroups},
-        pipeline::ActiveEvents,
-    },
+    dynamics::{LockedAxes, RigidBody, Velocity},
+    geometry::{ActiveEvents, Collider, Sensor},
+    prelude::CollisionGroups,
+    rapier::geometry::ColliderShape,
 };
+use std::fmt::Debug;
+
+#[derive(WorldQuery)]
+#[world_query(mutable)]
+pub struct SpawnedQuery<'w, T: WorldQuery> {
+    pub spawned: &'w Spawned,
+    pub player_frame_simulated: Option<&'w PlayerFrameSimulated>,
+    pub item: T,
+}
+
+pub fn iter_spawned<'w, 's, T: WorldQuery>(
+    query: impl Iterator<Item = SpawnedQueryItem<'w, T>> + 'w,
+    time: &'w SimulationTime,
+) -> impl Iterator<Item = SpawnedQueryItem<'w, T>> + 'w {
+    query.filter(
+        |SpawnedQueryItem {
+             spawned,
+             player_frame_simulated,
+             ..
+         }| spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated)),
+    )
+}
+
+pub fn iter_spawned_read_only<'w, 's, T: WorldQuery>(
+    query: impl Iterator<Item = SpawnedQueryReadOnlyItem<'w, T>> + 'w,
+    time: &'w SimulationTime,
+) -> impl Iterator<Item = SpawnedQueryReadOnlyItem<'w, T>> + 'w {
+    query.filter(
+        |SpawnedQueryReadOnlyItem {
+             spawned,
+             player_frame_simulated,
+             ..
+         }| spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated)),
+    )
+}
 
 pub type ColliderShapePromiseResult = (Entity, Option<ColliderShape>);
 pub type ColliderShapeSender = crossbeam_channel::Sender<ColliderShapePromiseResult>;
 pub type ColliderShapeReceiver = crossbeam_channel::Receiver<ColliderShapePromiseResult>;
 
-pub type PlayersQuery<'w, 's> = Query<
-    'w,
-    's,
-    (
-        Entity,
-        &'static mut Spawned,
-        &'static mut Position,
-        &'static mut PlayerDirection,
-        &'static mut ColliderFlagsComponent,
-        &'static PlayerSensors,
-    ),
-    Without<PlayerSensor>,
->;
+#[derive(WorldQuery)]
+#[world_query(mutable, derive(Debug))]
+pub struct PlayerQuery<'w> {
+    entity: Entity,
+    position: &'w mut Position,
+    player_direction: &'w mut PlayerDirection,
+    collision_groups: &'w mut CollisionGroups,
+    sensors: &'w PlayerSensors,
+    spawned: &'w mut Spawned,
+    _tag: Without<PlayerSensor>,
+}
 
 pub fn spawn_players(
     mut commands: Commands,
@@ -66,8 +95,8 @@ pub fn spawn_players(
     mut pbr_client_params: PbrClientParams,
     mut spawn_player_commands: ResMut<DeferredQueue<SpawnPlayer>>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
-    mut players: PlayersQuery,
-    mut player_sensors: Query<&mut ColliderFlagsComponent, With<PlayerSensor>>,
+    mut players: Query<PlayerQuery>,
+    mut player_sensors: Query<&mut CollisionGroups, With<PlayerSensor>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -91,17 +120,19 @@ pub fn spawn_players(
                 entity
             );
 
-            let (
-                _,
-                mut spawned,
-                mut position,
-                mut player_direction,
-                mut collider_flags,
-                PlayerSensors { main: _, sensors },
-            ) = players.get_mut(entity).unwrap();
+            let mut player = players.get_mut(entity).unwrap();
+            log::debug!(
+                "Filling the player's position and direction buffer from {} to {}",
+                time.server_frame,
+                time.player_frame
+            );
             for frame_number in time.server_frame..=time.player_frame {
-                position.buffer.insert(frame_number, command.start_position);
-                player_direction
+                player
+                    .position
+                    .buffer
+                    .insert(frame_number, command.start_position);
+                player
+                    .player_direction
                     .buffer
                     .insert(frame_number, Some(Vec2::ZERO));
             }
@@ -110,17 +141,23 @@ pub fn spawn_players(
                 &mut pbr_client_params,
                 command.start_position,
             );
-            collider_flags.collision_groups = player_interaction_groups();
-            for (player_sensor_entity, _) in sensors {
-                let mut collider_flags = player_sensors.get_mut(*player_sensor_entity).unwrap();
-                collider_flags.collision_groups = player_sensor_interaction_groups();
+            *player.collision_groups = player_collision_groups();
+            for ((player_sensor_entity, _), sensor_position) in
+                player.sensors.sensors.iter().zip(player_sensor_outline())
+            {
+                let mut collision_groups = player_sensors.get_mut(*player_sensor_entity).unwrap();
+                *collision_groups = player_sensor_collision_groups();
+                let mut sensor_commands = entity_commands.commands().entity(*player_sensor_entity);
                 PlayerSensorClientFactory::insert_components(
-                    &mut entity_commands.commands().entity(*player_sensor_entity),
+                    &mut sensor_commands,
                     &mut pbr_client_params,
                     (),
                 );
+                sensor_commands.insert(Transform::from_translation(sensor_position.extend(0.0)));
             }
-            spawned.push_command(time.server_frame, SpawnCommand::Spawn);
+            player
+                .spawned
+                .push_command(time.server_frame, SpawnCommand::Spawn);
 
             continue;
         }
@@ -129,74 +166,61 @@ pub fn spawn_players(
         let player_entity = entity_commands.id();
 
         let mut sensors = Vec::new();
-        for sensor_position in player_sensor_outline() {
-            let mut sensor_commands = entity_commands.commands().spawn();
-            sensor_commands
-                .insert_bundle(ColliderBundle {
-                    shape: ColliderShape::ball(PLAYER_SENSOR_RADIUS).into(),
-                    collider_type: ColliderType::Sensor.into(),
-                    flags: ColliderFlags {
-                        collision_groups: player_sensor_interaction_groups(),
-                        solver_groups: InteractionGroups::none(),
-                        active_events: ActiveEvents::INTERSECTION_EVENTS,
-                        ..ColliderFlags::default()
-                    }
-                    .into(),
-                    ..ColliderBundle::default()
-                })
-                .insert(ColliderParentComponent(ColliderParent {
-                    handle: RigidBodyHandle(player_entity.handle()),
-                    pos_wrt_parent: sensor_position.into(),
-                }))
-                .insert(ColliderPositionSync::Discrete)
-                .insert(PlayerSensor(player_entity));
-            PlayerSensorClientFactory::insert_components(
-                &mut sensor_commands,
-                &mut pbr_client_params,
-                (),
-            );
-            sensors.push((sensor_commands.id(), PlayerSensorState::default()));
-        }
+        entity_commands.with_children(|parent| {
+            for sensor_position in player_sensor_outline() {
+                let mut sensor_commands = parent.spawn();
+                PlayerSensorClientFactory::insert_components(
+                    &mut sensor_commands,
+                    &mut pbr_client_params,
+                    (),
+                );
+                sensor_commands
+                    .insert(Collider::ball(PLAYER_SENSOR_RADIUS))
+                    .insert(Sensor(true))
+                    .insert(player_sensor_collision_groups())
+                    .insert(ActiveEvents::COLLISION_EVENTS)
+                    .insert(Transform::from_translation(sensor_position.extend(0.0)))
+                    .insert(GlobalTransform::identity())
+                    .insert(PlayerSensor(player_entity));
+                sensors.push((sensor_commands.id(), PlayerSensorState::default()));
+            }
+        });
 
-        PlayerClientFactory::insert_components(
-            &mut entity_commands,
-            &mut pbr_client_params,
-            command.start_position,
-        );
         entity_commands
             .insert(PlayerTag)
-            .insert_bundle(RigidBodyBundle {
-                position: [0.0, 0.0].into(),
-                mass_properties: RigidBodyMassProps {
-                    flags: RigidBodyMassPropsFlags::ROTATION_LOCKED,
-                    ..RigidBodyMassProps::default()
-                }
-                .into(),
-                ..RigidBodyBundle::default()
+            .insert_bundle(PhysicsBundle {
+                rigid_body: RigidBody::Dynamic,
+                collider: Collider::ball(PLAYER_RADIUS),
+                collision_groups: player_collision_groups(),
+                sensor: Sensor(false),
+                locked_axes: LockedAxes::ROTATION_LOCKED,
             })
-            .insert_bundle(ColliderBundle {
-                shape: ColliderShape::ball(PLAYER_RADIUS).into(),
-                flags: ColliderFlags {
-                    collision_groups: player_interaction_groups(),
-                    solver_groups: player_interaction_groups(),
-                    active_events: ActiveEvents::all(),
-                    ..ColliderFlags::default()
-                }
-                .into(),
-                ..ColliderBundle::default()
-            })
+            .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(Position::new(
                 command.start_position,
                 time.server_frame,
                 frames_ahead + 1,
             ))
-            .insert(ColliderPositionSync::Discrete)
             .insert(PlayerDirection::new(
                 Vec2::ZERO,
                 time.server_frame,
                 frames_ahead + 1,
             ))
+            .insert(Transform::from_translation(
+                command.start_position.extend(0.0),
+            ))
+            .insert(GlobalTransform::identity())
+            .insert(Velocity::zero())
             .insert(Spawned::new(time.server_frame));
+
+        // Insert client components later, as they can overwrite some of them (z coordinates
+        // of translations for instance).
+        PlayerClientFactory::insert_components(
+            &mut entity_commands,
+            &mut pbr_client_params,
+            command.start_position,
+        );
+
         #[cfg(feature = "client")]
         if command.is_player_frame_simulated {
             log::debug!(
@@ -228,12 +252,12 @@ pub fn despawn_players(
         (
             Entity,
             &mut Spawned,
-            &mut ColliderFlagsComponent,
+            &mut CollisionGroups,
             &mut PlayerSensors,
         ),
         Without<PlayerSensor>,
     >,
-    mut player_sensors: Query<&mut ColliderFlagsComponent, With<PlayerSensor>>,
+    mut player_sensors: Query<&mut CollisionGroups, With<PlayerSensor>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -271,11 +295,11 @@ pub fn despawn_players(
             command.frame_number
         );
         let mut entity_commands = commands.entity(entity);
-        collider_flags.collision_groups.memberships = 0;
+        collider_flags.memberships = 0;
         PlayerClientFactory::remove_components(&mut entity_commands, &mut pbr_client_params);
         for (player_sensor_entity, _state) in &mut sensors.sensors {
             let mut collider_flags = player_sensors.get_mut(*player_sensor_entity).unwrap();
-            collider_flags.collision_groups.memberships = 0;
+            collider_flags.memberships = 0;
             PlayerSensorClientFactory::remove_components(
                 &mut commands.entity(*player_sensor_entity),
                 &mut pbr_client_params,
@@ -369,28 +393,6 @@ pub fn update_level_objects(
             ColliderShapeResponse::Immediate(shape) => Some(shape),
             ColliderShapeResponse::Promise => None,
         };
-        entity_commands.insert(Transform::from_translation(
-            command
-                .object
-                .desc
-                .position()
-                .unwrap_or_default()
-                .extend(0.0),
-        ));
-        if let Some(ref shape) = shape {
-            let (rigid_body, collider) = command.object.desc.physics_body(shape.clone(), false);
-            insert_client_components(
-                &mut entity_commands,
-                &command.object,
-                false,
-                &collider.shape,
-                &mut pbr_client_params,
-            );
-            entity_commands
-                .insert_bundle(rigid_body)
-                .insert_bundle(collider)
-                .insert(ColliderPositionSync::Discrete);
-        }
 
         if let Some(position) = command.object.desc.position() {
             let position_component = if let Some(mut position_component) = position_component {
@@ -412,14 +414,36 @@ pub fn update_level_objects(
             };
             entity_commands.insert(position_component);
         }
+
         entity_commands
             .insert(command.object.net_id)
             .insert(LevelObjectTag)
             .insert(LevelObjectLabel(command.object.label.clone()))
-            .insert(RigidBodyPositionComponent::from(
-                command.object.desc.position().unwrap(),
+            .insert(GlobalTransform::identity())
+            .insert(Transform::from_translation(
+                command
+                    .object
+                    .desc
+                    .position()
+                    .unwrap_or_default()
+                    .extend(0.0),
             ))
+            .insert(GlobalTransform::identity())
             .insert(spawned_component);
+
+        if let Some(ref shape) = shape {
+            let physics_bundle = command.object.desc.physics_bundle(shape.clone(), false);
+            // Insert client components later, as they can overwrite some of them (z coordinates
+            // of translations for instance).
+            insert_client_components(
+                &mut entity_commands,
+                &command.object,
+                false,
+                &physics_bundle.collider.raw,
+                &mut pbr_client_params,
+            );
+            entity_commands.insert_bundle(physics_bundle);
+        }
 
         #[cfg(feature = "client")]
         entity_commands.insert(PlayerFrameSimulated);
@@ -444,22 +468,19 @@ pub fn update_level_objects(
                         .unwrap_or_default()
                         .extend(0.0),
                 ))
-                .insert(RigidBodyPositionComponent::from(
-                    command.object.desc.position().unwrap(),
-                ));
+                .insert(GlobalTransform::identity());
             if let Some(shape) = shape {
-                let (rigid_body, collider) = command.object.desc.physics_body(shape, true);
+                let physics_bundle = command.object.desc.physics_bundle(shape, true);
+                // Insert client components later, as they can overwrite some of them (z coordinates
+                // of translations for instance).
                 insert_client_components(
                     &mut ghost_commands,
                     &command.object,
                     true,
-                    &collider.shape,
+                    &physics_bundle.collider.raw,
                     &mut pbr_client_params,
                 );
-                ghost_commands
-                    .insert_bundle(rigid_body)
-                    .insert_bundle(collider)
-                    .insert(ColliderPositionSync::Discrete);
+                ghost_commands.insert_bundle(physics_bundle);
             }
             ghost_commands.insert(LevelObjectStaticGhost(level_object_entity));
         }
@@ -522,33 +543,27 @@ pub fn poll_calculating_shapes(
             }
         };
 
-        let (rigid_body, collider) = level_object.desc.physics_body(shape.clone(), false);
+        let physics_bundle = level_object.desc.physics_bundle(shape.clone(), false);
         insert_client_components(
             &mut entity_commands,
             level_object,
             false,
-            &collider.shape,
+            &physics_bundle.collider.raw,
             &mut pbr_client_params,
         );
-        entity_commands
-            .insert_bundle(rigid_body)
-            .insert_bundle(collider)
-            .insert(ColliderPositionSync::Discrete);
+        entity_commands.insert_bundle(physics_bundle);
 
         if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost_parent {
             let mut entity_commands = commands.entity(*ghost_entity);
-            let (rigid_body, collider) = level_object.desc.physics_body(shape, true);
+            let physics_bundle = level_object.desc.physics_bundle(shape, true);
             insert_client_components(
                 &mut entity_commands,
                 level_object,
                 true,
-                &collider.shape,
+                &physics_bundle.collider.raw,
                 &mut pbr_client_params,
             );
-            entity_commands
-                .insert_bundle(rigid_body)
-                .insert_bundle(collider)
-                .insert(ColliderPositionSync::Discrete);
+            entity_commands.insert_bundle(physics_bundle);
         }
     }
 }
@@ -603,7 +618,7 @@ pub fn despawn_level_objects(
     mut level_objects: Query<
         (
             &mut Spawned,
-            &mut ColliderFlagsComponent,
+            &mut CollisionGroups,
             Option<&LevelObjectStaticGhostParent>,
         ),
         With<LevelObjectTag>,
@@ -640,11 +655,12 @@ pub fn despawn_level_objects(
         }
 
         log::info!(
-            "Despawning level object {} (frame {})",
+            "Despawning level object {} (entity: {:?}, frame {})",
             command.net_id.0,
+            entity,
             command.frame_number
         );
-        collider_flags.collision_groups.memberships = 0;
+        collider_flags.memberships = 0;
         match level_state
             .objects
             .remove(&command.net_id)

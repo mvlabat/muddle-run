@@ -24,23 +24,23 @@ opt-level = 1
 [patch.crates-io]
 dotenv = { git = "https://github.com/mvlabat/dotenv.git" }
 bevy = { git = "https://github.com/mvlabat/bevy.git", branch = "muddle-run" }
-bevy_rapier2d = { git = "https://github.com/dimforge/bevy_rapier.git", rev = "27c945faa735cef641b3bc12851e22a564717425" }
+bevy_rapier2d = { git = "https://github.com/dimforge/bevy_rapier.git", rev = "e7aa26ad50e7471ce4119fb0ed42007787d1b5a7" }
 #parry2d = { git = "https://github.com/dimforge/parry", rev = "5c957b9" }
-rapier2d = { git = "https://github.com/dimforge/rapier.git", rev = "3a2f5f7cf5e21cfa5a3cc687caa8f4fbc3c04984" }
+#rapier2d = { git = "https://github.com/dimforge/rapier.git", rev = "3a2f5f7cf5e21cfa5a3cc687caa8f4fbc3c04984" }
 #bevy_webgl2 = { path = "../bevy_webgl2" }
 #egui = { path = "../egui/egui" }
 #bevy_rapier2d = { path = "../bevy_rapier/bevy_rapier2d" }
 #bevy = { path = "../bevy" }
 #bevy_egui = { path = "../bevy_egui" }
 
-#bevy_networking_turbulence = { git = "https://github.com/mvlabat/bevy_networking_turbulence.git", branch = "muddle-run" }
+bevy_networking_turbulence = { git = "https://github.com/starwolfy/bevy_networking_turbulence_star.git" }
 naia-client-socket = { git = "https://github.com/mvlabat/naia-socket.git", branch = "muddle-run" }
 naia-server-socket = { git = "https://github.com/mvlabat/naia-socket.git", branch = "muddle-run" }
 #bevy_networking_turbulence = { path = "../bevy_networking_turbulence" }
 #naia-client-socket = { path = "../naia-socket/client" }
 #naia-server-socket = { path = "../naia-socket/server" }
 
-bevy-inspector-egui = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "bevy_egui-0.12" }
+#bevy-inspector-egui = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "bevy_egui-0.12" }
 #bevy-inspector-egui = { path = "../bevy-inspector-egui" }
 
 #[patch.'https://github.com/bevyengine/bevy']

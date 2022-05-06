@@ -14,11 +14,12 @@ use bevy::{
         query::{Or, With, Without},
         system::{Commands, Local, Query, Res, ResMut, SystemParam},
     },
+    hierarchy::{BuildChildren, Children},
     input::mouse::MouseButton,
     math::{Quat, Vec2, Vec3, Vec3Swizzles},
     pbr::{PbrBundle, StandardMaterial},
     render::{mesh::Mesh, view::Visibility},
-    transform::components::{Children, Parent, Transform},
+    transform::components::Transform,
 };
 use mr_shared_lib::{
     client::{
@@ -131,18 +132,19 @@ pub fn spawn_control_points(
                 let mut points = Vec::new();
                 let control_points = edited_level_object.desc.control_points();
                 for point in &control_points {
-                    let mut entity_commands = commands.spawn();
-                    entity_commands
-                        .insert_bundle(PbrBundle {
-                            mesh: muddle_assets.meshes.control_point.clone(),
-                            material: muddle_assets.materials.control_point_normal.clone(),
-                            transform: Transform::from_translation(point.extend(0.0)),
-                            ..Default::default()
-                        })
-                        .insert(Parent(*ghost_entity))
-                        .insert(LevelObjectControlPoint)
-                        .insert_bundle(bevy_mod_picking::PickableBundle::default());
-                    points.push(entity_commands.id());
+                    commands.entity(*ghost_entity).with_children(|parent| {
+                        let mut entity_commands = parent.spawn();
+                        entity_commands
+                            .insert_bundle(PbrBundle {
+                                mesh: muddle_assets.meshes.control_point.clone(),
+                                material: muddle_assets.materials.control_point_normal.clone(),
+                                transform: Transform::from_translation(point.extend(0.0)),
+                                ..Default::default()
+                            })
+                            .insert(LevelObjectControlPoint)
+                            .insert_bundle(bevy_mod_picking::PickableBundle::default());
+                        points.push(entity_commands.id());
+                    });
                 }
                 let lines = (0..control_points.len())
                     .filter_map(|i| {
@@ -150,7 +152,6 @@ pub fn spawn_control_points(
                             return None;
                         }
 
-                        let mut entity_commands = commands.spawn();
                         let border_line =
                             control_points[(i + 1) % control_points.len()] - control_points[i];
                         let length = border_line.length();
@@ -158,6 +159,7 @@ pub fn spawn_control_points(
                             return None;
                         }
 
+                        let mut entity_commands = commands.spawn();
                         entity_commands
                             .insert_bundle(PbrBundle {
                                 mesh: meshes.add(Mesh::from(XyPlane {
@@ -175,10 +177,14 @@ pub fn spawn_control_points(
                                 },
                                 ..Default::default()
                             })
-                            .insert(Parent(*ghost_entity))
                             .insert(LevelObjectControlBorder)
                             .insert_bundle(bevy_mod_picking::PickableBundle::default());
-                        Some((i, entity_commands.id()))
+                        let spawned_entity = entity_commands.id();
+                        entity_commands
+                            .commands()
+                            .entity(*ghost_entity)
+                            .add_child(spawned_entity);
+                        Some((i, spawned_entity))
                     })
                     .collect::<Vec<_>>();
                 if !points.is_empty() {
