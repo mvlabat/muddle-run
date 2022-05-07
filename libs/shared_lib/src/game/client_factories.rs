@@ -65,6 +65,7 @@ impl<'w, 's> ClientFactory<'w, 's> for PlayerClientFactory {
     fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
         commands.remove_bundle::<PbrBundle>();
         commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
+        commands.remove::<PredictedPosition>();
         let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
@@ -197,9 +198,9 @@ impl<'w, 's> ClientFactory<'w, 's> for PlaneClientFactory {
 
                 let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
                 mesh.set_indices(Some(Indices::U32(indices)));
-                mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-                mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-                mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+                mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+                mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+                mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
                 mesh
             }
         };
@@ -343,6 +344,7 @@ impl<'w, 's> ClientFactory<'w, 's> for RoutePointClientFactory {
             } else {
                 deps.assets.materials.normal.route_point.clone()
             },
+            transform: Transform::from_translation(input.desc.position.extend(0.0)),
             ..Default::default()
         });
         commands.insert_bundle(bevy_mod_picking::PickableBundle::default());

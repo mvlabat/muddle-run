@@ -5,9 +5,10 @@ use crate::{
     LevelObjectCorrelations,
 };
 use bevy::{
-    app::{EventReader, EventWriter},
     ecs::{
         entity::Entity,
+        event::{EventReader, EventWriter},
+        query::WorldQuery,
         schedule::{ParallelSystemDescriptorCoercion, ShouldRun, SystemSet},
         system::{Local, Query, Res, ResMut, SystemParam},
     },
@@ -31,12 +32,13 @@ use mr_shared_lib::{
             CollisionLogic, LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc,
         },
         level_objects::{CubeDesc, PlaneDesc, PlaneFormDesc, RoutePointDesc},
+        spawn::{iter_spawned_read_only, SpawnedQuery, SpawnedQueryReadOnlyItem},
     },
     messages::{EntityNetId, SpawnLevelObjectRequest, SpawnLevelObjectRequestBody},
     net::MessageId,
     player::PlayerRole,
     registry::EntityRegistry,
-    simulations_per_second, GameTime,
+    simulations_per_second, SimulationTime,
 };
 
 pub const DEFAULT_PLANE_CIRCLE_RADIUS: f32 = 10.0;
@@ -70,27 +72,24 @@ impl EditedLevelObject {
     }
 }
 
-pub type LevelObjectsQuery<'w, 's> = Query<
-    'w,
-    's,
-    (
-        Entity,
-        &'static LevelObjectLabel,
-        &'static Transform,
-        &'static LevelObjectStaticGhostParent,
-        &'static Spawned,
-    ),
->;
+#[derive(WorldQuery)]
+pub struct LevelObjectQuery<'w> {
+    entity: Entity,
+    label: &'w LevelObjectLabel,
+    // Can be absent for despawned query.
+    transform: Option<&'w Transform>,
+    ghost_entity: &'w LevelObjectStaticGhostParent,
+}
 
 #[derive(SystemParam)]
 pub struct LevelObjects<'w, 's> {
-    time: Res<'w, GameTime>,
+    time: Res<'w, SimulationTime>,
     pending_correlation: Local<'s, Option<MessageId>>,
     edited_level_object: ResMut<'w, EditedLevelObject>,
     requests_queue: ResMut<'w, LevelObjectRequestsQueue>,
     level_state: Res<'w, LevelState>,
     entity_registry: Res<'w, EntityRegistry<EntityNetId>>,
-    query: LevelObjectsQuery<'w, 's>,
+    query: Query<'w, 's, SpawnedQuery<'static, LevelObjectQuery<'static>>>,
     ghosts_query: Query<'w, 's, (&'static LevelObjectStaticGhost, &'static Transform)>,
 }
 
@@ -116,8 +115,8 @@ pub struct EditedObjectUpdate {
 pub fn builder_system_set() -> SystemSet {
     SystemSet::new()
         .with_run_criteria(builder_run_criteria)
-        .with_system(builder_ui.label("ui"))
-        .with_system(process_builder_mouse_input.after("ui"))
+        .with_system(builder_ui)
+        .with_system(process_builder_mouse_input.after(builder_ui))
 }
 
 pub fn builder_run_criteria(
@@ -206,7 +205,7 @@ pub fn builder_ui(
                 .query
                 .get_component::<Spawned>(level_object_entity)
                 .unwrap()
-                .is_spawned(level_objects.time.frame_number)
+                .is_spawned(level_objects.time.player_frame)
             {
                 let (entity, level_object) =
                     level_objects.edited_level_object.object.as_mut().unwrap();
@@ -364,7 +363,7 @@ pub fn process_builder_mouse_input(
     }
 
     // Picking a level object with a mouse.
-    if !egui_context.ctx_mut().is_pointer_over_area() {
+    if !egui_context.ctx_mut().wants_pointer_input() {
         mouse_input.mouse_entity_picker.process_input(&mut None);
     }
 
@@ -450,14 +449,19 @@ pub fn process_builder_mouse_input(
             })
         {
             let matches_ghost_position = {
-                let (_, _, transform, LevelObjectStaticGhostParent(ghost_entity), _) =
-                    level_objects.query.get(entity).unwrap();
+                let SpawnedQueryReadOnlyItem {
+                    item: level_object, ..
+                } = level_objects.query.get(entity).unwrap();
                 let ghost_transform = level_objects
                     .ghosts_query
-                    .get_component::<Transform>(*ghost_entity)
+                    .get_component::<Transform>(level_object.ghost_entity.0)
                     .unwrap();
-                (transform.translation.x - ghost_transform.translation.x).abs() < f32::EPSILON
-                    && (transform.translation.y - ghost_transform.translation.y).abs()
+                let level_object_transform = level_object
+                    .transform
+                    .expect("Despawned level object is expected to be deselected");
+                (level_object_transform.translation.x - ghost_transform.translation.x).abs()
+                    < f32::EPSILON
+                    && (level_object_transform.translation.y - ghost_transform.translation.y).abs()
                         < f32::EPSILON
             };
             level_objects.edited_level_object.is_draggable =
@@ -815,8 +819,8 @@ fn route_settings(
 fn level_objects_filter(
     ui: &mut Ui,
     filter: &mut String,
-    time: &GameTime,
-    objects_query: &LevelObjectsQuery,
+    time: &SimulationTime,
+    objects_query: &Query<SpawnedQuery<LevelObjectQuery>>,
 ) -> Option<Entity> {
     ui.horizontal(|ui| {
         ui.label("Filter:");
@@ -828,17 +832,19 @@ fn level_objects_filter(
     let mut result = None;
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
-            for (entity, label, _, _, spawned) in objects_query.iter() {
-                if !spawned.is_spawned(time.frame_number) {
+            for level_object in iter_spawned_read_only(objects_query.iter(), time) {
+                if !level_object
+                    .item
+                    .label
+                    .0
+                    .to_lowercase()
+                    .contains(&filter.to_lowercase())
+                {
                     continue;
                 }
 
-                if !label.0.to_lowercase().contains(&filter.to_lowercase()) {
-                    continue;
-                }
-
-                if ui.button(&label.0).clicked() {
-                    result = Some(entity);
+                if ui.button(&level_object.item.label.0).clicked() {
+                    result = Some(level_object.item.entity);
                 }
             }
         });

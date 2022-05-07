@@ -34,11 +34,12 @@ use bevy::{
         schedule::{ParallelSystemDescriptorCoercion, ShouldRun, State, StateError, SystemStage},
         system::{Commands, IntoSystem, Local, Res, ResMut, SystemParam},
     },
+    hierarchy::BuildChildren,
     log,
     math::{Vec2, Vec3},
     pbr::{PointLight, PointLightBundle},
     render::camera::PerspectiveCameraBundle,
-    transform::components::{GlobalTransform, Parent, Transform},
+    transform::components::{GlobalTransform, Transform},
     utils::{HashMap, Instant},
 };
 use bevy_egui::EguiPlugin;
@@ -348,13 +349,6 @@ fn basic_scene(mut commands: Commands) {
         transform: Transform::from_translation(Vec3::new(-64.0, -92.0, 144.0)),
         ..Default::default()
     });
-    let main_camera_pivot_entity = commands
-        .spawn()
-        .insert(CameraPivotTag)
-        .insert(CameraPivotDirection(Vec2::ZERO))
-        .insert(Transform::identity())
-        .insert(GlobalTransform::identity())
-        .id();
     // Camera.
     let main_camera_entity = commands
         .spawn_bundle(PerspectiveCameraBundle {
@@ -363,7 +357,14 @@ fn basic_scene(mut commands: Commands) {
             ..Default::default()
         })
         .insert_bundle(bevy_mod_picking::PickingCameraBundle::default())
-        .insert(Parent(main_camera_pivot_entity))
+        .id();
+    let main_camera_pivot_entity = commands
+        .spawn()
+        .insert(CameraPivotTag)
+        .insert(CameraPivotDirection(Vec2::ZERO))
+        .insert(Transform::identity())
+        .insert(GlobalTransform::identity())
+        .add_child(main_camera_entity)
         .id();
     commands.insert_resource(MainCameraPivotEntity(main_camera_pivot_entity));
     commands.insert_resource(MainCameraEntity(main_camera_entity));

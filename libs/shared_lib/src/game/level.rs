@@ -1,9 +1,11 @@
 use crate::{
-    collider_flags::level_object_interaction_groups,
+    collider_flags::level_object_collision_groups,
     framebuffer::FrameNumber,
     game::{
-        client_factories::ROUTE_POINT_BASE_EDGE_HALF_LEN, components::LevelObjectTag,
-        level_objects::*, spawn::ColliderShapeSender,
+        client_factories::ROUTE_POINT_BASE_EDGE_HALF_LEN,
+        components::{LevelObjectTag, PhysicsBundle},
+        level_objects::*,
+        spawn::ColliderShapeSender,
     },
     messages::EntityNetId,
     registry::EntityRegistry,
@@ -19,16 +21,10 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_rapier2d::{
+    dynamics::{LockedAxes, RigidBody},
+    geometry::{CollisionGroups, Sensor, VHACDParameters},
     na::Point2,
-    physics::{
-        wrapper::{ColliderFlagsComponent, ColliderShapeComponent, ColliderTypeComponent},
-        ColliderBundle, RigidBodyBundle,
-    },
-    rapier::{
-        dynamics::RigidBodyType,
-        geometry::{ColliderFlags, ColliderShape, ColliderType, InteractionGroups},
-        parry::transformation::vhacd::VHACDParameters,
-    },
+    rapier::geometry::ColliderShape,
 };
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
@@ -191,68 +187,30 @@ impl LevelObjectDesc {
         })
     }
 
-    pub fn physics_body(
-        &self,
-        shape: ColliderShape,
-        is_ghost: bool,
-    ) -> (RigidBodyBundle, ColliderBundle) {
-        let flags = if is_ghost {
-            ColliderFlags {
-                collision_groups: InteractionGroups::none(),
-                solver_groups: InteractionGroups::none(),
-                ..ColliderFlags::default()
+    pub fn physics_bundle(&self, shape: ColliderShape, is_ghost: bool) -> PhysicsBundle {
+        let collision_groups = if is_ghost {
+            CollisionGroups {
+                memberships: 0,
+                filters: 0,
             }
         } else {
-            ColliderFlags {
-                collision_groups: level_object_interaction_groups(),
-                solver_groups: level_object_interaction_groups(),
-                ..ColliderFlags::default()
-            }
+            level_object_collision_groups()
         };
         match self {
-            Self::Plane(_) => (
-                RigidBodyBundle {
-                    body_type: RigidBodyType::KinematicPositionBased.into(),
-                    position: self.position().unwrap().into(),
-                    ..RigidBodyBundle::default()
-                },
-                ColliderBundle {
-                    collider_type: ColliderType::Sensor.into(),
-                    flags: ColliderFlagsComponent(flags),
-                    shape: ColliderShapeComponent(shape),
-                    ..ColliderBundle::default()
-                },
-            ),
-            Self::Cube(_) => (
-                RigidBodyBundle {
-                    body_type: RigidBodyType::KinematicPositionBased.into(),
-                    position: [self.position().unwrap().x, self.position().unwrap().y].into(),
-                    ..RigidBodyBundle::default()
-                },
-                ColliderBundle {
-                    collider_type: ColliderTypeComponent(if is_ghost {
-                        ColliderType::Sensor
-                    } else {
-                        ColliderType::Solid
-                    }),
-                    flags: ColliderFlagsComponent(flags),
-                    shape: ColliderShapeComponent(shape),
-                    ..ColliderBundle::default()
-                },
-            ),
-            Self::RoutePoint(_) => (
-                RigidBodyBundle {
-                    body_type: RigidBodyType::KinematicPositionBased.into(),
-                    position: [self.position().unwrap().x, self.position().unwrap().y].into(),
-                    ..RigidBodyBundle::default()
-                },
-                ColliderBundle {
-                    collider_type: ColliderType::Sensor.into(),
-                    flags: ColliderFlagsComponent(flags),
-                    shape: ColliderShapeComponent(shape),
-                    ..ColliderBundle::default()
-                },
-            ),
+            Self::Plane(_) | Self::RoutePoint(_) => PhysicsBundle {
+                rigid_body: RigidBody::KinematicPositionBased,
+                collider: shape.into(),
+                sensor: Sensor(true),
+                collision_groups,
+                locked_axes: LockedAxes::TRANSLATION_LOCKED_Z,
+            },
+            Self::Cube(_) => PhysicsBundle {
+                rigid_body: RigidBody::KinematicPositionBased,
+                collider: shape.into(),
+                sensor: Sensor(is_ghost),
+                collision_groups,
+                locked_axes: LockedAxes::TRANSLATION_LOCKED_Z,
+            },
         }
     }
 

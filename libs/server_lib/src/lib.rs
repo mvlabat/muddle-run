@@ -1,4 +1,3 @@
-#![feature(bool_to_option)]
 #![feature(hash_drain_filter)]
 #![feature(let_else)]
 #![feature(once_cell)]

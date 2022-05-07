@@ -1,7 +1,11 @@
 use crate::{
     framebuffer::FrameNumber,
-    game::components::{
-        LevelObjectTag, PlayerDirection, PlayerFrameSimulated, Position, PredictedPosition, Spawned,
+    game::{
+        components::{
+            LevelObjectTag, PlayerDirection, PlayerFrameSimulated, Position, PredictedPosition,
+            Spawned,
+        },
+        spawn::{iter_spawned, SpawnedQuery, SpawnedQueryItem},
     },
     messages::PlayerNetId,
     player::PlayerUpdates,
@@ -11,17 +15,14 @@ use crate::{
 use bevy::{
     ecs::{
         entity::Entity,
-        query::With,
+        query::{With, WorldQuery},
         system::{Query, Res, ResMut},
     },
     log,
     math::Vec2,
     transform::components::Transform,
 };
-use bevy_rapier2d::{
-    physics::wrapper::{RigidBodyPositionComponent, RigidBodyVelocityComponent},
-    rapier::math::Vector,
-};
+use bevy_rapier2d::dynamics::Velocity;
 
 /// Positions should align in half a second.
 fn lerp_factor() -> f32 {
@@ -30,7 +31,7 @@ fn lerp_factor() -> f32 {
 
 /// The scaling factor for the player's linear velocity.
 fn player_movement_speed() -> f32 {
-    240.0 / simulations_per_second() as f32
+    360.0 / simulations_per_second() as f32
 }
 
 pub fn read_movement_updates(
@@ -121,17 +122,17 @@ pub fn read_movement_updates(
     }
 }
 
-type PlayersQuery = (
-    Entity,
-    &'static mut RigidBodyPositionComponent,
-    &'static mut RigidBodyVelocityComponent,
-    &'static PlayerDirection,
-    &'static Position,
-    Option<&'static PlayerFrameSimulated>,
-    &'static Spawned,
-);
+#[derive(WorldQuery)]
+#[world_query(mutable, derive(Debug))]
+pub struct PlayerQuery<'w> {
+    entity: Entity,
+    transform: &'w mut Transform,
+    velocity: &'w mut Velocity,
+    direction: &'w PlayerDirection,
+    position: &'w Position,
+}
 
-pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuery>) {
+pub fn player_movement(time: Res<SimulationTime>, mut players: Query<SpawnedQuery<PlayerQuery>>) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
     log::trace!(
@@ -139,39 +140,32 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
         time.server_frame,
         time.player_frame
     );
-    for (
-        entity,
-        mut rigid_body_position,
-        mut rigid_body_velocity,
-        player_direction,
-        position,
+    for SpawnedQueryItem {
+        item: mut player,
         player_frame_simulated,
-        _,
-    ) in players
-        .iter_mut()
-        .filter(|(_, _, _, _, _, player_frame_simulated, spawned)| {
-            spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated))
-        })
+        ..
+    } in iter_spawned(players.iter_mut(), &time)
     {
         let frame_number = time.entity_simulation_frame(player_frame_simulated);
 
-        let body_position = &mut rigid_body_position.position;
-        let current_position = position.buffer.get(frame_number).unwrap_or_else(|| {
+        let body_position = &mut player.transform;
+        let current_position = player.position.buffer.get(frame_number).unwrap_or_else(|| {
             // This can happen only if our `sync_position` haven't created a new position for
             // the current frame. If we are catching this, it's definitely a bug.
             panic!(
                 "Expected player (entity: {:?}) position for frame {} (start frame: {}, len: {})",
-                entity,
+                player.entity,
                 frame_number,
-                position.buffer.start_frame(),
-                position.buffer.len()
+                player.position.buffer.start_frame(),
+                player.position.buffer.len()
             );
         });
         body_position.translation.x = current_position.x;
         body_position.translation.y = current_position.y;
 
         let zero_vec = Vec2::new(0.0, 0.0);
-        let (_, current_direction) = player_direction
+        let (_, current_direction) = player
+            .direction
             .buffer
             .get_with_extrapolation(frame_number)
             .unwrap_or_else(|| {
@@ -179,29 +173,28 @@ pub fn player_movement(time: Res<SimulationTime>, mut players: Query<PlayersQuer
                 // stopped moving.
                 log::debug!(
                     "No player (entity: {:?}) direction for frame {}",
-                    entity,
+                    player.entity,
                     frame_number
                 );
                 (FrameNumber::new(0), &zero_vec)
             });
-        let current_direction_norm =
-            current_direction.normalize_or_zero() * player_movement_speed();
-        rigid_body_velocity.linvel =
-            Vector::new(current_direction_norm.x, current_direction_norm.y);
+        player.velocity.linvel = current_direction.normalize_or_zero() * player_movement_speed();
     }
 }
 
-type LevelObjectsQuery = (
-    Entity,
-    &'static mut RigidBodyPositionComponent,
-    &'static Position,
-    Option<&'static PlayerFrameSimulated>,
-    &'static Spawned,
-);
+#[derive(WorldQuery)]
+#[world_query(mutable, derive(Debug))]
+pub struct LevelObjectQuery<'w> {
+    entity: Entity,
+    transform: &'w mut Transform,
+    position: &'w Position,
+    frame_simulated: Option<&'w PlayerFrameSimulated>,
+    _tag: With<LevelObjectTag>,
+}
 
 pub fn load_object_positions(
     time: Res<SimulationTime>,
-    mut level_objects: Query<LevelObjectsQuery, With<LevelObjectTag>>,
+    mut level_objects: Query<SpawnedQuery<LevelObjectQuery>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -211,44 +204,48 @@ pub fn load_object_positions(
         time.player_frame
     );
 
-    for (entity, mut rigid_body_position, position, player_frame_simulated, _) in level_objects
-        .iter_mut()
-        .filter(|(_, _, _, player_frame_simulated, spawned)| {
-            spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated))
-        })
+    for SpawnedQueryItem {
+        item: mut level_object,
+        player_frame_simulated,
+        ..
+    } in iter_spawned(level_objects.iter_mut(), &time)
     {
         let frame_number = time.entity_simulation_frame(player_frame_simulated);
 
-        let body_position = &mut rigid_body_position.next_position;
-        let current_position = position.buffer.get(frame_number).unwrap_or_else(|| {
-            // This can happen only if our `sync_position` haven't created a new position for
-            // the current frame. If we are catching this, it's definitely a bug.
-            panic!(
-                "Expected object (entity: {:?}) position for frame {} (start frame: {}, len: {})",
-                entity,
-                time.entity_simulation_frame(player_frame_simulated),
-                position.buffer.start_frame(),
-                position.buffer.len()
-            );
-        });
+        let body_position = &mut level_object.transform;
+        let current_position = level_object
+            .position
+            .buffer
+            .get(frame_number)
+            .unwrap_or_else(|| {
+                // This can happen only if our `sync_position` haven't created a new position for
+                // the current frame. If we are catching this, it's definitely a bug.
+                panic!(
+                    "Expected object (entity: {:?}) position for frame {} (start frame: {}, len: {})",
+                    level_object.entity,
+                    time.entity_simulation_frame(player_frame_simulated),
+                    level_object.position.buffer.start_frame(),
+                    level_object.position.buffer.len()
+                );
+            });
         body_position.translation.x = current_position.x;
         body_position.translation.y = current_position.y;
     }
 }
 
-type SimulatedEntitiesQuery = (
-    &'static RigidBodyPositionComponent,
-    &'static mut Position,
-    Option<&'static mut Transform>,
-    Option<&'static mut PredictedPosition>,
-    Option<&'static PlayerFrameSimulated>,
-    &'static Spawned,
-);
+#[derive(WorldQuery)]
+#[world_query(mutable, derive(Debug))]
+pub struct SimulatedEntityQuery<'w> {
+    entity: Entity,
+    position: &'w mut Position,
+    transform: &'w mut Transform,
+    predicted_position: Option<&'w mut PredictedPosition>,
+}
 
 pub fn sync_position(
     game_time: Res<GameTime>,
     time: Res<SimulationTime>,
-    mut simulated_entities: Query<SimulatedEntitiesQuery>,
+    mut simulated_entities: Query<SpawnedQuery<SimulatedEntityQuery>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -257,25 +254,18 @@ pub fn sync_position(
         time.server_frame,
         time.player_frame
     );
-    for (
-        rigid_body_position,
-        mut position,
-        mut transform,
-        mut predicted_position,
+    for SpawnedQueryItem {
+        item: mut simulated_entity,
         player_frame_simulated,
-        _,
-    ) in
-        simulated_entities
-            .iter_mut()
-            .filter(|(_, _, _, _, player_frame_simulated, spawned)| {
-                spawned.is_spawned(time.entity_simulation_frame(*player_frame_simulated))
-            })
+        ..
+    } in iter_spawned(simulated_entities.iter_mut(), &time)
     {
         let frame_number = time.entity_simulation_frame(player_frame_simulated);
-        let body_position = &rigid_body_position.position;
-        let new_position = Vec2::new(body_position.translation.x, body_position.translation.y);
-        if let Some(predicted_position) = predicted_position.as_mut() {
-            let current_position = *position
+        let body_position = simulated_entity.transform.translation;
+        let new_position = Vec2::new(body_position.x, body_position.y);
+        if let Some(predicted_position) = simulated_entity.predicted_position.as_mut() {
+            let current_position = *simulated_entity
+                .position
                 .buffer
                 .get(frame_number)
                 .expect("Expected the current position");
@@ -287,20 +277,20 @@ pub fn sync_position(
                 let lerp = new_predicted_position
                     + (new_position - new_predicted_position) * lerp_factor();
 
+                // The `Transform` component will be updated before the next physics simulation
+                // to contain the real (server authoritative) position. This is why we store
+                // lerped position in the `PredictedPosition` component as well.
                 predicted_position.value = lerp;
-                // Might be missing if we've just despawned the entity.
-                if let Some(transform) = transform.as_mut() {
-                    transform.translation.x = lerp.x;
-                    transform.translation.y = lerp.y;
-                }
+                simulated_entity.transform.translation.x = lerp.x;
+                simulated_entity.transform.translation.y = lerp.y;
             }
         }
 
         // Positions buffer represents start positions before moving entities, so this is why
         // we save the new position in the next frame.
-        position.buffer.insert(
+        simulated_entity.position.buffer.insert(
             frame_number + FrameNumber::new(1),
-            Vec2::new(body_position.translation.x, body_position.translation.y),
+            Vec2::new(body_position.x, body_position.y),
         );
     }
 }

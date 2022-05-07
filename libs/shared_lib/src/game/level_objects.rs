@@ -9,13 +9,13 @@ use crate::{
     },
     messages::EntityNetId,
     registry::EntityRegistry,
-    QueryState, SimulationTime,
+    SimulationTime,
 };
 use bevy::{
     ecs::{
         entity::Entity,
         query::With,
-        system::{Commands, Query, QuerySet, Res},
+        system::{Commands, ParamSet, Query, Res},
     },
     math::Vec2,
     utils::HashMap,
@@ -212,11 +212,13 @@ pub fn update_level_object_movement_route_settings(
     }
 }
 
-type LevelObjectsQuerySet<'w, 's> = QuerySet<
+type LevelObjectsQuerySet<'w, 's> = ParamSet<
     'w,
     's,
     (
-        QueryState<
+        Query<
+            'w,
+            's,
             (
                 &'static mut Position,
                 Option<&'static mut LevelObjectMovement>,
@@ -224,7 +226,9 @@ type LevelObjectsQuerySet<'w, 's> = QuerySet<
             ),
             With<LevelObjectTag>,
         >,
-        QueryState<
+        Query<
+            'w,
+            's,
             (
                 Entity,
                 &'static Position,
@@ -243,7 +247,7 @@ pub fn process_objects_route_graph(
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let mut new_positions = HashMap::<Entity, (Vec2, Vec<LevelObjectMovementPoint>)>::default();
-    let level_objects_readonly = level_objects.q1();
+    let level_objects_readonly = level_objects.p1();
     for (entity, _, _, _) in level_objects_readonly.iter() {
         resolve_new_path_recursive(
             &time,
@@ -253,7 +257,7 @@ pub fn process_objects_route_graph(
         );
     }
 
-    let mut level_objects = level_objects.q0();
+    let mut level_objects = level_objects.p0();
     for (entity, (new_position, points_progress)) in new_positions {
         let (mut position, movement, _) = level_objects.get_mut(entity).unwrap();
         position.buffer.insert(time.player_frame, new_position);

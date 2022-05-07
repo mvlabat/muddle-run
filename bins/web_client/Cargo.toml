@@ -16,7 +16,7 @@ crate-type = ["cdylib", "rlib"]
 mr_client_lib = { path = "../../libs/client_lib", features = ["web", "use-webrtc"] }
 mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 
-bevy = "0.6"
+bevy = "0.7"
 console_error_panic_hook = "0.1.7"
 log = "0.4.14"
 uuid = "0.8.2"

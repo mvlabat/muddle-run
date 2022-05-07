@@ -7,11 +7,11 @@ use bevy::{
     ecs::{
         entity::Entity,
         query::{Changed, With},
-        system::{Commands, Query, QuerySet, RemovedComponents, Res},
+        system::{Commands, ParamSet, Query, RemovedComponents, Res},
     },
+    hierarchy::{BuildChildren, Parent},
     log,
-    prelude::QueryState,
-    transform::components::{Parent, Transform},
+    transform::components::Transform,
 };
 use mr_shared_lib::{
     game::components::{PlayerTag, Position, Spawned},
@@ -22,12 +22,14 @@ use mr_shared_lib::{
 
 const CAMERA_MOVEMENT_SPEED: f32 = 4.0;
 
-pub type ReattachCameraQueries<'w, 's> = QuerySet<
+pub type ReattachCameraQueries<'w, 's> = ParamSet<
     'w,
     's,
     (
-        QueryState<Option<&'static Parent>, With<CameraPivotTag>>,
-        QueryState<
+        Query<'w, 's, Option<&'static Parent>, With<CameraPivotTag>>,
+        Query<
+            'w,
+            's,
             (Entity, &'static Spawned, &'static Position),
             (Changed<Spawned>, With<PlayerTag>),
         >,
@@ -46,7 +48,7 @@ pub fn reattach_camera(
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let has_camera_parent = queries
-        .q0()
+        .p0()
         .get(main_camera_pivot.0)
         .expect("Expected the camera to initialize in `basic_scene`")
         .is_some();
@@ -55,7 +57,7 @@ pub fn reattach_camera(
     // TODO: track the following (to avoid iterating each frame):
     //  https://github.com/bevyengine/bevy/pull/2330#issuecomment-861605604
     //  https://github.com/bevyengine/bevy/issues/2348
-    for (player_entity, spawned, position) in queries.q1().iter() {
+    for (player_entity, spawned, position) in queries.p1().iter() {
         let position = position.buffer.last().cloned().unwrap_or_default();
         let is_current_player = current_player_net_id.0.map_or(false, |player_net_id| {
             Some(player_net_id) == player_registry.get_id(player_entity)
@@ -63,16 +65,25 @@ pub fn reattach_camera(
         if is_current_player {
             match (spawned.is_spawned(time.frame_number), has_camera_parent) {
                 (true, false) => {
-                    log::trace!("Attaching camera pivot to a player");
+                    log::debug!("Attaching camera pivot to a player");
+                    main_camera_pivot_commands.insert(Transform::from_xyz(
+                        0.0,
+                        0.0,
+                        -PLAYER_RADIUS,
+                    ));
                     main_camera_pivot_commands
-                        .insert(Parent(player_entity))
-                        .insert(Transform::from_xyz(0.0, 0.0, -PLAYER_RADIUS));
+                        .commands()
+                        .entity(player_entity)
+                        .add_child(main_camera_pivot.0);
                 }
                 (false, true) => {
-                    log::trace!("Freeing camera pivot");
+                    log::debug!("Freeing camera pivot");
                     main_camera_pivot_commands
-                        .remove::<Parent>()
                         .insert(Transform::from_xyz(position.x, position.y, 0.0));
+                    main_camera_pivot_commands
+                        .commands()
+                        .entity(player_entity)
+                        .remove_children(&[main_camera_pivot.0]);
                 }
                 _ => {}
             }

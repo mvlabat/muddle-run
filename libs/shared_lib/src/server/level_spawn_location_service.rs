@@ -16,14 +16,13 @@ use bevy::{
     },
     math::Vec2,
 };
-use bevy_rapier2d::physics::wrapper::ColliderShapeComponent;
+use bevy_rapier2d::geometry::Collider;
 use rand::seq::SliceRandom;
 
 #[derive(SystemParam)]
 pub struct LevelSpawnLocationService<'w, 's> {
     level_state: Res<'w, LevelState>,
-    level_objects:
-        Query<'w, 's, (&'static Position, &'static ColliderShapeComponent), With<LevelObjectTag>>,
+    level_objects: Query<'w, 's, (&'static Position, &'static Collider), With<LevelObjectTag>>,
     entity_registry: Res<'w, EntityRegistry<EntityNetId>>,
 }
 

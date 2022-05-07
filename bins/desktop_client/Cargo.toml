@@ -10,7 +10,7 @@ edition = "2021"
 mr_client_lib = { path = "../../libs/client_lib", features = ["use-udp", "profiler"] }
 mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 
-bevy = "0.6"
+bevy = "0.7"
 sentry = "0.25.0"
 
 [build-dependencies]
