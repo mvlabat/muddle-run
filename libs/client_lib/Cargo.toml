@@ -34,7 +34,7 @@ serde = "1.0.133"
 serde_json = "1.0.81"
 serde_urlencoded = "0.7.0"
 sha2 = "0.10.1"
-tokio = { version = "1.18.1", features = ["rt", "sync"] }
+tokio = { version = "1.18.2", features = ["rt", "sync"] }
 url = { version = "2.2.2", features = ["serde"] }
 wasm-timer = "0.2.5"
 webbrowser = "0.7.1"

@@ -18,7 +18,7 @@ mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 bevy = { version = "0.7", default-features = false }
 rymder = { version = "0.4.0", features = ["player-tracking"] }
 sentry = "0.25.0"
-tokio = { version = "1.18.1", features = ["sync"] }
+tokio = { version = "1.18.2", features = ["sync"] }
 
 [build-dependencies]
 mr_build_dotenv = { path = "../../libs/build_dotenv" }
