@@ -17,7 +17,7 @@ profiler = ["puffin", "puffin_egui", "mr_shared_lib/profiler"]
 anyhow = "1.0.57"
 base64 = "0.20.0-alpha.1"
 bevy = "0.7"
-bevy-inspector-egui = "0.10.0"
+bevy-inspector-egui = "0.11.0"
 bevy_egui = "0.13"
 bevy_mod_picking = { version = "0.6.1" }
 bevy_networking_turbulence = { version = "0.4", default-features = false }
