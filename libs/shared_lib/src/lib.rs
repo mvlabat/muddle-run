@@ -1,4 +1,6 @@
+#![feature(const_option_ext)]
 #![feature(drain_filter)]
+#![feature(const_fn_floating_point_arithmetic)]
 #![feature(hash_drain_filter)]
 #![feature(step_trait)]
 #![feature(trait_alias)]
@@ -16,7 +18,10 @@ use crate::{
         events::{CollisionLogicChanged, PlayerDeath, PlayerFinish},
         level::{maintain_available_spawn_areas, LevelState},
         level_objects::{process_objects_route_graph, update_level_object_movement_route_settings},
-        movement::{load_object_positions, player_movement, read_movement_updates, sync_position},
+        movement::{
+            isolate_client_mispredicted_world, load_object_positions, player_movement,
+            read_movement_updates, sync_position,
+        },
         remove_disconnected_players, restart_game,
         spawn::{
             despawn_level_objects, despawn_players, poll_calculating_shapes,
@@ -92,16 +97,23 @@ pub const PLAYER_SENSOR_RADIUS: f32 = 0.05;
 pub const PLANE_SIZE: f32 = 20.0;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
 pub const TICKS_PER_NETWORK_BROADCAST: u16 = 2;
+pub const MAX_LAG_COMPENSATION_MILLIS: u16 = 200;
+pub const SIMULATIONS_PER_SECOND: u16 = {
+    const fn parse(v: &'static str) -> Option<u16> {
+        let parser = konst::Parser::from_str(v);
+        Some(konst::unwrap_ctx!(parser.parse_u16()).0)
+    }
 
-const SIMULATIONS_PER_SECOND: Option<&'static str> = std::option_env!("SIMULATIONS_PER_SECOND");
-const SIMULATIONS_PER_SECOND_DEFAULT: u16 = 120;
-
-#[inline(always)]
-pub fn simulations_per_second() -> u16 {
-    SIMULATIONS_PER_SECOND
-        .and_then(|v| v.parse().ok())
+    std::option_env!("SIMULATIONS_PER_SECOND")
+        .and_then(parse)
         .unwrap_or(SIMULATIONS_PER_SECOND_DEFAULT)
-}
+};
+pub const LAG_COMPENSATED_FRAMES: FrameNumber = {
+    let v = (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / SIMULATIONS_PER_SECOND as f32)) as u16;
+    FrameNumber::new(v)
+};
+
+const SIMULATIONS_PER_SECOND_DEFAULT: u16 = 120;
 
 pub struct MuddleSharedPlugin<S: System<In = (), Out = ShouldRun>> {
     main_run_criteria: Mutex<Option<S>>,
@@ -161,12 +173,11 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .lock()
             .expect("Can't initialize the plugin more than once");
 
-        #[cfg_attr(not(feature = "profiler"), allow(unused_mut))]
-        let mut simulation_schedule = Schedule::default()
+        let simulation_schedule = Schedule::default()
             .with_run_criteria(IntoSystem::into_system(simulation_tick_run_criteria))
             .with_stage(
                 stage::SPAWN,
-                SystemStage::parallel()
+                SystemStage::single_threaded()
                     .with_system(Events::<CollisionEvent>::update_system)
                     .with_system(Events::<PlayerFinish>::update_system)
                     .with_system(Events::<PlayerDeath>::update_system)
@@ -195,18 +206,20 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::PRE_GAME,
-                SystemStage::parallel().with_system(update_level_object_movement_route_settings),
+                SystemStage::single_threaded()
+                    .with_system(update_level_object_movement_route_settings),
             )
             .with_stage(
                 stage::GAME,
-                SystemStage::parallel()
+                SystemStage::single_threaded()
+                    .with_system(isolate_client_mispredicted_world)
                     .with_system(player_movement)
-                    .with_system(process_objects_route_graph.label("route_graph"))
-                    .with_system(load_object_positions.after("route_graph")),
+                    .with_system(process_objects_route_graph)
+                    .with_system(load_object_positions.after(process_objects_route_graph)),
             )
             .with_stage(
                 stage::PHYSICS,
-                SystemStage::parallel()
+                SystemStage::single_threaded()
                     .with_system(rapier_systems::init_async_colliders)
                     .with_system(
                         rapier_systems::apply_scale.after(rapier_systems::init_async_colliders),
@@ -248,7 +261,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::POST_PHYSICS,
-                SystemStage::parallel()
+                SystemStage::single_threaded()
                     .with_system(
                         process_collision_events.chain(process_players_with_new_collisions),
                     )
@@ -263,13 +276,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::SIMULATION_FINAL,
-                SystemStage::parallel().with_system(tick_simulation_frame),
+                SystemStage::single_threaded().with_system(tick_simulation_frame),
             );
-        #[cfg(feature = "profiler")]
-        crate::util::profile_schedule(&mut simulation_schedule);
 
-        #[cfg_attr(not(feature = "profiler"), allow(unused_mut))]
-        let mut main_schedule = Schedule::default()
+        let main_schedule = Schedule::default()
             .with_run_criteria(
                 main_run_criteria
                     .take()
@@ -285,9 +295,9 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::POST_SIMULATIONS,
-                SystemStage::parallel()
-                    .with_system(tick_game_frame.label("tick"))
-                    .with_system(process_spawned_entities.after("tick"))
+                SystemStage::single_threaded()
+                    .with_system(tick_game_frame)
+                    .with_system(process_spawned_entities.after(tick_game_frame))
                     // Remove disconnected players doesn't depend on ticks, so it's fine.
                     .with_system(remove_disconnected_players),
             )
@@ -295,10 +305,9 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 stage::POST_TICK,
                 post_tick_stage
                     .take()
-                    .expect("Can't initialize the plugin more than once"), // .with_system(physics::collect_removals),
+                    .expect("Can't initialize the plugin more than once")
+                    .with_system(rapier_systems::sync_removals),
             );
-        #[cfg(feature = "profiler")]
-        crate::util::profile_schedule(&mut main_schedule);
 
         app.add_stage_before(
             bevy::app::CoreStage::Update,
@@ -308,7 +317,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         app.add_stage_before(
             stage::MAIN_SCHEDULE,
             stage::READ_INPUT_UPDATES,
-            SystemStage::parallel()
+            SystemStage::single_threaded()
                 .with_system(restart_game.exclusive_system().label("restart_game"))
                 .with_system_set(
                     SystemSet::on_update(GameState::Playing)
@@ -331,17 +340,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         app.add_startup_system(network_setup);
 
         #[cfg(feature = "client")]
-        app.add_startup_system(crate::client::assets::init_muddle_assets);
-
-        #[cfg(feature = "profiler")]
-        app.add_system_to_stage(
-            bevy::app::CoreStage::First,
-            (|| {
-                puffin::GlobalProfiler::lock().new_frame();
-            })
-            .exclusive_system()
-            .at_start(),
-        );
+        app.add_startup_system(client::assets::init_muddle_assets);
 
         let world = &mut app.world;
         world.get_resource_or_insert_with(GameTime::default);
@@ -378,7 +377,7 @@ impl Plugin for RapierResourcesPlugin {
             .insert_resource(RapierConfiguration {
                 gravity: Vec2::ZERO,
                 timestep_mode: TimestepMode::Fixed {
-                    dt: 1.0 / simulations_per_second() as f32,
+                    dt: 1.0 / SIMULATIONS_PER_SECOND as f32,
                     substeps: 1,
                 },
                 ..RapierConfiguration::default()
@@ -416,6 +415,7 @@ pub struct SimulationTime {
     pub player_generation: u64,
     pub server_frame: FrameNumber,
     pub server_generation: u64,
+    player_frames_to_rerun: Option<FrameNumber>,
 }
 
 impl Default for SimulationTime {
@@ -425,6 +425,7 @@ impl Default for SimulationTime {
             player_generation: 1,
             server_frame: Default::default(),
             server_generation: 1,
+            player_frames_to_rerun: Default::default(),
         }
     }
 }
@@ -442,28 +443,53 @@ impl SimulationTime {
     }
 
     pub fn rewind(&mut self, frame_number: FrameNumber) {
-        if cfg!(not(feature = "client")) {
-            assert_eq!(self.player_frame, self.server_frame);
-        } else {
+        if cfg!(feature = "client") {
             assert!(self.player_frame >= self.server_frame);
-        }
-        let frames_ahead = self.player_frame - self.server_frame;
-        if (self.server_frame.value() as i32 - frame_number.value() as i32).unsigned_abs() as u16
-            > u16::MAX / 2
-            && self.server_frame > frame_number
-        {
-            // This shouldn't overflow as we start counting from 1, and we never decrement more than
-            // once without incrementing.
-            self.server_generation -= 1;
-        }
-        self.server_frame = self.server_frame.min(frame_number);
-        let (player_frame, overflown) = self.server_frame.add(frames_ahead);
-        self.player_frame = player_frame;
-        if overflown {
-            self.player_generation = self.server_generation + 1;
+            let frames_ahead = self.player_frame - self.server_frame;
+            if frames_ahead.value() > 0 && self.player_frame >= frame_number {
+                // If local server time is behind the delta update frame, we don't want make the
+                // client re-run more more frames that it has to rewind (resulting in being ahead
+                // of the server more than initially).
+                let delta_update_ahead = if frame_number > self.server_frame {
+                    // Take `min` just for safety, to avoid overflowing.
+                    frames_ahead.min(frame_number - self.server_frame)
+                } else {
+                    FrameNumber::new(0)
+                };
+                // If we read an update before cathing up with GameTime's frame number, we want to
+                // make sure we don't mistakenly overwrite this a lower value, hence the
+                // `get_or_insert` call.
+                self.player_frames_to_rerun
+                    .get_or_insert(frames_ahead - delta_update_ahead);
+            }
         } else {
-            self.player_generation = self.server_generation;
+            assert_eq!(self.player_frame, self.server_frame);
         }
+
+        if self.server_frame > frame_number {
+            if self.server_frame.diff_abs(frame_number).value() > u16::MAX / 2 {
+                // This shouldn't overflow as we start counting from 1, and we never decrement more
+                // than once without incrementing.
+                self.server_generation -= 1;
+            }
+            self.server_frame = frame_number;
+            self.player_frame = frame_number;
+            self.player_generation = self.server_generation;
+        } else if self.player_frame > frame_number {
+            if self.player_frame.diff_abs(frame_number).value() > u16::MAX / 2 {
+                // This shouldn't overflow as we start counting from 1, and we never decrement more
+                // than once without incrementing.
+                self.player_generation -= 1;
+            }
+            self.player_frame = frame_number;
+        }
+
+        log::trace!(
+            "Rewind to {{server: {}, player: {}, frame: {}}}",
+            self.server_frame,
+            self.player_frame,
+            frame_number,
+        );
     }
 
     pub fn player_frames_ahead(&self) -> u16 {
@@ -493,7 +519,12 @@ impl SimulationTime {
             player_generation,
             server_frame: self.server_frame - FrameNumber::new(1),
             server_generation,
+            player_frames_to_rerun: self.player_frames_to_rerun,
         }
+    }
+
+    pub fn player_frame_simulated_only(&self) -> bool {
+        self.player_frames_to_rerun.is_some()
     }
 }
 
@@ -542,7 +573,7 @@ fn simulation_tick_run_criteria(
 ) -> ShouldRun {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    // Checking that a game frame has changed will make us avoid panicking in case we rewind
+    // Checking that a game frame has changed helps us to avoid the panicking in case we rewind
     // simulation frame just 1 frame back.
     if state.last_game_frame != Some(game_time.frame_number) {
         state.last_game_frame = Some(game_time.frame_number);
@@ -580,19 +611,35 @@ fn simulation_tick_run_criteria(
 }
 
 pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
-    log::trace!(
-        "Concluding simulation frame tick: {}, {}",
-        time.server_frame.value(),
-        time.player_frame.value()
-    );
-    if time.server_frame.value() == u16::MAX {
-        time.server_generation += 1;
+    // Tick server frame (only if we aren't still correcting client mispredictions).
+    if time.player_frames_to_rerun.is_none() {
+        if time.server_frame.value() == u16::MAX {
+            time.server_generation += 1;
+        }
+        time.server_frame += FrameNumber::new(1);
     }
-    time.server_frame += FrameNumber::new(1);
+
+    // Tick player frame.
     if time.player_frame.value() == u16::MAX {
         time.player_generation += 1;
     }
     time.player_frame += FrameNumber::new(1);
+
+    log::trace!(
+        "New frame values: {}, {} (ahead: {}, to rerun: {:?})",
+        time.server_frame.value(),
+        time.player_frame.value(),
+        time.player_frames_ahead(),
+        time.player_frames_to_rerun,
+    );
+
+    // Check whether we finished replaying client inputs to correct mispredictions (check that
+    // we've caught up with the previous `player_frames_to_rerun` value).
+    if let Some(player_frames_to_rerun) = time.player_frames_to_rerun {
+        if time.player_frames_ahead() >= player_frames_to_rerun.value() {
+            time.player_frames_to_rerun = None;
+        }
+    }
 }
 
 pub fn tick_game_frame(mut time: ResMut<GameTime>) {

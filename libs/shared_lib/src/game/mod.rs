@@ -4,7 +4,7 @@ use crate::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
             SwitchPlayerRole, UpdateLevelObject,
         },
-        components::{LevelObjectStaticGhost, PlayerSensor},
+        components::{LevelObjectStaticGhostParent, PlayerSensor},
     },
     messages::{EntityNetId, PlayerNetId},
     player::{Player, PlayerEvent, PlayerUpdates},
@@ -101,7 +101,7 @@ pub fn restart_game(world: &mut World) {
         .clear();
 
     for ghost_entity in world
-        .query_filtered::<Entity, With<LevelObjectStaticGhost>>()
+        .query_filtered::<Entity, With<LevelObjectStaticGhostParent>>()
         .iter(world)
     {
         entities_to_despawn.push(ghost_entity);

@@ -1,7 +1,7 @@
 use bevy::ecs::system::{Query, Res};
 use mr_shared_lib::{
     framebuffer::FrameNumber, game::components::Spawned, player::PlayerSystemParamsMut,
-    simulations_per_second, util::player_respawn_time, SimulationTime,
+    util::PLAYER_RESPAWN_TIME, SimulationTime, SIMULATIONS_PER_SECOND,
 };
 
 pub fn process_scheduled_spawns(
@@ -33,7 +33,7 @@ pub fn process_scheduled_spawns(
             // A kludge to avoid `respawning_at` disappear immediately.
             // TODO: Probably, there's a better way to do this.
             if time.player_frame
-                > respawning_at - player_respawn_time() + FrameNumber::new(simulations_per_second())
+                > respawning_at - PLAYER_RESPAWN_TIME + FrameNumber::new(SIMULATIONS_PER_SECOND)
             {
                 player.respawning_at = None;
             }

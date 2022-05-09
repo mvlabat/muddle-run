@@ -17,13 +17,11 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
     registry::IncrementId,
-    simulations_per_second,
     util::dedup_by_key_unsorted,
-    GameTime, SimulationTime,
+    GameTime, SimulationTime, LAG_COMPENSATED_FRAMES,
 };
 
 pub const SERVER_UPDATES_LIMIT: u16 = 64;
-pub const MAX_LAG_COMPENSATION_MILLIS: u16 = 200;
 
 pub fn process_player_input_updates(
     time: Res<GameTime>,
@@ -35,9 +33,7 @@ pub fn process_player_input_updates(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    let lag_compensated_frames =
-        (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / simulations_per_second() as f32)) as u16;
-    let min_frame_number = time.frame_number - FrameNumber::new(lag_compensated_frames);
+    let min_frame_number = time.frame_number - LAG_COMPENSATED_FRAMES;
 
     let deferred_updates = deferred_updates.drain();
     for (player_net_id, mut player_updates) in deferred_updates {
@@ -57,7 +53,13 @@ pub fn process_player_input_updates(
 
         let player_update = player_updates
             .first()
-            .expect("Expected at least one update for a player hash map entry");
+            .expect("Expected at least one update for a player hash map entry")
+            .clone();
+        let frames_off_lag_compensation_limit = if player_update.frame_number > min_frame_number {
+            FrameNumber::new(0)
+        } else {
+            player_update.frame_number.diff_abs(min_frame_number)
+        };
         let updates = updates.get_direction_mut(
             player_net_id,
             player_update.frame_number,
@@ -69,11 +71,10 @@ pub fn process_player_input_updates(
             let next_player_update = updates_iter.peek();
 
             let duplicate_updates_from =
-                std::cmp::max(player_update.frame_number, min_frame_number);
-            let duplicate_updates_to = next_player_update.map_or_else(
-                || player_frame_number + FrameNumber::new(1),
-                |update| update.frame_number,
-            );
+                player_update.frame_number + frames_off_lag_compensation_limit;
+            let duplicate_updates_to = next_player_update
+                .map_or_else(|| player_frame_number, |update| update.frame_number)
+                + frames_off_lag_compensation_limit;
 
             let update_to_insert = Some(PlayerDirectionUpdate {
                 direction: player_update.direction,
@@ -83,7 +84,7 @@ pub fn process_player_input_updates(
             log::trace!(
                 "Player ({}) update for frame {} (fill from {} up to {})",
                 player_net_id.0,
-                player_update.frame_number.value(),
+                player_update.frame_number,
                 duplicate_updates_from,
                 duplicate_updates_to,
             );
@@ -91,7 +92,7 @@ pub fn process_player_input_updates(
             // We fill the buffer of player direction commands with the updates that come from
             // clients. We populate each frame until a command changes or we've reached the last
             // acknowledged client's frame (`PlayerUpdate::frame_number`).
-            for frame_number in duplicate_updates_from..duplicate_updates_to {
+            for frame_number in duplicate_updates_from..=duplicate_updates_to {
                 let existing_update = updates.get(frame_number);
                 // We don't want to allow re-writing updates.
                 if existing_update.is_none() && updates.can_insert(frame_number) {

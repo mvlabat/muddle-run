@@ -14,7 +14,10 @@ use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
         client_factories::VisibilitySettings,
-        components::{LevelObjectMovement, LevelObjectStaticGhost, PlayerDirection, Position},
+        components::{
+            LevelObjectMovement, LevelObjectServerGhostChild, LevelObjectStaticGhostParent,
+            PlayerDirection, Position,
+        },
         level::LevelState,
     },
     messages::{EntityNetId, PlayerNetId},
@@ -202,8 +205,15 @@ pub struct InspectObjectQueries<'w, 's> {
     level_state: Res<'w, LevelState>,
     positions: Query<'w, 's, &'static Position>,
     player_directions: Query<'w, 's, &'static PlayerDirection>,
-    level_object_movements: Query<'w, 's, &'static LevelObjectMovement>,
-    ghosts: Query<'w, 's, &'static LevelObjectStaticGhost>,
+    level_objects: Query<
+        'w,
+        's,
+        (
+            &'static LevelObjectMovement,
+            Option<&'static LevelObjectServerGhostChild>,
+        ),
+    >,
+    static_ghosts: Query<'w, 's, &'static LevelObjectStaticGhostParent>,
 }
 
 pub fn inspect_object(
@@ -235,7 +245,9 @@ pub fn inspect_object(
                 ui.label(format!("Player name: {}", player_name));
             }
             ui.label(format!("Entity: {:?}", entity));
-            if let Ok(LevelObjectStaticGhost(parent_entity)) = queries.ghosts.get(entity) {
+            if let Ok(LevelObjectStaticGhostParent(parent_entity)) =
+                queries.static_ghosts.get(entity)
+            {
                 entity = *parent_entity;
             }
             if let Some(level_object_label) = queries
@@ -246,7 +258,14 @@ pub fn inspect_object(
             {
                 ui.label(&level_object_label);
             }
-            if let Ok(level_object_movement) = queries.level_object_movements.get(entity) {
+            if let Ok((level_object_movement, level_object_server_ghost)) =
+                queries.level_objects.get(entity)
+            {
+                if let Some(LevelObjectServerGhostChild(server_ghost_entity)) =
+                    level_object_server_ghost
+                {
+                    ui.label(format!("Server ghost: {:?}", server_ghost_entity));
+                }
                 ui.collapsing("Route", |ui| {
                     ui.label(format!(
                         "Frame started: {}",

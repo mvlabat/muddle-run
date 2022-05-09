@@ -31,7 +31,7 @@ impl<T: Integer> WrappedCounter<T> {
 
 impl<T: Integer> WrappedCounter<T>
 where
-    u8: AsPrimitive<T>,
+    u16: AsPrimitive<T>,
 {
     pub fn diff_abs(&self, rhs: Self) -> Self {
         *self.max(&rhs) - *self.min(&rhs)
@@ -41,6 +41,14 @@ where
         let old = *self;
         *self = WrappedCounter::add(self, Self::new(1.as_())).0;
         old
+    }
+
+    pub fn add_signed(&self, rhs: i16) -> Self {
+        if rhs > 0 {
+            self.add(Self::new(rhs.unsigned_abs().as_())).0
+        } else {
+            self.sub(Self::new(rhs.unsigned_abs().as_()))
+        }
     }
 }
 
@@ -80,7 +88,7 @@ impl<T: Integer> std::ops::SubAssign for WrappedCounter<T> {
 
 impl<T: 'static + Integer> std::cmp::PartialOrd for WrappedCounter<T>
 where
-    u8: AsPrimitive<T>,
+    u16: AsPrimitive<T>,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -89,18 +97,18 @@ where
 
 impl<T: 'static + Integer> std::cmp::Ord for WrappedCounter<T>
 where
-    u8: AsPrimitive<T>,
+    u16: AsPrimitive<T>,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let (d1, o1) = self.0.overflowing_sub(&other.0);
         let (d2, _) = other.0.overflowing_sub(&self.0);
         if o1 {
-            if d2 > T::max_value() / 2u8.as_() {
+            if d2 > T::max_value() / 2u16.as_() {
                 std::cmp::Ordering::Greater
             } else {
                 std::cmp::Ordering::Less
             }
-        } else if d1 > T::max_value() / 2u8.as_() {
+        } else if d1 > T::max_value() / 2u16.as_() {
             std::cmp::Ordering::Less
         } else {
             self.0.cmp(&other.0)
@@ -110,7 +118,7 @@ where
 
 impl<T: 'static + Integer> std::iter::Step for WrappedCounter<T>
 where
-    u8: AsPrimitive<T>,
+    u16: AsPrimitive<T>,
     usize: AsPrimitive<T>,
 {
     fn steps_between(start: &Self, end: &Self) -> Option<usize> {

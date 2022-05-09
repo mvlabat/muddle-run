@@ -5,7 +5,7 @@ use bevy::{
 };
 use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::{
-    messages::RespawnPlayerReason, player::PlayerRole, simulations_per_second, GameTime,
+    messages::RespawnPlayerReason, player::PlayerRole, GameTime, SIMULATIONS_PER_SECOND,
 };
 
 pub fn help_ui(
@@ -35,7 +35,7 @@ pub fn help_ui(
                         .value()
                         .saturating_sub(time.frame_number.value())
                         as f32
-                        / simulations_per_second() as f32)
+                        / SIMULATIONS_PER_SECOND as f32)
                         .ceil() as u16;
                     ui.label(format!("Respawning in {}...", respawning_in_secs));
                 } else {

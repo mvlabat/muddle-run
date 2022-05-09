@@ -15,7 +15,7 @@ use mr_shared_lib::{
     messages::{DeferredMessagesQueue, PlayerNetId, RespawnPlayer, RespawnPlayerReason},
     player::{Player, PlayerSystemParamsMut},
     server::level_spawn_location_service::LevelSpawnLocationService,
-    util::player_respawn_time,
+    util::PLAYER_RESPAWN_TIME,
     SimulationTime,
 };
 
@@ -27,7 +27,7 @@ pub fn process_player_events(
     mut respawn_player_messages_queue: ResMut<DeferredMessagesQueue<RespawnPlayer>>,
     mut despawn_players_commands: ResMut<DeferredQueue<commands::DespawnPlayer>>,
 ) {
-    let respawn_at = time.server_frame + player_respawn_time();
+    let respawn_at = time.server_frame + PLAYER_RESPAWN_TIME;
 
     let mut respawns = Vec::new();
     respawns.extend(

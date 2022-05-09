@@ -1,12 +1,13 @@
 use crate::{
     game::{
         components::{
-            LevelObjectTag, PlayerFrameSimulated, PlayerSensor, PlayerSensorState, PlayerSensors,
-            Position, Spawned,
+            LevelObjectServerGhostParent, LevelObjectTag, PlayerFrameSimulated, PlayerSensor,
+            PlayerSensorState, PlayerSensors, Position, Spawned,
         },
         events::{CollisionLogicChanged, PlayerDeath, PlayerFinish},
         level::LevelParams,
     },
+    util::get_item,
     SimulationTime,
 };
 use bevy::{
@@ -42,16 +43,29 @@ pub fn process_collision_events(
     mut collision_logic_changed_events: EventReader<CollisionLogicChanged>,
     mut queries: CollisionQueries,
     removed_level_objects: RemovedComponents<LevelObjectTag>,
+    level_object_server_ghost_parents: Query<&LevelObjectServerGhostParent>,
     level: LevelParams,
 ) -> Vec<Entity> {
     let mut changed_players = HashSet::default();
     let removed_level_objects = removed_level_objects.iter().collect::<Vec<_>>();
 
     for event in collision_events.iter() {
-        let (contacting, entity1, entity2) = match event {
+        let (contacting, mut entity1, mut entity2) = match event {
             CollisionEvent::Started(e1, e2, _flags) => (true, *e1, *e2),
             CollisionEvent::Stopped(e1, e2, _flags) => (false, *e1, *e2),
         };
+
+        if let Some(LevelObjectServerGhostParent(level_object_entity)) =
+            get_item(&level_object_server_ghost_parents, entity1)
+        {
+            entity1 = *level_object_entity;
+        }
+        if let Some(LevelObjectServerGhostParent(level_object_entity)) =
+            get_item(&level_object_server_ghost_parents, entity2)
+        {
+            entity2 = *level_object_entity;
+        }
+
         let (level_object_entity, level_object, other_entity) = match (
             level.level_object_by_entity(entity1),
             level.level_object_by_entity(entity2),

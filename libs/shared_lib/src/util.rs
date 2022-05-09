@@ -1,14 +1,19 @@
 use crate::{
-    framebuffer::FrameNumber, game::components::rotate, simulations_per_second, PLAYER_RADIUS,
-    PLAYER_SENSOR_RADIUS,
+    framebuffer::FrameNumber, game::components::rotate, PLAYER_RADIUS, PLAYER_SENSOR_RADIUS,
+    SIMULATIONS_PER_SECOND,
 };
-use bevy::math::Vec2;
+use bevy::{
+    ecs::{
+        entity::Entity,
+        query::{Fetch, FilterFetch, QueryEntityError, WorldQuery},
+        system::Query,
+    },
+    math::Vec2,
+};
 use bevy_rapier2d::geometry::ColliderView;
 use rand::Rng;
 
-pub fn player_respawn_time() -> FrameNumber {
-    FrameNumber::new(simulations_per_second() * 3)
-}
+pub const PLAYER_RESPAWN_TIME: FrameNumber = FrameNumber::new(SIMULATIONS_PER_SECOND * 3);
 
 pub fn player_sensor_outline() -> Vec<Vec2> {
     let sensors_count = 8;
@@ -58,54 +63,38 @@ where
     std::mem::swap(&mut new, vec);
 }
 
-#[cfg(feature = "profiler")]
-thread_local!(static PUFFIN_SCOPES: std::cell::RefCell<bevy::utils::HashMap<bevy::ecs::schedule::BoxedStageLabel, puffin::ProfilerScope>> = std::cell::RefCell::new(bevy::utils::HashMap::default()));
+#[track_caller]
+pub fn get_item<'a, 'w, 's, Q: WorldQuery, F: WorldQuery>(
+    query: &'a Query<'w, 's, Q, F>,
+    entity: Entity,
+) -> Option<<Q::ReadOnlyFetch as Fetch<'a, 's>>::Item>
+where
+    F::Fetch: FilterFetch,
+{
+    match query.get(entity) {
+        Ok(item) => Some(item),
+        err @ Err(QueryEntityError::AliasedMutability(_)) => {
+            err.unwrap();
+            unreachable!()
+        }
+        Err(QueryEntityError::QueryDoesNotMatch(_) | QueryEntityError::NoSuchEntity(_)) => None,
+    }
+}
 
-#[cfg(feature = "profiler")]
-pub fn profile_schedule(schedule: &mut bevy::ecs::schedule::Schedule) {
-    use bevy::ecs::system::IntoExclusiveSystem;
-
-    let stages = schedule
-        .iter_stages()
-        .map(|(stage_label, _)| stage_label.dyn_clone())
-        .collect::<Vec<_>>();
-    for stage_label in stages {
-        let puffin_id: &'static str =
-            Box::leak(format!("Stage {:?}", stage_label).into_boxed_str());
-        let before_stage_label: &'static str =
-            Box::leak(format!("puffin_before {:?}", stage_label).into_boxed_str());
-        let after_stage_label: &'static str =
-            Box::leak(format!("puffin_after {:?}", stage_label).into_boxed_str());
-        let stage_label_to_remove = stage_label.dyn_clone();
-
-        schedule.add_stage_before(
-            stage_label.dyn_clone(),
-            before_stage_label,
-            bevy::ecs::schedule::SystemStage::parallel().with_system(
-                (move |_world: &mut bevy::ecs::world::World| {
-                    PUFFIN_SCOPES.with(|scopes| {
-                        let mut scopes = scopes.borrow_mut();
-                        scopes.insert(
-                            stage_label.dyn_clone(),
-                            puffin::ProfilerScope::new(puffin_id, puffin::current_file_name!(), ""),
-                        );
-                    });
-                })
-                .exclusive_system(),
-            ),
-        );
-        schedule.add_stage_after(
-            stage_label_to_remove.dyn_clone(),
-            after_stage_label,
-            bevy::ecs::schedule::SystemStage::parallel().with_system(
-                (move |_world: &mut bevy::ecs::world::World| {
-                    PUFFIN_SCOPES.with(|scopes| {
-                        let mut scopes = scopes.borrow_mut();
-                        scopes.remove(&stage_label_to_remove);
-                    });
-                })
-                .exclusive_system(),
-            ),
-        );
+#[track_caller]
+pub fn get_item_mut<'a, Q: WorldQuery, F: WorldQuery>(
+    query: &'a mut Query<Q, F>,
+    entity: Entity,
+) -> Option<<Q::Fetch as Fetch<'a, 'a>>::Item>
+where
+    F::Fetch: FilterFetch,
+{
+    match query.get_mut(entity) {
+        Ok(item) => Some(item),
+        err @ Err(QueryEntityError::AliasedMutability(_)) => {
+            err.unwrap();
+            unreachable!()
+        }
+        Err(QueryEntityError::QueryDoesNotMatch(_) | QueryEntityError::NoSuchEntity(_)) => None,
     }
 }

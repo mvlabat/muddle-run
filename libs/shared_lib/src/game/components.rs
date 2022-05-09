@@ -72,18 +72,28 @@ impl PlayerSensorState {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct LevelObjectTag;
 
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct LevelObjectLabel(pub String);
 
-/// Represents a level object at its initial position.
-#[derive(Component)]
-pub struct LevelObjectStaticGhost(pub Entity);
-
+/// Entity having this component represents a level object at its initial position.
+/// This component points to a parent, so an entity having this component is a child.
 #[derive(Component)]
 pub struct LevelObjectStaticGhostParent(pub Entity);
+
+#[derive(Component)]
+pub struct LevelObjectStaticGhostChild(pub Entity);
+
+/// Entity having this component represents a level object simulated at server time.
+/// This component points to a parent, so an entity having this component is a child.
+#[derive(Component, Debug)]
+pub struct LevelObjectServerGhostParent(pub Entity);
+
+/// Points to an entity that is a ghost of a level object simulated at server time.
+#[derive(Component, Debug)]
+pub struct LevelObjectServerGhostChild(pub Entity);
 
 /// Represents Player's input (not an actual direction of entity's movement).
 #[derive(Component, Debug)]
@@ -140,7 +150,7 @@ pub enum SpawnCommand {
 
 /// The purpose of this component is providing a frame number of when a component was spawned,
 /// to be able to avoid processing an entity in case rewind game state during lag compensation.
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, Default)]
 pub struct Spawned {
     /// We store an option since FrameNumber represents a wrapped counter (i.e. cycling counter).
     /// If a component gets old enough, we set the timestamp to `None`, as we become sure that
@@ -231,6 +241,10 @@ pub struct LevelObjectMovement {
     pub points_progress: Vec<LevelObjectMovementPoint>,
     pub movement_type: LevelObjectMovementType,
 }
+
+/// A marker component to tag an entity that is excluded from physics simulations.
+#[derive(Component, Clone, Copy)]
+pub struct LockPhysics(pub bool);
 
 #[derive(Clone)]
 pub struct LevelObjectMovementPoint {

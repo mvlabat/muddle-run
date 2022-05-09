@@ -11,7 +11,8 @@ use crate::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, UpdateLevelObject,
         },
         components::{
-            LevelObjectLabel, LevelObjectStaticGhost, LevelObjectStaticGhostParent, LevelObjectTag,
+            LevelObjectLabel, LevelObjectServerGhostChild, LevelObjectServerGhostParent,
+            LevelObjectStaticGhostChild, LevelObjectStaticGhostParent, LevelObjectTag, LockPhysics,
             PhysicsBundle, PlayerDirection, PlayerFrameSimulated, PlayerSensor, PlayerSensorState,
             PlayerSensors, PlayerTag, Position, SpawnCommand, Spawned,
         },
@@ -141,12 +142,13 @@ pub fn spawn_players(
                 &mut pbr_client_params,
                 command.start_position,
             );
-            *player.collision_groups = player_collision_groups();
+            *player.collision_groups = player_collision_groups(!command.is_player_frame_simulated);
             for ((player_sensor_entity, _), sensor_position) in
                 player.sensors.sensors.iter().zip(player_sensor_outline())
             {
                 let mut collision_groups = player_sensors.get_mut(*player_sensor_entity).unwrap();
-                *collision_groups = player_sensor_collision_groups();
+                *collision_groups =
+                    player_sensor_collision_groups(!command.is_player_frame_simulated);
                 let mut sensor_commands = entity_commands.commands().entity(*player_sensor_entity);
                 PlayerSensorClientFactory::insert_components(
                     &mut sensor_commands,
@@ -177,11 +179,19 @@ pub fn spawn_players(
                 sensor_commands
                     .insert(Collider::ball(PLAYER_SENSOR_RADIUS))
                     .insert(Sensor(true))
-                    .insert(player_sensor_collision_groups())
+                    .insert(player_sensor_collision_groups(
+                        !command.is_player_frame_simulated,
+                    ))
                     .insert(ActiveEvents::COLLISION_EVENTS)
                     .insert(Transform::from_translation(sensor_position.extend(0.0)))
                     .insert(GlobalTransform::identity())
                     .insert(PlayerSensor(player_entity));
+                #[cfg(feature = "client")]
+                if command.is_player_frame_simulated {
+                    sensor_commands.insert(PlayerFrameSimulated);
+                } else {
+                    sensor_commands.insert(LockPhysics(false));
+                }
                 sensors.push((sensor_commands.id(), PlayerSensorState::default()));
             }
         });
@@ -191,7 +201,7 @@ pub fn spawn_players(
             .insert_bundle(PhysicsBundle {
                 rigid_body: RigidBody::Dynamic,
                 collider: Collider::ball(PLAYER_RADIUS),
-                collision_groups: player_collision_groups(),
+                collision_groups: player_collision_groups(!command.is_player_frame_simulated),
                 sensor: Sensor(false),
                 locked_axes: LockedAxes::ROTATION_LOCKED,
             })
@@ -228,6 +238,8 @@ pub fn spawn_players(
                 command.net_id.0
             );
             entity_commands.insert(PlayerFrameSimulated);
+        } else {
+            entity_commands.insert(LockPhysics(false));
         }
         entity_commands.insert(PlayerSensors {
             main: PlayerSensorState::default(),
@@ -309,23 +321,21 @@ pub fn despawn_players(
     }
 }
 
-type UpdateLevelObjectsQuery<'w, 's> = Query<
-    'w,
-    's,
-    (
-        Entity,
-        Option<&'static mut Position>,
-        &'static mut Spawned,
-        Option<&'static LevelObjectStaticGhostParent>,
-    ),
-    With<LevelObjectTag>,
->;
+#[derive(WorldQuery)]
+#[world_query(mutable)]
+pub struct UpdateLevelObjectQuery<'w> {
+    entity: Entity,
+    position: Option<&'w mut Position>,
+    spawned: &'w mut Spawned,
+    static_ghost_entity: Option<&'w LevelObjectStaticGhostChild>,
+    server_ghost_entity: Option<&'w LevelObjectServerGhostChild>,
+}
 
 #[derive(SystemParam)]
 pub struct LevelObjectsParams<'w, 's> {
     object_entities: ResMut<'w, EntityRegistry<EntityNetId>>,
     level_state: ResMut<'w, LevelState>,
-    level_objects: UpdateLevelObjectsQuery<'w, 's>,
+    level_object_query: Query<'w, 's, UpdateLevelObjectQuery<'static>>,
 }
 
 pub fn update_level_objects(
@@ -366,17 +376,24 @@ pub fn update_level_objects(
                 .object_entities
                 .remove_by_id(command.object.net_id);
             commands.entity(existing_entity).despawn();
-            let (_, position, spawned, ghost_parent) = level_object_params
-                .level_objects
+            let updated_level_object = level_object_params
+                .level_object_query
                 .get_mut(existing_entity)
                 .expect("Expected a registered level object entity to exist");
-            if let Some(LevelObjectStaticGhostParent(ghost_entity)) = &ghost_parent {
-                commands.entity(*ghost_entity).despawn();
+            if let Some(LevelObjectStaticGhostChild(static_ghost_entity)) =
+                &updated_level_object.static_ghost_entity
+            {
+                commands.entity(*static_ghost_entity).despawn();
             }
-            if let Some(mut position) = position {
+            if let Some(LevelObjectServerGhostChild(server_ghost_entity)) =
+                &updated_level_object.server_ghost_entity
+            {
+                commands.entity(*server_ghost_entity).despawn();
+            }
+            if let Some(mut position) = updated_level_object.position {
                 position_component = Some(position.take());
             }
-            spawned_component = spawned.clone();
+            spawned_component = updated_level_object.spawned.clone();
         }
 
         log::info!("Spawning an object: {:?}", command);
@@ -415,24 +432,28 @@ pub fn update_level_objects(
             entity_commands.insert(position_component);
         }
 
+        let transform = Transform::from_translation(
+            command
+                .object
+                .desc
+                .position()
+                .unwrap_or_default()
+                .extend(0.0),
+        );
         entity_commands
             .insert(command.object.net_id)
             .insert(LevelObjectTag)
             .insert(LevelObjectLabel(command.object.label.clone()))
             .insert(GlobalTransform::identity())
-            .insert(Transform::from_translation(
-                command
-                    .object
-                    .desc
-                    .position()
-                    .unwrap_or_default()
-                    .extend(0.0),
-            ))
+            .insert(transform)
             .insert(GlobalTransform::identity())
             .insert(spawned_component);
 
         if let Some(ref shape) = shape {
-            let physics_bundle = command.object.desc.physics_bundle(shape.clone(), false);
+            let physics_bundle = command
+                .object
+                .desc
+                .physics_bundle(shape.clone(), cfg!(not(feature = "client")));
             // Insert client components later, as they can overwrite some of them (z coordinates
             // of translations for instance).
             insert_client_components(
@@ -445,67 +466,74 @@ pub fn update_level_objects(
             entity_commands.insert_bundle(physics_bundle);
         }
 
-        #[cfg(feature = "client")]
-        entity_commands.insert(PlayerFrameSimulated);
-
         let level_object_entity = entity_commands.id();
         level_object_params
             .object_entities
             .register(command.object.net_id, level_object_entity);
 
         if cfg!(feature = "client") {
-            // Spawning the ghost object.
-            let ghost = entity_commands.commands().spawn();
-            let ghost_entity = ghost.id();
-            entity_commands.insert(LevelObjectStaticGhostParent(ghost_entity));
-            let mut ghost_commands = commands.entity(ghost_entity);
-            ghost_commands
-                .insert(Transform::from_translation(
-                    command
-                        .object
-                        .desc
-                        .position()
-                        .unwrap_or_default()
-                        .extend(0.0),
-                ))
-                .insert(GlobalTransform::identity());
-            if let Some(shape) = shape {
-                let physics_bundle = command.object.desc.physics_bundle(shape, true);
-                // Insert client components later, as they can overwrite some of them (z coordinates
-                // of translations for instance).
+            // Spawning the ghost objects.
+            let static_ghost = entity_commands.commands().spawn();
+            let static_ghost_entity = static_ghost.id();
+            let server_ghost = entity_commands.commands().spawn();
+            let server_ghost_entity = server_ghost.id();
+
+            entity_commands
+                .insert(PlayerFrameSimulated)
+                .insert(LevelObjectStaticGhostChild(static_ghost_entity))
+                .insert(LevelObjectServerGhostChild(server_ghost_entity));
+
+            let mut static_ghost_commands = commands.entity(static_ghost_entity);
+            static_ghost_commands
+                // Even if we don't necessarily render an object, we still want nested transforms
+                // to work.
+                .insert(transform)
+                .insert(GlobalTransform::identity())
+                .insert(LevelObjectStaticGhostParent(level_object_entity));
+            if let Some(ref shape) = shape {
                 insert_client_components(
-                    &mut ghost_commands,
+                    &mut static_ghost_commands,
                     &command.object,
                     true,
-                    &physics_bundle.collider.raw,
+                    shape,
                     &mut pbr_client_params,
                 );
-                ghost_commands.insert_bundle(physics_bundle);
             }
-            ghost_commands.insert(LevelObjectStaticGhost(level_object_entity));
+
+            let mut server_ghost_commands = commands.entity(server_ghost_entity);
+            if let Some(shape) = shape {
+                let physics_bundle = command.object.desc.physics_bundle(shape, true);
+                server_ghost_commands
+                    .insert(LockPhysics(false))
+                    .insert_bundle(physics_bundle)
+                    .insert(LevelObjectServerGhostParent(level_object_entity))
+                    .insert(transform)
+                    .insert(GlobalTransform::identity());
+            }
         }
     }
 }
 
+type GhostEntites = Option<(
+    &'static LevelObjectStaticGhostChild,
+    &'static LevelObjectServerGhostChild,
+)>;
+
 pub fn poll_calculating_shapes(
     mut commands: Commands,
-    time: Res<SimulationTime>,
+    time: Res<GameTime>,
     level_state: Res<LevelState>,
     mut pbr_client_params: PbrClientParams,
-    level_objects_query: Query<(
-        &EntityNetId,
-        &Spawned,
-        Option<&LevelObjectStaticGhostParent>,
-    )>,
+    level_objects_query: Query<(&EntityNetId, &Spawned, GhostEntites)>,
     collider_shape_receiver: Res<ColliderShapeReceiver>,
 ) {
     while let Ok((entity, shape_result)) = collider_shape_receiver.try_recv() {
-        let (entity_net_id, spawned, ghost_parent) = match level_objects_query.get(entity) {
+        let (entity_net_id, spawned, ghost_entities) = match level_objects_query.get(entity) {
             Ok(r) => r,
             Err(_) => continue,
         };
 
-        if !spawned.is_spawned(time.player_frame) {
+        if !spawned.is_spawned(time.frame_number) {
             continue;
         }
 
@@ -518,7 +546,7 @@ pub fn poll_calculating_shapes(
                 log::debug!(
                     "Calculating shape for {:?} has finished (frame: {})",
                     entity,
-                    time.player_frame
+                    time.frame_number
                 );
                 shape
             }
@@ -526,24 +554,15 @@ pub fn poll_calculating_shapes(
                 log::error!(
                     "Calculating shape for {:?} has failed (frame: {})",
                     entity,
-                    time.player_frame
+                    time.frame_number
                 );
-                // Even if we don't render an object, we still want nested transforms to work.
-                if let Some(position) = level_object.desc.position() {
-                    entity_commands.insert(GlobalTransform::from_translation(position.extend(0.0)));
-                    entity_commands.insert(Transform::from_translation(position.extend(0.0)));
-                    if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost_parent {
-                        let mut entity_commands = commands.entity(*ghost_entity);
-                        entity_commands
-                            .insert(GlobalTransform::from_translation(position.extend(0.0)));
-                        entity_commands.insert(Transform::from_translation(position.extend(0.0)));
-                    }
-                }
                 continue;
             }
         };
 
-        let physics_bundle = level_object.desc.physics_bundle(shape.clone(), false);
+        let physics_bundle = level_object
+            .desc
+            .physics_bundle(shape.clone(), cfg!(not(feature = "client")));
         insert_client_components(
             &mut entity_commands,
             level_object,
@@ -553,17 +572,23 @@ pub fn poll_calculating_shapes(
         );
         entity_commands.insert_bundle(physics_bundle);
 
-        if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost_parent {
-            let mut entity_commands = commands.entity(*ghost_entity);
-            let physics_bundle = level_object.desc.physics_bundle(shape, true);
+        if let Some((
+            LevelObjectStaticGhostChild(static_ghost_entity),
+            LevelObjectServerGhostChild(server_ghost_entity),
+        )) = ghost_entities
+        {
+            let mut static_ghost_commands = commands.entity(*static_ghost_entity);
             insert_client_components(
-                &mut entity_commands,
+                &mut static_ghost_commands,
                 level_object,
                 true,
-                &physics_bundle.collider.raw,
+                &shape,
                 &mut pbr_client_params,
             );
-            entity_commands.insert_bundle(physics_bundle);
+
+            let mut server_ghost_commands = commands.entity(*server_ghost_entity);
+            let physics_bundle = level_object.desc.physics_bundle(shape, true);
+            server_ghost_commands.insert_bundle(physics_bundle);
         }
     }
 }
@@ -619,7 +644,7 @@ pub fn despawn_level_objects(
         (
             &mut Spawned,
             &mut CollisionGroups,
-            Option<&LevelObjectStaticGhostParent>,
+            Option<&LevelObjectStaticGhostChild>,
         ),
         With<LevelObjectTag>,
     >,
@@ -672,7 +697,7 @@ pub fn despawn_level_objects(
                     &mut commands.entity(entity),
                     &mut pbr_client_params,
                 );
-                if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost_parent {
+                if let Some(LevelObjectStaticGhostChild(ghost_entity)) = ghost_parent {
                     PlaneClientFactory::remove_components(
                         &mut commands.entity(*ghost_entity),
                         &mut pbr_client_params,
@@ -684,7 +709,7 @@ pub fn despawn_level_objects(
                     &mut commands.entity(entity),
                     &mut pbr_client_params,
                 );
-                if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost_parent {
+                if let Some(LevelObjectStaticGhostChild(ghost_entity)) = ghost_parent {
                     CubeClientFactory::remove_components(
                         &mut commands.entity(*ghost_entity),
                         &mut pbr_client_params,
@@ -696,7 +721,7 @@ pub fn despawn_level_objects(
                     &mut commands.entity(entity),
                     &mut pbr_client_params,
                 );
-                if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost_parent {
+                if let Some(LevelObjectStaticGhostChild(ghost_entity)) = ghost_parent {
                     RoutePointClientFactory::remove_components(
                         &mut commands.entity(*ghost_entity),
                         &mut pbr_client_params,
@@ -713,22 +738,22 @@ pub fn process_spawned_entities(
     game_time: Res<GameTime>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,
     mut object_entities: ResMut<EntityRegistry<EntityNetId>>,
-    mut spawned_entities: Query<(
-        Entity,
-        &mut Spawned,
-        Option<&LevelObjectStaticGhostParent>,
-        Option<&PlayerSensors>,
-    )>,
+    mut spawned_entities: Query<(Entity, &mut Spawned, GhostEntites, Option<&PlayerSensors>)>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    for (entity, mut spawned, ghost, player_sensors) in spawned_entities.iter_mut() {
+    for (entity, mut spawned, ghost_entities, player_sensors) in spawned_entities.iter_mut() {
         spawned.pop_outdated_commands(game_time.frame_number);
         if spawned.can_be_removed(game_time.frame_number) {
             log::debug!("Despawning entity {:?}", entity);
             commands.entity(entity).despawn();
-            if let Some(LevelObjectStaticGhostParent(ghost_entity)) = ghost {
-                commands.entity(*ghost_entity).despawn();
+            if let Some((
+                LevelObjectStaticGhostChild(static_ghost_entity),
+                LevelObjectServerGhostChild(server_ghost_entity),
+            )) = ghost_entities
+            {
+                commands.entity(*static_ghost_entity).despawn();
+                commands.entity(*server_ghost_entity).despawn();
             }
             if let Some(PlayerSensors { main: _, sensors }) = player_sensors {
                 for (sensor_entity, _) in sensors {

@@ -44,13 +44,14 @@ use bevy::{
 };
 use bevy_egui::EguiPlugin;
 use bevy_inspector_egui::{WorldInspectorParams, WorldInspectorPlugin};
+use bevy_inspector_egui_rapier::InspectableRapierPlugin;
 use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
     game::client_factories::VisibilitySettings,
     messages::{EntityNetId, PlayerNetId},
     net::{ConnectionState, ConnectionStatus, MessageId},
-    simulations_per_second, GameState, GameTime, MuddleSharedPlugin, SimulationTime,
-    COMPONENT_FRAMEBUFFER_LIMIT, TICKS_PER_NETWORK_BROADCAST,
+    GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
+    SIMULATIONS_PER_SECOND, TICKS_PER_NETWORK_BROADCAST,
 };
 use std::{marker::PhantomData, net::SocketAddr};
 use url::Url;
@@ -73,33 +74,30 @@ pub struct MuddleClientPlugin;
 
 impl Plugin for MuddleClientPlugin {
     fn build(&self, app: &mut App) {
-        let input_stage = SystemStage::parallel()
+        let input_stage = SystemStage::single_threaded()
             // Processing network events should happen before tracking input
             // because we reset current's player inputs on each delta update.
-            .with_system(maintain_connection.label("connection"))
-            .with_system(process_network_events.label("network").after("connection"))
-            .with_system(input::track_input_events.label("input").after("network"))
-            .with_system(input::cast_mouse_ray.after("input"));
-        let broadcast_updates_stage = SystemStage::parallel()
+            .with_system(maintain_connection)
+            .with_system(process_network_events.after(maintain_connection))
+            .with_system(input::track_input_events.after(process_network_events))
+            .with_system(input::cast_mouse_ray.after(input::track_input_events));
+        let broadcast_updates_stage = SystemStage::single_threaded()
             .with_system(send_network_updates)
             .with_system(send_requests);
-        let post_tick_stage = SystemStage::parallel()
+        let post_tick_stage = SystemStage::single_threaded()
             .with_system(control_builder_visibility)
             .with_system(update_player_sensor_materials)
-            .with_system(reattach_camera.label("reattach_camera"))
-            .with_system(move_free_camera_pivot.after("reattach_camera"))
-            .with_system(pause_simulation.label("pause_simulation"))
-            .with_system(
-                control_ticking_speed
-                    .label("control_speed")
-                    .after("pause_simulation"),
-            )
-            .with_system(fill_actual_frames_ahead.after("control_speed"))
-            .with_system(update_debug_ui_state.after("pause_simulation"));
+            .with_system(reattach_camera)
+            .with_system(move_free_camera_pivot.after(reattach_camera))
+            .with_system(pause_simulation)
+            .with_system(update_debug_ui_state.after(pause_simulation))
+            .with_system(control_ticking_speed.after(pause_simulation))
+            .with_system(fill_actual_frames_ahead.after(control_ticking_speed));
 
         app.add_plugin(bevy_mod_picking::PickingPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(EguiPlugin)
+            .add_plugin(InspectableRapierPlugin)
             .add_plugin(WorldInspectorPlugin::new())
             .init_resource::<WindowInnerSize>()
             .init_resource::<input::MouseScreenPosition>()
@@ -113,7 +111,7 @@ impl Plugin for MuddleClientPlugin {
             .add_plugin(MuddleSharedPlugin::new(
                 IntoSystem::into_system(net_adaptive_run_criteria),
                 input_stage,
-                SystemStage::parallel(),
+                SystemStage::single_threaded(),
                 broadcast_updates_stage,
                 post_tick_stage,
                 None,
@@ -134,9 +132,6 @@ impl Plugin for MuddleClientPlugin {
             // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.
             .add_system(process_control_points_input.after("builder_system_set"))
             .add_system(spawn_control_points.after("builder_system_set"));
-
-        #[cfg(feature = "profiler")]
-        mr_shared_lib::util::profile_schedule(&mut app.schedule);
 
         let world = &mut app.world;
         world
@@ -200,7 +195,7 @@ impl InitialRtt {
 
     pub fn frames(&self) -> Option<FrameNumber> {
         self.duration_secs()
-            .map(|duration| FrameNumber::new((simulations_per_second() as f32 * duration) as u16))
+            .map(|duration| FrameNumber::new((SIMULATIONS_PER_SECOND as f32 * duration) as u16))
     }
 }
 
@@ -249,7 +244,7 @@ pub struct GameTicksPerSecond {
 impl Default for GameTicksPerSecond {
     fn default() -> Self {
         Self {
-            rate: simulations_per_second(),
+            rate: SIMULATIONS_PER_SECOND,
         }
     }
 }
@@ -414,7 +409,7 @@ fn control_ticking_speed(
     params.tick_rate.rate = match params.delay_server_time.frame_count.cmp(&0) {
         Ordering::Equal => {
             *params.adjusted_speed_reason = AdjustedSpeedReason::None;
-            simulations_per_second()
+            SIMULATIONS_PER_SECOND
         }
         Ordering::Greater => {
             *params.adjusted_speed_reason = AdjustedSpeedReason::SyncServerFrame;
@@ -437,7 +432,7 @@ fn control_ticking_speed(
         {
             Ordering::Equal => {
                 *params.adjusted_speed_reason = AdjustedSpeedReason::None;
-                simulations_per_second()
+                SIMULATIONS_PER_SECOND
             }
             Ordering::Greater => {
                 *params.adjusted_speed_reason = AdjustedSpeedReason::NewFramesAheadTarget;
@@ -460,14 +455,24 @@ fn control_ticking_speed(
             AdjustedSpeedReason::SyncServerFrame => {
                 if params.tick_rate.rate == faster_tick_rate() {
                     params.delay_server_time.frame_count += 1;
+                    log::trace!(
+                        "Speed server up (adjust: sync, delay: {})",
+                        params.delay_server_time.frame_count
+                    );
                 } else if params.tick_rate.rate == slower_tick_rate() {
+                    log::trace!(
+                        "Slow server down (adjust: sync, delay: {})",
+                        params.delay_server_time.frame_count
+                    );
                     params.delay_server_time.frame_count -= 1;
                 }
             }
             AdjustedSpeedReason::NewFramesAheadTarget => {
                 if params.tick_rate.rate == faster_tick_rate() {
+                    log::trace!("Slow server down (adjust: target)");
                     params.simulation_time.server_frame -= FrameNumber::new(1);
                 } else if params.tick_rate.rate == slower_tick_rate() {
+                    log::trace!("Speed player up (adjust: target)");
                     params.simulation_time.player_frame -= FrameNumber::new(1);
                     params.time.frame_number -= FrameNumber::new(1);
                 }
@@ -481,22 +486,24 @@ fn control_ticking_speed(
     *prev_generation = params.time.session;
 }
 
+#[allow(clippy::assertions_on_constants)]
 fn faster_tick_rate() -> u16 {
     assert!(
-        simulations_per_second() % TICKING_SPEED_FACTOR == 0,
+        SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR == 0,
         "SIMULATIONS_PER_SECOND must a multiple of {}",
         TICKING_SPEED_FACTOR
     );
-    simulations_per_second() + simulations_per_second() / TICKING_SPEED_FACTOR
+    SIMULATIONS_PER_SECOND + SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
 }
 
+#[allow(clippy::assertions_on_constants)]
 fn slower_tick_rate() -> u16 {
     assert!(
-        simulations_per_second() % TICKING_SPEED_FACTOR == 0,
+        SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR == 0,
         "SIMULATIONS_PER_SECOND must a multiple of {}",
         TICKING_SPEED_FACTOR
     );
-    simulations_per_second() - simulations_per_second() / TICKING_SPEED_FACTOR
+    SIMULATIONS_PER_SECOND - SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
 }
 
 #[derive(Default, Clone)]

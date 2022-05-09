@@ -29,8 +29,8 @@ use mr_shared_lib::{
     game::{
         client_factories::VisibilitySettings,
         components::{
-            LevelObjectStaticGhost, LevelObjectStaticGhostParent, LevelObjectTag, PlayerSensor,
-            PlayerSensors, Spawned,
+            LevelObjectStaticGhostChild, LevelObjectStaticGhostParent, LevelObjectTag,
+            PlayerSensor, PlayerSensors, Spawned,
         },
         level::{CollisionLogic, LevelObjectDesc, LevelParams},
     },
@@ -45,7 +45,7 @@ pub fn control_builder_visibility(
     mut visibility_settings: ResMut<VisibilitySettings>,
     mut level_objects_query: Query<(Entity, &Transform, &mut Visibility), With<LevelObjectTag>>,
     mut ghosts_query: Query<
-        (&Transform, &mut Visibility, &LevelObjectStaticGhost),
+        (&Transform, &mut Visibility, &LevelObjectStaticGhostParent),
         Without<LevelObjectTag>,
     >,
 ) {
@@ -73,7 +73,7 @@ pub fn control_builder_visibility(
             }
         }
 
-        for (transform, mut visible, LevelObjectStaticGhost(parent_entity)) in
+        for (transform, mut visible, LevelObjectStaticGhostParent(parent_entity)) in
             ghosts_query.iter_mut()
         {
             let parent_transform = level_objects_query
@@ -108,7 +108,7 @@ pub fn spawn_control_points(
     mut meshes: ResMut<Assets<Mesh>>,
     edited_level_object: Res<EditedLevelObject>,
     mut prev_edited_level_object: Local<Option<Entity>>,
-    mut control_points_parent_query: Query<&LevelObjectStaticGhostParent>,
+    mut control_points_parent_query: Query<&LevelObjectStaticGhostChild>,
     control_entities_query: ControlEntitiesQuery,
 ) {
     let edited_level_object_entity = edited_level_object
@@ -126,7 +126,7 @@ pub fn spawn_control_points(
 
     if let Some((edited_level_object_entity, edited_level_object)) = &edited_level_object.object {
         if changed {
-            if let Ok(LevelObjectStaticGhostParent(ghost_entity)) =
+            if let Ok(LevelObjectStaticGhostChild(ghost_entity)) =
                 control_points_parent_query.get_mut(*edited_level_object_entity)
             {
                 let mut points = Vec::new();
@@ -225,7 +225,7 @@ pub struct ControlPointsQueries<'w, 's> {
         'w,
         's,
         (
-            &'static LevelObjectStaticGhostParent,
+            &'static LevelObjectStaticGhostChild,
             &'static LevelObjectControlPoints,
             &'static LevelObjectControlBorders,
         ),
@@ -236,7 +236,7 @@ pub struct ControlPointsQueries<'w, 's> {
         's,
         &'static Transform,
         (
-            With<LevelObjectStaticGhost>,
+            With<LevelObjectStaticGhostParent>,
             Without<LevelObjectControlPoint>,
         ),
     >,
@@ -332,9 +332,9 @@ pub fn process_control_points_input(
         None => return,
     };
 
-    let LevelObjectStaticGhostParent(ghost_entity) = control_points_queries
+    let LevelObjectStaticGhostChild(ghost_entity) = control_points_queries
         .control_point_parent_query
-        .get_component::<LevelObjectStaticGhostParent>(*edited_object)
+        .get_component::<LevelObjectStaticGhostChild>(*edited_object)
         .unwrap();
     let ghost_transform = control_points_queries
         .control_point_parent_ghost_query
