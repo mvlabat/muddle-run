@@ -819,7 +819,7 @@ dependencies = [
  "arboard",
  "bevy",
  "bytemuck",
- "egui",
+ "egui 0.17.0",
  "thread_local",
  "webbrowser 0.6.0",
  "wgpu",
@@ -2096,7 +2096,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0a3cd1d47e12f7a17912595241622e373aa652a4e0fa90b3f9278f90a64aedf7"
 dependencies = [
  "ahash",
- "epaint",
+ "epaint 0.17.0",
+ "nohash-hasher",
+]
+
+[[package]]
+name = "egui"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb095a8b9feb9b7ff8f00b6776dffcef059538a3f4a91238e03c900e9c9ad9a2"
+dependencies = [
+ "ahash",
+ "epaint 0.18.1",
  "nohash-hasher",
 ]
 
@@ -2117,6 +2128,12 @@ checksum = "a977a80456be58a2c2d48e69c1d0baadef46cecef5a0c98df141c468da006f12"
 dependencies = [
  "bytemuck",
 ]
+
+[[package]]
+name = "emath"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c223f58c7e38abe1770f367b969f1b3fbd4704b67666bcb65dbb1adb0980ba72"
 
 [[package]]
 name = "encoding_rs"
@@ -2160,8 +2177,22 @@ dependencies = [
  "ahash",
  "atomic_refcell",
  "bytemuck",
- "emath",
+ "emath 0.17.0",
  "nohash-hasher",
+]
+
+[[package]]
+name = "epaint"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c29567088888e8ac3e8f61bbb2ddc820207ebb8d69eefde5bcefa06d65e4e89"
+dependencies = [
+ "ab_glyph",
+ "ahash",
+ "atomic_refcell",
+ "emath 0.18.0",
+ "nohash-hasher",
+ "parking_lot 0.12.0",
 ]
 
 [[package]]
@@ -4609,12 +4640,12 @@ dependencies = [
 
 [[package]]
 name = "puffin_egui"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2956899c9979278b421ce26efa0cb8970873c8ee50ec6c8610ba3218e94caad"
+checksum = "33a9fb5cdbc6ee06502659fdce0bae0c1255a4a62635eda83682ccf3d2c9ad1e"
 dependencies = [
  "chrono",
- "egui",
+ "egui 0.18.1",
  "natord",
  "once_cell",
  "puffin",
