@@ -14,8 +14,8 @@ use crate::{
 use bevy::{
     ecs::{
         entity::Entity,
-        query::With,
-        system::{Commands, ParamSet, Query, Res},
+        query::{With, WorldQuery},
+        system::{Commands, Query, Res},
     },
     math::Vec2,
     utils::HashMap,
@@ -212,56 +212,38 @@ pub fn update_level_object_movement_route_settings(
     }
 }
 
-type LevelObjectsQuerySet<'w, 's> = ParamSet<
-    'w,
-    's,
-    (
-        Query<
-            'w,
-            's,
-            (
-                &'static mut Position,
-                Option<&'static mut LevelObjectMovement>,
-                &'static Spawned,
-            ),
-            With<LevelObjectTag>,
-        >,
-        Query<
-            'w,
-            's,
-            (
-                Entity,
-                &'static Position,
-                Option<&'static LevelObjectMovement>,
-                &'static Spawned,
-            ),
-            With<LevelObjectTag>,
-        >,
-    ),
->;
+#[derive(WorldQuery)]
+#[world_query(mutable)]
+pub struct LevelObjectQuery<'w> {
+    entity: Entity,
+    position: &'w mut Position,
+    movement: Option<&'w mut LevelObjectMovement>,
+    spawned: &'w Spawned,
+}
 
 pub fn process_objects_route_graph(
     time: Res<SimulationTime>,
-    mut level_objects: LevelObjectsQuerySet,
+    mut level_objects: Query<LevelObjectQuery, With<LevelObjectTag>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let mut new_positions = HashMap::<Entity, (Vec2, Vec<LevelObjectMovementPoint>)>::default();
-    let level_objects_readonly = level_objects.p1();
-    for (entity, _, _, _) in level_objects_readonly.iter() {
+    for level_object in level_objects.iter() {
         resolve_new_path_recursive(
             &time,
-            vec![entity],
-            &level_objects_readonly,
+            vec![level_object.entity],
+            &level_objects,
             &mut new_positions,
         );
     }
 
-    let mut level_objects = level_objects.p0();
     for (entity, (new_position, points_progress)) in new_positions {
-        let (mut position, movement, _) = level_objects.get_mut(entity).unwrap();
-        position.buffer.insert(time.player_frame, new_position);
-        if let Some(mut movement) = movement {
+        let mut level_object = level_objects.get_mut(entity).unwrap();
+        level_object
+            .position
+            .buffer
+            .insert(time.player_frame, new_position);
+        if let Some(mut movement) = level_object.movement {
             assert_eq!(movement.points_progress.len(), points_progress.len());
             movement.points_progress = points_progress;
         }
@@ -271,21 +253,13 @@ pub fn process_objects_route_graph(
 fn resolve_new_path_recursive(
     time: &Res<SimulationTime>,
     entities_stack: Vec<Entity>,
-    level_objects: &Query<
-        (Entity, &Position, Option<&LevelObjectMovement>, &Spawned),
-        With<LevelObjectTag>,
-    >,
+    level_objects: &Query<LevelObjectQuery, With<LevelObjectTag>>,
     object_updates: &mut HashMap<Entity, (Vec2, Vec<LevelObjectMovementPoint>)>,
 ) {
     let entity = *entities_stack.last().unwrap();
-    let (_entity, _position, movement, spawned): (
-        Entity,
-        &Position,
-        Option<&LevelObjectMovement>,
-        &Spawned,
-    ) = level_objects.get(entity).unwrap();
+    let level_object = level_objects.get(entity).unwrap();
 
-    if !spawned.is_spawned(time.player_frame) {
+    if !level_object.spawned.is_spawned(time.player_frame) {
         return;
     }
 
@@ -293,7 +267,7 @@ fn resolve_new_path_recursive(
         return;
     }
 
-    let movement = match movement {
+    let movement = match level_object.movement {
         Some(movement) => movement,
         None => {
             return;

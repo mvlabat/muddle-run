@@ -22,7 +22,7 @@ use bevy::{
 };
 use bevy_rapier2d::{
     dynamics::{LockedAxes, RigidBody},
-    geometry::{CollisionGroups, Sensor, VHACDParameters},
+    geometry::{Sensor, VHACDParameters},
     na::Point2,
     rapier::geometry::ColliderShape,
 };
@@ -187,28 +187,20 @@ impl LevelObjectDesc {
         })
     }
 
-    pub fn physics_bundle(&self, shape: ColliderShape, is_ghost: bool) -> PhysicsBundle {
-        let collision_groups = if is_ghost {
-            CollisionGroups {
-                memberships: 0,
-                filters: 0,
-            }
-        } else {
-            level_object_collision_groups()
-        };
+    pub fn physics_bundle(&self, shape: ColliderShape, server_simulated: bool) -> PhysicsBundle {
         match self {
             Self::Plane(_) | Self::RoutePoint(_) => PhysicsBundle {
                 rigid_body: RigidBody::KinematicPositionBased,
                 collider: shape.into(),
                 sensor: Sensor(true),
-                collision_groups,
+                collision_groups: level_object_collision_groups(server_simulated),
                 locked_axes: LockedAxes::TRANSLATION_LOCKED_Z,
             },
             Self::Cube(_) => PhysicsBundle {
                 rigid_body: RigidBody::KinematicPositionBased,
                 collider: shape.into(),
-                sensor: Sensor(is_ghost),
-                collision_groups,
+                sensor: Sensor(false),
+                collision_groups: level_object_collision_groups(server_simulated),
                 locked_axes: LockedAxes::TRANSLATION_LOCKED_Z,
             },
         }

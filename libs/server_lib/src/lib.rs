@@ -35,7 +35,7 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::{Player, PlayerRole},
     registry::IncrementId,
-    simulations_per_second, MuddleSharedPlugin,
+    MuddleSharedPlugin, SIMULATIONS_PER_SECOND,
 };
 use mr_utils_lib::{jwks::Jwks, kube_discovery};
 use reqwest::Url;
@@ -136,26 +136,27 @@ impl Plugin for MuddleServerPlugin {
 
         let input_stage = SystemStage::parallel()
             .with_system(process_scheduled_spawns)
-            .with_system(process_network_events.label("net"))
-            .with_system(process_player_input_updates.after("net"))
-            .with_system(process_switch_role_requests.after("net"))
+            .with_system(process_network_events)
+            .with_system(process_player_input_updates.after(process_network_events))
+            .with_system(process_switch_role_requests.after(process_network_events))
             // It's ok to run the following in random order since object updates aren't possible
             // on the client before an authoritative confirmation that an object has been spawned.
-            .with_system(process_spawn_level_object_requests.after("net"))
-            .with_system(process_update_level_object_requests.after("net"))
-            .with_system(process_despawn_level_object_requests.after("net"));
-        let post_game_stage = SystemStage::parallel()
+            .with_system(process_spawn_level_object_requests.after(process_network_events))
+            .with_system(process_update_level_object_requests.after(process_network_events))
+            .with_system(process_despawn_level_object_requests.after(process_network_events));
+        let post_game_stage = SystemStage::single_threaded()
             .with_system(process_player_events)
             .with_system(save_level);
-        let broadcast_updates_stage = SystemStage::parallel().with_system(send_network_updates);
+        let broadcast_updates_stage =
+            SystemStage::single_threaded().with_system(send_network_updates);
 
         // Game.
         app.add_plugin(MuddleSharedPlugin::new(
-            FixedTimestep::steps_per_second(simulations_per_second() as f64),
+            FixedTimestep::steps_per_second(SIMULATIONS_PER_SECOND as f64),
             input_stage,
             post_game_stage,
             broadcast_updates_stage,
-            SystemStage::parallel(),
+            SystemStage::single_threaded(),
             None,
         ));
 

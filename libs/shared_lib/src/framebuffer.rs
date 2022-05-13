@@ -79,6 +79,10 @@ impl<T> Framebuffer<T> {
             .get_mut((frame_number - self.start_frame).value() as usize)
     }
 
+    pub fn first(&self) -> Option<&T> {
+        self.buffer.front()
+    }
+
     pub fn last(&self) -> Option<&T> {
         self.buffer.back()
     }

@@ -26,7 +26,7 @@ use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
         components::{
-            LevelObjectLabel, LevelObjectStaticGhost, LevelObjectStaticGhostParent, Spawned,
+            LevelObjectLabel, LevelObjectStaticGhostChild, LevelObjectStaticGhostParent, Spawned,
         },
         level::{
             CollisionLogic, LevelObject, LevelObjectDesc, LevelState, ObjectRoute, ObjectRouteDesc,
@@ -38,7 +38,7 @@ use mr_shared_lib::{
     net::MessageId,
     player::PlayerRole,
     registry::EntityRegistry,
-    simulations_per_second, SimulationTime,
+    SimulationTime, SIMULATIONS_PER_SECOND,
 };
 
 pub const DEFAULT_PLANE_CIRCLE_RADIUS: f32 = 10.0;
@@ -52,7 +52,7 @@ pub const DEFAULT_PLANE_CONCAVE_POINTS: &[[f32; 2]] = &[
 ];
 
 pub fn default_period() -> FrameNumber {
-    FrameNumber::new(simulations_per_second() * 10)
+    FrameNumber::new(SIMULATIONS_PER_SECOND * 10)
 }
 
 #[derive(Default, Clone)]
@@ -78,7 +78,7 @@ pub struct LevelObjectQuery<'w> {
     label: &'w LevelObjectLabel,
     // Can be absent for despawned query.
     transform: Option<&'w Transform>,
-    ghost_entity: &'w LevelObjectStaticGhostParent,
+    ghost_entity: &'w LevelObjectStaticGhostChild,
 }
 
 #[derive(SystemParam)]
@@ -90,7 +90,7 @@ pub struct LevelObjects<'w, 's> {
     level_state: Res<'w, LevelState>,
     entity_registry: Res<'w, EntityRegistry<EntityNetId>>,
     query: Query<'w, 's, SpawnedQuery<'static, LevelObjectQuery<'static>>>,
-    ghosts_query: Query<'w, 's, (&'static LevelObjectStaticGhost, &'static Transform)>,
+    ghosts_query: Query<'w, 's, (&'static LevelObjectStaticGhostParent, &'static Transform)>,
 }
 
 #[derive(SystemParam)]
@@ -423,10 +423,10 @@ pub fn process_builder_mouse_input(
             .picked_entity()
             .and_then(|entity| {
                 // Checking whether we've clicked a ghost.
-                if let Ok(LevelObjectStaticGhost(ghost_parent)) =
+                if let Ok(LevelObjectStaticGhostParent(ghost_parent)) =
                     level_objects
                         .ghosts_query
-                        .get_component::<LevelObjectStaticGhost>(entity)
+                        .get_component::<LevelObjectStaticGhostParent>(entity)
                 {
                     is_ghost = true;
                     return Some((
@@ -564,9 +564,8 @@ fn level_object_ui(
                             egui::widgets::DragValue::new(&mut route.period)
                                 .speed(0.1)
                                 .clamp_range(
-                                    simulations_per_second()
-                                        .max(route.start_frame_offset.value() + 1)
-                                        ..=simulations_per_second() * 60,
+                                    SIMULATIONS_PER_SECOND.max(route.start_frame_offset.value() + 1)
+                                        ..=SIMULATIONS_PER_SECOND * 60,
                                 ),
                         );
                         ui.end_row();
@@ -574,7 +573,7 @@ fn level_object_ui(
                         ui.label("Period (second)");
                         ui.label(format!(
                             "{:.2}",
-                            route.period.value() as f32 / simulations_per_second() as f32
+                            route.period.value() as f32 / SIMULATIONS_PER_SECOND as f32
                         ));
                         ui.end_row();
 

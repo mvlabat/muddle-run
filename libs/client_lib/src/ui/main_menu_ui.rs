@@ -434,7 +434,7 @@ pub fn main_menu_ui(
                     match main_menu_ui_screen {
                         MainMenuUiScreen::Auth => {
                             egui::containers::Frame::none()
-                                .margin(egui::style::Margin::symmetric(25.0, 15.0))
+                                .inner_margin(egui::style::Margin::symmetric(25.0, 15.0))
                                 .show(ui, |ui| {
                                     let confirm = authentication_screen(
                                         ui,

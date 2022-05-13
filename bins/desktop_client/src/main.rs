@@ -1,11 +1,11 @@
-use bevy::{app::PluginGroupBuilder, log, prelude::*};
+use bevy::{log, log::LogPlugin, prelude::*};
 use mr_client_lib::{MuddleClientConfig, MuddleClientPlugin, DEFAULT_SERVER_PORT};
 use mr_utils_lib::try_parse_from_env;
 use std::net::SocketAddr;
 
 fn main() {
     let mut app = App::new();
-    app.add_plugin(bevy::log::LogPlugin::default());
+    app.add_plugin(bevy_puffin::PuffinTracePlugin::new().with_scopes_off());
 
     mr_utils_lib::env::load_env();
 
@@ -30,33 +30,9 @@ fn main() {
         ..Default::default()
     })
     .insert_resource(Msaa { samples: 4 })
-    .add_plugins(DefaultBevyPlugins)
+    .add_plugins_with(DefaultPlugins, |plugin| plugin.disable::<LogPlugin>())
     .add_plugin(MuddleClientPlugin)
     .run();
-}
-
-pub struct DefaultBevyPlugins;
-
-impl PluginGroup for DefaultBevyPlugins {
-    fn build(&mut self, group: &mut PluginGroupBuilder) {
-        group.add(bevy::core::CorePlugin::default());
-        group.add(bevy::transform::TransformPlugin::default());
-        group.add(bevy::diagnostic::DiagnosticsPlugin::default());
-        group.add(bevy::input::InputPlugin::default());
-        group.add(bevy::window::WindowPlugin::default());
-        group.add(bevy::asset::AssetPlugin::default());
-        group.add(bevy::scene::ScenePlugin::default());
-        group.add(bevy::winit::WinitPlugin::default());
-        group.add(bevy::render::RenderPlugin::default());
-        group.add(bevy::core_pipeline::CorePipelinePlugin::default());
-        group.add(bevy::sprite::SpritePlugin::default());
-        group.add(bevy::text::TextPlugin::default());
-        group.add(bevy::ui::UiPlugin::default());
-        group.add(bevy::pbr::PbrPlugin::default());
-        group.add(bevy::gltf::GltfPlugin::default());
-        group.add(bevy::audio::AudioPlugin::default());
-        group.add(bevy::gilrs::GilrsPlugin::default());
-    }
 }
 
 fn server_addr() -> Option<SocketAddr> {
