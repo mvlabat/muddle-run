@@ -223,8 +223,8 @@ pub fn spawn_players(
             .insert(Velocity::zero())
             .insert(Spawned::new(time.server_frame));
 
-        // Insert client components later, as they can overwrite some of them (z coordinates
-        // of translations for instance).
+        // Insert client components later, as they can overwrite some of them (z
+        // coordinates of translations for instance).
         PlayerClientFactory::insert_components(
             &mut entity_commands,
             &mut pbr_client_params,
@@ -349,9 +349,9 @@ pub fn update_level_objects(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    // There may be several updates of the same entity per frame. We need to dedup them,
-    // otherwise we crash when trying to clone from the entities that haven't been created yet
-    // (because of not yet flushed command buffer).
+    // There may be several updates of the same entity per frame. We need to dedup
+    // them, otherwise we crash when trying to clone from the entities that
+    // haven't been created yet (because of not yet flushed command buffer).
     let mut update_level_object_commands = update_level_object_commands.drain();
     dedup_by_key_unsorted(&mut update_level_object_commands, |command| {
         command.object.net_id
@@ -361,8 +361,8 @@ pub fn update_level_objects(
         let mut spawned_component = Spawned::new(command.frame_number);
         let mut position_component: Option<Position> = None;
 
-        // Unlike with players, here we just despawn level objects if they are updated and re-create
-        // from scratch.
+        // Unlike with players, here we just despawn level objects if they are updated
+        // and re-create from scratch.
         if let Some(existing_entity) = level_object_params
             .object_entities
             .get_entity(command.object.net_id)
@@ -454,8 +454,8 @@ pub fn update_level_objects(
                 .object
                 .desc
                 .physics_bundle(shape.clone(), cfg!(not(feature = "client")));
-            // Insert client components later, as they can overwrite some of them (z coordinates
-            // of translations for instance).
+            // Insert client components later, as they can overwrite some of them (z
+            // coordinates of translations for instance).
             insert_client_components(
                 &mut entity_commands,
                 &command.object,

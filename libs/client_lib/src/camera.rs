@@ -90,8 +90,8 @@ pub fn reattach_camera(
         }
     }
 
-    // Usually, this is not needed. But we'll have this clean up just in case if we didn't catch
-    // the despawn event from the `Spawned` component change.
+    // Usually, this is not needed. But we'll have this clean up just in case if we
+    // didn't catch the despawn event from the `Spawned` component change.
     for despawned_player_entity in despawned_player_events.iter() {
         let is_current_player = current_player_net_id.0.map_or(false, |player_net_id| {
             Some(player_net_id) == player_registry.get_id(despawned_player_entity)

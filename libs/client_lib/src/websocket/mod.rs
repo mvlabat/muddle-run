@@ -50,7 +50,8 @@ impl<'t> CloseFrame<'t> {
     }
 }
 
-/// Status code used to indicate why an endpoint is closing the WebSocket connection.
+/// Status code used to indicate why an endpoint is closing the WebSocket
+/// connection.
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum CloseCode {
     /// Indicates a normal closure, meaning that the purpose for
@@ -104,12 +105,13 @@ pub enum CloseCode {
     /// it encountered an unexpected condition that prevented it from
     /// fulfilling the request.
     Error,
-    /// Indicates that the server is restarting. A client may choose to reconnect,
-    /// and if it does, it should use a randomized delay of 5-30 seconds between attempts.
+    /// Indicates that the server is restarting. A client may choose to
+    /// reconnect, and if it does, it should use a randomized delay of 5-30
+    /// seconds between attempts.
     Restart,
-    /// Indicates that the server is overloaded and the client should either connect
-    /// to a different IP (when multiple targets exist), or reconnect to the same IP
-    /// when a user has performed an action.
+    /// Indicates that the server is overloaded and the client should either
+    /// connect to a different IP (when multiple targets exist), or
+    /// reconnect to the same IP when a user has performed an action.
     Again,
     #[doc(hidden)]
     Tls,

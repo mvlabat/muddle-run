@@ -29,7 +29,8 @@ pub struct PlayerSystemParamsMut<'w, 's> {
 #[derive(Debug, Default)]
 pub struct PlayerUpdates {
     pub direction: HashMap<PlayerNetId, Framebuffer<Option<PlayerDirectionUpdate>>>,
-    /// Is supposed to be filled and used only by clients, as it contains authoritative updates.
+    /// Is supposed to be filled and used only by clients, as it contains
+    /// authoritative updates.
     pub position: HashMap<PlayerNetId, Framebuffer<Option<Vec2>>>,
 }
 

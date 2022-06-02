@@ -461,7 +461,8 @@ impl SimulationTime {
                 };
                 let frames_to_rerun = frames_ahead - delta_update_ahead;
                 if frames_to_rerun.value() > 0 {
-                    self.player_frames_to_rerun.get_or_insert(frames_ahead - delta_update_ahead);
+                    self.player_frames_to_rerun
+                        .get_or_insert(frames_ahead - delta_update_ahead);
                 }
             }
         } else {

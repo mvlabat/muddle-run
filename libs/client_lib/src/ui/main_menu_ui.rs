@@ -325,8 +325,8 @@ pub fn main_menu_ui(
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
 
-    // If matchmaker address is not configured (which means that the state and the channels aren't
-    // initialized either), we don't want to render this menu.
+    // If matchmaker address is not configured (which means that the state and the
+    // channels aren't initialized either), we don't want to render this menu.
     let (mut matchmaker_state, mut main_menu_ui_channels) =
         match matchmaker_state.zip(main_menu_ui_channels) {
             Some(resources) => resources,

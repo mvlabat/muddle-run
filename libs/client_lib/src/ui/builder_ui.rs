@@ -151,8 +151,8 @@ pub fn builder_ui(
     puffin::profile_function!();
     let ctx = egui_context.ctx_mut();
 
-    // Picking a level object if we received a confirmation from the server about an object created
-    // by us.
+    // Picking a level object if we received a confirmation from the server about an
+    // object created by us.
     if let Some(correlation_id) = *level_objects.pending_correlation {
         if let Some(entity_net_id) = level_object_correlations.query(correlation_id) {
             let old_entity = level_objects
@@ -188,8 +188,8 @@ pub fn builder_ui(
     }
 
     if level_objects.edited_level_object.object.is_some() {
-        // When an object is updated, it may get re-spawned as a new entity. We need to update
-        // the picked entity in such a case. Despawns may happen as well.
+        // When an object is updated, it may get re-spawned as a new entity. We need to
+        // update the picked entity in such a case. Despawns may happen as well.
         let edited_object_net_id = level_objects
             .edited_level_object
             .object
@@ -368,7 +368,8 @@ pub fn process_builder_mouse_input(
     }
 
     let mut is_being_dragged = false;
-    // If we have a newly placed object, move it with a cursor, until left mouse button is clicked.
+    // If we have a newly placed object, move it with a cursor, until left mouse
+    // button is clicked.
     if let EditedLevelObject {
         object: Some((_, level_object)),
         is_being_placed,

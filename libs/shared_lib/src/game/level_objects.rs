@@ -304,8 +304,8 @@ fn resolve_new_path_recursive(
         );
         vec![point]
     } else {
-        // This can currently work only under the assumption that only linear movement can have
-        // more than 1 route point.
+        // This can currently work only under the assumption that only linear movement
+        // can have more than 1 route point.
         assert_eq!(movement.movement_type, LevelObjectMovementType::Linear);
 
         let mut points_progress = Vec::new();

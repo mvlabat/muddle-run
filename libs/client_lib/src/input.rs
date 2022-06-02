@@ -44,11 +44,13 @@ pub struct InputEvents<'w, 's> {
     pub mouse_button: EventReader<'w, 's, MouseButtonInput>,
 }
 
-/// Represents a cursor position in window coordinates (the ones that are coming from Window events).
+/// Represents a cursor position in window coordinates (the ones that are coming
+/// from Window events).
 #[derive(Default)]
 pub struct MouseScreenPosition(pub Vec2);
 
-/// MouseRay intersection with the (center=[0.0, 0.0, 0.0], normal=[0.0, 0.0, 1.0]) plane.
+/// MouseRay intersection with the (center=[0.0, 0.0, 0.0], normal=[0.0, 0.0,
+/// 1.0]) plane.
 #[derive(Default)]
 pub struct MouseWorldPosition(pub Vec2);
 
@@ -135,7 +137,8 @@ pub fn track_input_events(
         .camera_query
         .get_mut(player_updates_params.main_camera_pivot_entity.0)
         .expect("Expected the camera to initialize in `basic_scene`");
-    // If a player is spawned, set its direction. Otherwise, update the free camera pivot.
+    // If a player is spawned, set its direction. Otherwise, update the free camera
+    // pivot.
     if current_player_is_spawned {
         let direction_updates = player_updates_params.player_updates.get_direction_mut(
             player_updates_params.current_player_net_id.0.unwrap(),

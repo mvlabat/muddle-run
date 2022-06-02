@@ -685,9 +685,11 @@ fn disconnect_players(
     update_params: &mut UpdateParams,
     players: &mut HashMap<PlayerNetId, Player>,
 ) {
-    // Disconnecting players that have been failing to deliver updates for some time.
+    // Disconnecting players that have been failing to deliver updates for some
+    // time.
     for (handle, connection_state) in network_params.connection_states.iter_mut() {
-        // We might have marked a client as `Disconnecting` when processing connection events.
+        // We might have marked a client as `Disconnecting` when processing connection
+        // events.
         if let ConnectionStatus::Disconnected | ConnectionStatus::Disconnecting(_) =
             connection_state.status()
         {
@@ -697,8 +699,8 @@ fn disconnect_players(
         let (last_incoming_frame, _) = connection_state.incoming_acknowledgments();
         if let Some(last_incoming_frame) = last_incoming_frame {
             // If the difference between last incoming frame and the current one is more
-            // than 10 secs, we disconnect the client. Neither lagging behind, nor being far ahead
-            // is right.
+            // than 10 secs, we disconnect the client. Neither lagging behind, nor being far
+            // ahead is right.
             if time.frame_number.diff_abs(last_incoming_frame).value() > COMPONENT_FRAMEBUFFER_LIMIT
             {
                 log::warn!("Disconnecting {}: lagging or falling behind", handle);
@@ -709,13 +711,14 @@ fn disconnect_players(
             > Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
         {
             // Disconnect players that haven't sent any updates at all (they are likely
-            // in the `Connecting` or `Handshaking` status) if they are staying in this state
-            // for 10 seconds.
+            // in the `Connecting` or `Handshaking` status) if they are staying in this
+            // state for 10 seconds.
             log::warn!("Disconnecting {}: handshake timeout", handle);
             connection_state.set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
         }
 
-        // Disconnecting players that haven't sent any message for `CONNECTION_TIMEOUT_MILLIS`.
+        // Disconnecting players that haven't sent any message for
+        // `CONNECTION_TIMEOUT_MILLIS`.
         if Instant::now().duration_since(connection_state.last_valid_message_received_at)
             > Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
         {
@@ -724,14 +727,15 @@ fn disconnect_players(
         }
     }
 
-    // FixedTimestep may run this several times in a row. We want to make sure that we despawn
-    // a player only once.
+    // FixedTimestep may run this several times in a row. We want to make sure that
+    // we despawn a player only once.
     despawned_players_for_handles
         .drain_filter(|handle| !network_params.connection_states.contains_key(handle));
 
     for (connection_handle, connection_state) in network_params.connection_states.iter() {
-        // We expect that this status lives only during this frame so despawning will be queued
-        // only once. The status MUST be changed to `Disconnected` when broadcasting the updates.
+        // We expect that this status lives only during this frame so despawning will be
+        // queued only once. The status MUST be changed to `Disconnected` when
+        // broadcasting the updates.
         if let ConnectionStatus::Disconnecting(_) = connection_state.status() {
             if !despawned_players_for_handles.insert(*connection_handle) {
                 continue;
@@ -809,8 +813,8 @@ pub fn send_network_updates(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    // We run this system after we've concluded the simulation. As we don't have updates for the
-    // next frame yet, we decrement the frame number.
+    // We run this system after we've concluded the simulation. As we don't have
+    // updates for the next frame yet, we decrement the frame number.
     let time = time.prev_frame();
     log::trace!("Sending network updates (frame: {})", time.server_frame);
 

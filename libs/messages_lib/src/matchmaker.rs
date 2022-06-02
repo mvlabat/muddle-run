@@ -13,7 +13,8 @@ pub enum MatchmakerMessage {
     ServerUpdated(Server),
     /// Is sent when a server is closed, contains a server name.
     ServerRemoved(String),
-    /// Is sent when a user sends an invalid token id with a request (contains a request id).
+    /// Is sent when a user sends an invalid token id with a request (contains a
+    /// request id).
     InvalidJwt(uuid::Uuid),
 }
 

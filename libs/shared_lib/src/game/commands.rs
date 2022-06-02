@@ -29,7 +29,8 @@ impl<T> DeferredQueue<T> {
     }
 }
 
-// NOTE: after adding a new command, remember to clean them up in the `restart_game` system.
+// NOTE: after adding a new command, remember to clean them up in the
+// `restart_game` system.
 
 pub struct RestartGame;
 

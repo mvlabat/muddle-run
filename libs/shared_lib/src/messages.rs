@@ -34,7 +34,8 @@ impl<T: Serialize> DeferredMessagesQueue<T> {
     }
 }
 
-// TODO: refactor to be a part of entity registry, implement reclaiming ids of removed entities.
+// TODO: refactor to be a part of entity registry, implement reclaiming ids of
+// removed entities.
 #[derive(Component, Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct EntityNetId(pub u16);
 
@@ -46,7 +47,8 @@ impl IncrementId for EntityNetId {
     }
 }
 
-// TODO: refactor to be a part of player registry, implement reclaiming ids of removed players.
+// TODO: refactor to be a part of player registry, implement reclaiming ids of
+// removed players.
 #[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct PlayerNetId(pub u16);
 
@@ -72,7 +74,8 @@ pub enum UnreliableClientMessage {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ReliableClientMessage {
-    /// A kludge message basically, to let our networking stack to initialize properly for webrtc.
+    /// A kludge message basically, to let our networking stack to initialize
+    /// properly for webrtc.
     Initialize,
     /// Is sent as a response to server's `UnreliableServerMessage::Handshake`.
     Handshake {
@@ -99,7 +102,8 @@ pub enum SpawnLevelObjectRequestBody {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ReliableServerMessage {
-    /// A kludge message basically, to let our networking stack to initialize properly for webrtc.
+    /// A kludge message basically, to let our networking stack to initialize
+    /// properly for webrtc.
     Initialize,
     /// Is sent as a response to client's `ReliableClientMessage::Handshake`.
     StartGame(StartGame),
@@ -172,7 +176,8 @@ pub struct DeltaUpdate {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct PlayerState {
     pub net_id: PlayerNetId,
-    /// Contains the initial position, so that applying all inputs renders a player in its actual position on server.
+    /// Contains the initial position, so that applying all inputs renders a
+    /// player in its actual position on server.
     pub position: Vec2,
     pub inputs: Vec<RunnerInput>,
 }
@@ -196,8 +201,8 @@ pub struct SwitchRole {
     pub frame_number: FrameNumber,
 }
 
-/// This message isn't supposed to trigger the spawn command though. We spawn a player as soon as it
-/// appears in a DeltaUpdate message, as usual.
+/// This message isn't supposed to trigger the spawn command though. We spawn a
+/// player as soon as it appears in a DeltaUpdate message, as usual.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct RespawnPlayer {
     pub net_id: PlayerNetId,

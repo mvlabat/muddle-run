@@ -166,8 +166,9 @@ impl<T> Framebuffer<Option<T>> {
     }
 
     /// If the value is `None`, looks behind to find the closest existing value.
-    /// If `frame_number` is out of possible range in regards to current start_frame, returns `None`.
-    /// Returns a corresponding `FrameNumber` as the first tuple element.
+    /// If `frame_number` is out of possible range in regards to current
+    /// start_frame, returns `None`. Returns a corresponding `FrameNumber`
+    /// as the first tuple element.
     pub fn get_with_extrapolation(
         &self,
         mut frame_number: FrameNumber,
