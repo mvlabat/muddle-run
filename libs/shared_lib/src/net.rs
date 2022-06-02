@@ -531,7 +531,6 @@ mod tests {
             outgoing_packets_acks: VecDeque::from(acknowledgments),
             packet_loss: 0.0,
             jitter_millis: 0.0,
-            last_increased_jitter: Instant::now(),
             rtt_millis: 0.0,
         }
     }
