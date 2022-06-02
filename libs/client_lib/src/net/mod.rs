@@ -978,20 +978,11 @@ pub fn send_requests(
 }
 
 fn can_process_delta_update_message(time: &GameTime, delta_update: &DeltaUpdate) -> bool {
-    let earliest_frame = delta_update
-        .players
-        .iter()
-        .filter_map(|player| player.inputs.iter().map(|input| input.frame_number).min())
-        .min()
-        .unwrap_or(delta_update.frame_number);
-
-    let diff_with_earliest = time.frame_number.diff_abs(earliest_frame).value();
-    let diff_with_latest = time
+    let frames_diff = time
         .frame_number
         .diff_abs(delta_update.frame_number)
         .value();
-    diff_with_earliest < COMPONENT_FRAMEBUFFER_LIMIT / 2
-        && diff_with_latest < COMPONENT_FRAMEBUFFER_LIMIT / 2
+    frames_diff < COMPONENT_FRAMEBUFFER_LIMIT / 2
 }
 
 /// We need to access an actual value on each (fresh) delta update message, so
@@ -1083,34 +1074,16 @@ fn process_delta_update_message(
             delta_update.frame_number,
             COMPONENT_FRAMEBUFFER_LIMIT,
         );
-        let frame_to_update_position = if let Some(earliest_input) = player_state.inputs.first() {
-            for (_, update) in direction_updates
-                .iter_mut()
-                .skip_while(|(frame_number, _)| earliest_input.frame_number < *frame_number)
-            {
-                let is_unactual_client_input = update.as_ref().map_or(false, |update| {
-                    update.is_processed_client_input != Some(false)
-                });
-                if is_unactual_client_input {
-                    *update = None;
-                }
-            }
-            earliest_input.frame_number
-        } else {
-            delta_update.frame_number
-        };
-        for input in player_state.inputs {
-            direction_updates.insert(
-                input.frame_number,
-                Some(PlayerDirectionUpdate {
-                    direction: input.direction,
-                    is_processed_client_input: None,
-                }),
-            );
-        }
+        direction_updates.insert(
+            delta_update_frame,
+            Some(PlayerDirectionUpdate {
+                direction: player_state.direction,
+                is_processed_client_input: None,
+            }),
+        );
 
         rewind_to_simulation_frame =
-            std::cmp::min(rewind_to_simulation_frame, frame_to_update_position);
+            std::cmp::min(rewind_to_simulation_frame, delta_update.frame_number);
 
         let position_updates = update_params.player_updates.get_position_mut(
             player_state.net_id,
@@ -1120,10 +1093,10 @@ fn process_delta_update_message(
         log::trace!(
             "Updating position for player {} (frame_number: {}): {:?}",
             player_state.net_id.0,
-            frame_to_update_position,
+            delta_update.frame_number,
             player_state.position
         );
-        position_updates.insert(frame_to_update_position, Some(player_state.position));
+        position_updates.insert(delta_update.frame_number, Some(player_state.position));
     }
 
     // There's no need to rewind if we haven't started the game.

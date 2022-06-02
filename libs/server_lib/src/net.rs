@@ -1166,51 +1166,37 @@ fn create_player_state(
         time.server_frame
     };
 
-    // TODO: deduplicate updates (the same code is written for client).
-    let mut inputs: Vec<RunnerInput> = Vec::new();
-    for (frame_number, &direction) in player_direction
+    let direction = player_direction
         .buffer
         // TODO: avoid iterating from the beginning?
-        .iter_with_interpolation()
-        .skip_while(|(frame_number, _)| *frame_number < updates_start_frame)
-    {
-        if Some(direction) != inputs.last().map(|i| i.direction) {
-            inputs.push(RunnerInput {
-                frame_number,
-                direction,
-            });
-        }
-    }
-    if inputs.is_empty() && player_direction.buffer.len() > 1 {
-        log::debug!(
-            "Missing updates for Player {} (updates start frame: {}, last player direction frame: {:?})",
-            net_id.0,
-            updates_start_frame,
-            player_direction.buffer.end_frame(),
-        );
-    }
-
-    let start_position_frame = inputs.first().map_or_else(
-        || std::cmp::max(updates_start_frame, position.buffer.start_frame()),
-        |input| input.frame_number,
-    );
+        .get_with_interpolation(updates_start_frame)
+        .map(|(_frame_number, direction)| *direction)
+        .unwrap_or_else(|| {
+            log::debug!(
+                "Missing updates for Player {} (updates start frame: {}, last player direction frame: {:?})",
+                net_id.0,
+                updates_start_frame,
+                player_direction.buffer.end_frame(),
+            );
+            Vec2::ZERO
+        });
 
     Some(PlayerState {
         net_id,
         position: *position
             .buffer
-            .get(start_position_frame)
+            .get(updates_start_frame)
             .unwrap_or_else(|| {
                 panic!(
                     "Player ({}) position for frame {} doesn't exist (current frame: {}, entity: {:?}): {:?}",
                     net_id.0,
-                    start_position_frame.value(),
+                    updates_start_frame,
                     time.server_frame.value(),
                     entity,
                     position.buffer,
                 )
             }),
-        inputs,
+        direction,
     })
 }
 
