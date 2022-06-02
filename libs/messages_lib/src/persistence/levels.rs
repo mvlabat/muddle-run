@@ -2,7 +2,7 @@ use crate::PaginationParams;
 use serde::{Deserialize, Serialize};
 use serde_with::rust::display_fromstr::deserialize as deserialize_fromstr;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GetLevelsRequest {
     #[serde(flatten)]
     pub user_filter: Option<GetLevelsUserFilter>,
@@ -10,7 +10,7 @@ pub struct GetLevelsRequest {
     pub pagination: PaginationParams,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum GetLevelsUserFilter {
     #[serde(deserialize_with = "deserialize_fromstr")]
@@ -19,7 +19,7 @@ pub enum GetLevelsUserFilter {
     BuilderId(i64),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LevelsListItem {
     pub id: i64,
     pub title: String,
@@ -30,7 +30,7 @@ pub struct LevelsListItem {
     pub updated_at: chrono::NaiveDateTime,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LevelDto {
     pub id: i64,
     pub title: String,
@@ -42,7 +42,7 @@ pub struct LevelDto {
     pub updated_at: chrono::NaiveDateTime,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GetLevelResponse {
     #[serde(flatten)]
     pub level: LevelDto,
@@ -50,7 +50,7 @@ pub struct GetLevelResponse {
     pub level_permissions: Vec<LevelPermissionDto>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LevelPermissionDto {
     pub user_id: i64,
     pub user_name: Option<String>,

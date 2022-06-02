@@ -12,7 +12,8 @@ fn main() {
 
     mr_utils_lib::env::load_env();
 
-    // We want to exit the process on any panic (in any thread), so this is why the custom hook.
+    // We want to exit the process on any panic (in any thread), so this is why the
+    // custom hook.
     let orig_hook = std::panic::take_hook();
 
     // And when I declared to my design

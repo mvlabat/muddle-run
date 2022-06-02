@@ -291,8 +291,8 @@ pub fn process_network_events(
         match event {
             NetworkEvent::Connected(handle) => {
                 // It doesn't actually mean that we've connected: bevy_networking_turbulence
-                // fires the event as soon as we launch. But we also get this even after resetting
-                // a connection.
+                // fires the event as soon as we launch. But we also get this even after
+                // resetting a connection.
                 log::info!("Connected: {}", handle);
                 log::info!(
                     "Sending an Initialize message: {}",
@@ -736,8 +736,8 @@ pub fn maintain_connection(
         ConnectionStatus::Uninitialized
     );
 
-    // TODO: if a client isn't getting any updates, we may also want to pause the game and wait for
-    //  some time for a server to respond.
+    // TODO: if a client isn't getting any updates, we may also want to pause the
+    // game and wait for  some time for a server to respond.
 
     let connection_timeout = Instant::now().duration_since(
         network_params
@@ -866,8 +866,9 @@ pub fn send_network_updates(
                 .get(player_entity)
                 .expect("Expected a created spawned player");
 
-            // TODO: this makes the client send more packets than the server actually needs, as lost packets
-            //  never get marked as acknowledged, even though we resend updates in future frames. Fix it.
+            // TODO: this makes the client send more packets than the server actually needs,
+            // as lost packets  never get marked as acknowledged, even though we
+            // resend updates in future frames. Fix it.
             let first_unacknowledged_frame = network_params
                 .connection_state
                 .first_unacknowledged_outgoing_packet()
@@ -877,7 +878,8 @@ pub fn send_network_updates(
             for (frame_number, &direction) in player_direction
                 .buffer
                 .iter_with_interpolation()
-                // TODO: should client always send redundant inputs or only the current ones (unless packet loss is detected)?
+                // TODO: should client always send redundant inputs or only the current ones (unless
+                // packet loss is detected)?
                 .skip_while(|(frame_number, _)| *frame_number < first_unacknowledged_frame)
             {
                 if Some(direction) != inputs.last().map(|i| i.direction) {
@@ -992,8 +994,8 @@ fn can_process_delta_update_message(time: &GameTime, delta_update: &DeltaUpdate)
         && diff_with_latest < COMPONENT_FRAMEBUFFER_LIMIT / 2
 }
 
-/// We need to access an actual value on each (fresh) delta update message, so we write it for
-/// every frame, as we can't predict when we'll receive those.
+/// We need to access an actual value on each (fresh) delta update message, so
+/// we write it for every frame, as we can't predict when we'll receive those.
 pub fn fill_actual_frames_ahead(
     time: Res<GameTime>,
     simulation_time: Res<SimulationTime>,
@@ -1138,7 +1140,41 @@ fn process_delta_update_message(
     }
 }
 
-/// Returns the "frame ahead" number that has to be applied to this delta update.
+/// Returns the "frame ahead" number that has to be applied to this delta
+/// update.
+///
+/// ## Terms
+///
+/// - `target_frames_ahead` - for how many frames we want the local player time
+///   to be ahead of the local server time.
+/// - `delay_server_time` - for how many frames we want the local server time to
+///   be behind the delta updates.
+/// - `server_reported_frames_ahead` - by how many frames we want to decrease
+///   our `target_frames_ahead`.
+///
+/// ## Scenarios
+///
+/// ### Client has a lag spike
+///
+/// Multiple packets may pile up in the buffer during the spike. Once the last
+/// one is processed, `delay_server_time` becomes negative. The client starts
+/// running faster, while also shrinking `target_frames_ahead`. In RTT frames,
+/// the server reports with a negative `server_reported_frames_ahead`. which is
+/// expected to be about equal to the initial `delay_server_time` once recovered
+/// from the spike. The client will start extending `target_frames_ahead` back
+/// and keep running faster until it's caught up.
+///
+/// When a server has a lag spike, all the mentioned variables get the opposite
+/// signs, and clients starts running slower.
+///
+/// ### Ping increases
+///
+/// Packets won't be delivered for some time, which may result into
+/// extrapolating other players' state. When the next packet arrives,
+/// `delay_server_time` becomes positive, which will make the client run slower.
+/// In about from 0.5 to 1.0 RTT frames, the server will report a decreased
+/// `server_reported_frames_ahead`, which will keep decreasing because the
+/// client was running slower for some time.
 fn sync_clock(
     delta_update: &DeltaUpdate,
     connection_state: &ConnectionState,
@@ -1148,10 +1184,10 @@ fn sync_clock(
 
     let actual_frames_ahead = update_params.simulation_time.player_frames_ahead();
 
-    // We store a history of `actual_frames_ahead` values to be able to correlate them to
-    // `server_reported_frames_ahead` values that we calculate. If we see that we mispredicted
-    // `target_frames_ahead` for that particular frame and updates came earlier/later, we correct
-    // the target value.
+    // We store a history of `actual_frames_ahead` values to be able to correlate
+    // them to `server_reported_frames_ahead` values that we calculate. If we
+    // see that we mispredicted `target_frames_ahead` for that particular frame
+    // and updates came earlier/later, we correct the target value.
     let frames_ahead_at_input = newest_acknowledged_input.map(|newest_acknowledged_input| {
         update_params
             .target_frames_ahead
@@ -1173,36 +1209,29 @@ fn sync_clock(
     let frames_rtt = SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0;
     let packet_loss_buffer = frames_rtt * connection_state.packet_loss();
     let jitter_buffer = packet_loss_buffer
-        + SIMULATIONS_PER_SECOND as f32 * connection_state.jitter_millis() / 1000.0;
+        + SIMULATIONS_PER_SECOND as f32 * connection_state.jitter_millis() * 2.0 / 1000.0;
+
+    // Adjusting the speed to synchronize with the server clock.
+    let new_delay = (update_params.simulation_time.server_frame.value() as i32
+        + jitter_buffer.ceil() as i32
+        - delta_update.frame_number.value() as i32) as i16;
+    let delay_diff = new_delay - update_params.delay_server_time.frame_count;
+    update_params.delay_server_time.frame_count = new_delay;
 
     // Calculate how many frames ahead of the server we want to be.
     let jitter_buffer_len_to_add =
         jitter_buffer.ceil() - update_params.target_frames_ahead.jitter_buffer_len as f32;
-    let new_target_frames_ahead = ((frames_ahead_at_input as i16 - server_reported_frames_ahead)
+    let new_target_frames_ahead = (((frames_ahead_at_input as i16 - server_reported_frames_ahead)
         .max(0)
-        + jitter_buffer_len_to_add.ceil() as i16) as u16;
+        + jitter_buffer_len_to_add.ceil() as i16) as u16)
+        .saturating_add_signed(delay_diff);
 
     let diff = new_target_frames_ahead as i16 - update_params.target_frames_ahead.target as i16;
 
-    // We are ok to set a higher target whenever, but to avoid oscillation we lower it only if it
-    // reaches the `jitter_buffer` threshold.
-    let new_target_frames_ahead = if diff > 0 || -diff > jitter_buffer.ceil() as i16 {
-        update_params.target_frames_ahead.target = new_target_frames_ahead;
-        update_params.target_frames_ahead.jitter_buffer_len =
-            (update_params.target_frames_ahead.jitter_buffer_len as i16
-                + jitter_buffer_len_to_add.ceil() as i16) as u16;
-        new_target_frames_ahead
-    } else {
-        update_params.target_frames_ahead.target
-    };
-
-    // Adjusting the speed to synchronize with the server clock.
-    let new_delay = (update_params.simulation_time.server_frame.value() as i32
-        - delta_update.frame_number.value() as i32) as i16;
-    if new_delay.abs_diff(update_params.delay_server_time.frame_count) > jitter_buffer.ceil() as u16
-    {
-        update_params.delay_server_time.frame_count = new_delay;
-    }
+    update_params.target_frames_ahead.target = new_target_frames_ahead;
+    update_params.target_frames_ahead.jitter_buffer_len =
+        (update_params.target_frames_ahead.jitter_buffer_len as i16
+            + jitter_buffer_len_to_add.ceil() as i16) as u16;
 
     // Estimating the actual server time.
     let new_estimated_server_time =
@@ -1212,8 +1241,7 @@ fn sync_clock(
         update_params.estimated_server_time.updated_at = update_params.game_time.frame_number;
     }
 
-    #[cfg(debug_assertions)]
-    {
+    if cfg!(debug_assertions) {
         log::trace!("server_reported_frames_ahead: {}, at_input: {}, new_target_frames_ahead: {}, diff: {}, jitter: {}",
             server_reported_frames_ahead,
             frames_ahead_at_input,
@@ -1222,9 +1250,11 @@ fn sync_clock(
             jitter_buffer.ceil() as i16,
         );
         log::trace!(
-            "gf: {}, uf: {}, estimated server frame: {}",
-            update_params.game_time.frame_number.value(),
+            "pf: {}, sf: {}, uf: {}, delay: {}, estimated server frame: {}",
+            update_params.simulation_time.player_frame.value(),
+            update_params.simulation_time.server_frame.value(),
             delta_update.frame_number.value(),
+            update_params.delay_server_time.frame_count,
             update_params.estimated_server_time.frame_number.value(),
         );
     }
@@ -1267,8 +1297,9 @@ fn process_start_game_message(
         update_params.simulation_time.player_generation += 1;
     }
 
-    // Re-init the buffer. If we just attempt to insert on start, it may panic due to the big
-    // difference between the buffer start frame (0) and game start frame.
+    // Re-init the buffer. If we just attempt to insert on start, it may panic due
+    // to the big difference between the buffer start frame (0) and game start
+    // frame.
     update_params.target_frames_ahead.target = rtt_frames.value();
     let mut new_buffer = Framebuffer::new(
         player_frame,
@@ -1342,7 +1373,8 @@ fn process_connected_player_message(
     connected_player: Player,
     players: &mut HashMap<PlayerNetId, Player>,
 ) {
-    // Player is spawned when the first DeltaUpdate with it arrives, so we don't do it here.
+    // Player is spawned when the first DeltaUpdate with it arrives, so we don't do
+    // it here.
     log::info!(
         "A new player ({}) connected: {}",
         player_net_id.0,

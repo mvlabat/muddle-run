@@ -52,7 +52,7 @@ pub const DEFAULT_PLANE_CONCAVE_POINTS: &[[f32; 2]] = &[
 ];
 
 pub fn default_period() -> FrameNumber {
-    FrameNumber::new(SIMULATIONS_PER_SECOND * 10)
+    FrameNumber::new(SIMULATIONS_PER_SECOND as u16 * 10)
 }
 
 #[derive(Default, Clone)]
@@ -151,8 +151,8 @@ pub fn builder_ui(
     puffin::profile_function!();
     let ctx = egui_context.ctx_mut();
 
-    // Picking a level object if we received a confirmation from the server about an object created
-    // by us.
+    // Picking a level object if we received a confirmation from the server about an
+    // object created by us.
     if let Some(correlation_id) = *level_objects.pending_correlation {
         if let Some(entity_net_id) = level_object_correlations.query(correlation_id) {
             let old_entity = level_objects
@@ -188,8 +188,8 @@ pub fn builder_ui(
     }
 
     if level_objects.edited_level_object.object.is_some() {
-        // When an object is updated, it may get re-spawned as a new entity. We need to update
-        // the picked entity in such a case. Despawns may happen as well.
+        // When an object is updated, it may get re-spawned as a new entity. We need to
+        // update the picked entity in such a case. Despawns may happen as well.
         let edited_object_net_id = level_objects
             .edited_level_object
             .object
@@ -368,7 +368,8 @@ pub fn process_builder_mouse_input(
     }
 
     let mut is_being_dragged = false;
-    // If we have a newly placed object, move it with a cursor, until left mouse button is clicked.
+    // If we have a newly placed object, move it with a cursor, until left mouse
+    // button is clicked.
     if let EditedLevelObject {
         object: Some((_, level_object)),
         is_being_placed,
@@ -564,8 +565,9 @@ fn level_object_ui(
                             egui::widgets::DragValue::new(&mut route.period)
                                 .speed(0.1)
                                 .clamp_range(
-                                    SIMULATIONS_PER_SECOND.max(route.start_frame_offset.value() + 1)
-                                        ..=SIMULATIONS_PER_SECOND * 60,
+                                    (SIMULATIONS_PER_SECOND as u16)
+                                        .max(route.start_frame_offset.value() + 1)
+                                        ..=SIMULATIONS_PER_SECOND as u16 * 60,
                                 ),
                         );
                         ui.end_row();
@@ -669,7 +671,7 @@ fn plane_form(ui: &mut egui::Ui, dirty_plane_form_desc: &mut PlaneFormDesc) {
 }
 
 fn plane_form_type(ui: &mut egui::Ui, dirty_plane_form_desc: &mut PlaneFormDesc) {
-    #[derive(Copy, Clone, PartialEq, Debug)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     enum Type {
         Circle,
         Rectangle,
@@ -852,7 +854,7 @@ fn level_objects_filter(
 }
 
 fn route_type(ui: &mut egui::Ui, dirty_level_object: &mut LevelObject) {
-    #[derive(Copy, Clone, PartialEq, Debug)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     enum Type {
         Stationary,
         Attached,

@@ -33,7 +33,8 @@ pub fn process_scheduled_spawns(
             // A kludge to avoid `respawning_at` disappear immediately.
             // TODO: Probably, there's a better way to do this.
             if time.player_frame
-                > respawning_at - PLAYER_RESPAWN_TIME + FrameNumber::new(SIMULATIONS_PER_SECOND)
+                > respawning_at - PLAYER_RESPAWN_TIME
+                    + FrameNumber::new(SIMULATIONS_PER_SECOND as u16)
             {
                 player.respawning_at = None;
             }

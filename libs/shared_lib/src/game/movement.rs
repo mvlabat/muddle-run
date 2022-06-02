@@ -218,8 +218,8 @@ pub struct SimulatedObjectQuery<'w> {
     player_sensor: Option<&'w PlayerSensor>,
 }
 
-/// Exclude objects that won't affect a local player by simulations if a client is correcting
-/// mispredictions.
+/// Exclude objects that won't affect a local player by simulations if a client
+/// is correcting mispredictions.
 pub fn isolate_client_mispredicted_world(
     time: Res<SimulationTime>,
     mut objects: Query<SimulatedObjectQuery, Without<PlayerFrameSimulated>>,
@@ -373,8 +373,8 @@ pub fn sync_position(
             }
         }
 
-        // Positions buffer represents start positions before moving entities, so this is why
-        // we save the new position in the next frame.
+        // Positions buffer represents start positions before moving entities, so this
+        // is why we save the new position in the next frame.
         simulated_entity.position.buffer.insert(
             frame_number + FrameNumber::new(1),
             Vec2::new(body_position.x, body_position.y),

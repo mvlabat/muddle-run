@@ -113,7 +113,8 @@ async fn handle_matchmaker_connection(
         let message: crate::websocket::Message = match message {
             Ok(Some(message)) => message,
             Ok(None) => {
-                // In practice, the stream is unlikely to get exhausted before receiving an error.
+                // In practice, the stream is unlikely to get exhausted before receiving an
+                // error.
                 log::warn!("Matchmaker stream has exhausted, disconnecting");
                 break;
             }

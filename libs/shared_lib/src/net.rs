@@ -16,8 +16,7 @@ use std::{collections::VecDeque, time::Duration};
 use thiserror::Error;
 
 pub const CONNECTION_TIMEOUT_MILLIS: u64 = 10000;
-const RTT_UPDATE_FACTOR: f32 = 0.2;
-const JITTER_DECREASE_THRESHOLD_SECS: u64 = 1;
+const NET_STAT_UPDATE_FACTOR: f32 = 0.2;
 
 pub type MessageId = WrappedCounter<u16>;
 pub type SessionId = WrappedCounter<u16>;
@@ -25,13 +24,15 @@ pub type SessionId = WrappedCounter<u16>;
 #[derive(Debug, Clone, Copy)]
 pub enum ConnectionStatus {
     Uninitialized,
-    /// Used only on the client side, to mark that the `Initialize` message has been sent.
+    /// Used only on the client side, to mark that the `Initialize` message has
+    /// been sent.
     Initialized,
     Connecting,
     Handshaking,
     Connected,
-    /// We've received a `Disconnect` event or triggered the process manually. After we finish
-    /// the needed clean-up, we switch the status to `Disconnected`.
+    /// We've received a `Disconnect` event or triggered the process manually.
+    /// After we finish the needed clean-up, we switch the status to
+    /// `Disconnected`.
     Disconnecting(DisconnectReason),
     Disconnected,
 }
@@ -53,8 +54,9 @@ pub enum AddOutgoingPacketError {
     WouldLoseUnacknowledged,
 }
 
-// Note: We don't expect clients or server to re-send lost packets. If we detect packet loss,
-// we enable redundancy to include the lost updates in future packets.
+// Note: We don't expect clients or server to re-send lost packets. If we detect
+// packet loss, we enable redundancy to include the lost updates in future
+// packets.
 pub struct ConnectionState {
     pub handshake_id: MessageId,
     pub session_id: SessionId,
@@ -63,8 +65,8 @@ pub struct ConnectionState {
     status_updated_at: Instant,
     newest_acknowledged_incoming_packet: Option<FrameNumber>,
     // Packets that are coming to us (not to a peer on the other side of a connection).
-    // We acknowledge these packets on receiving an unreliable message and send send the acks later.
-    // The least significant bit represents the newest acknowledgement (latest frame).
+    // We acknowledge these packets on receiving an unreliable message and send send the acks
+    // later. The least significant bit represents the newest acknowledgement (latest frame).
     incoming_packets_acks: u64,
     // Packets that we send to a peer represented by this connection. Here we store acks sent to us
     // by that peer.
@@ -72,7 +74,6 @@ pub struct ConnectionState {
     outgoing_packets_acks: VecDeque<Acknowledgment>,
     packet_loss: f32,
     jitter_millis: f32,
-    last_increased_jitter: Instant,
     rtt_millis: f32,
 }
 
@@ -89,8 +90,6 @@ impl Default for ConnectionState {
             outgoing_packets_acks: VecDeque::new(),
             packet_loss: 0.0,
             jitter_millis: 0.0,
-            last_increased_jitter: Instant::now()
-                - Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS),
             rtt_millis: 100.0,
         }
     }
@@ -191,9 +190,9 @@ impl ConnectionState {
             .unwrap_or_else(|| frame_number - FrameNumber::new(TICKS_PER_NETWORK_BROADCAST));
         // We always store 63 more acks before the newest one.
         let start = newest_acknowledged - FrameNumber::new(TICKS_PER_NETWORK_BROADCAST * 63);
-        // We aren't interested in outdated acks, but we are fine to accept acks from far ahead
-        // in future, even if it'll make the whole buffer filled with zeroes (except for the newest
-        // ack).
+        // We aren't interested in outdated acks, but we are fine to accept acks from
+        // far ahead in future, even if it'll make the whole buffer filled with
+        // zeroes (except for the newest ack).
         if frame_number < start {
             return Err(AcknowledgeError::OutOfRange { start: Some(start) });
         }
@@ -239,7 +238,8 @@ impl ConnectionState {
         Ok(())
     }
 
-    /// Applies acknowledgements (sent to us by another peer) of our outgoing packets.
+    /// Applies acknowledgements (sent to us by another peer) of our outgoing
+    /// packets.
     pub fn apply_outgoing_acknowledgements(
         &mut self,
         frame_number: FrameNumber,
@@ -250,8 +250,8 @@ impl ConnectionState {
         if self.outgoing_packets_acks.is_empty() {
             return Ok(());
         }
-        // The least significant bit represents the last frame that a peer acknowledged, so it can't
-        // be zero.
+        // The least significant bit represents the last frame that a peer acknowledged,
+        // so it can't be zero.
         let least_significant_bit_is_set = acknowledgment_bit_set & 1 == 1u64;
         if !least_significant_bit_is_set {
             return Err(AcknowledgeError::Inconsistent);
@@ -262,13 +262,13 @@ impl ConnectionState {
             .iter()
             .rev()
             .position(|ack| ack.frame_number == frame_number);
-        // A difference between the newest frame that a peer acknowledged and the newest one that
-        // we've sent.
+        // A difference between the newest frame that a peer acknowledged and the newest
+        // one that we've sent.
         let skip = match acknowledged_frame_position {
             Some(position) => position,
             None => {
-                // A client is either lagging behind or is faulty and sends us acks of packets we
-                // haven't even sent yet.
+                // A client is either lagging behind or is faulty and sends us acks of packets
+                // we haven't even sent yet.
                 return Err(AcknowledgeError::OutOfRange {
                     start: self
                         .outgoing_packets_acks
@@ -294,8 +294,8 @@ impl ConnectionState {
             .iter()
             .rfind(|ack| ack.is_acknowledged)
             .map(|ack| ack.frame_number);
-        // Tests whether the processed ack is older than the newest one that we received. If it is,
-        // we don't need to process it.
+        // Tests whether the processed ack is older than the newest one that we
+        // received. If it is, we don't need to process it.
         let is_outdated =
             newest_acknowledged.map_or(false, |newest_ack_frame| newest_ack_frame > frame_number);
 
@@ -316,7 +316,8 @@ impl ConnectionState {
         assert!(frames_to_set > 0);
         let ack = &mut self.outgoing_packets_acks[frames_to_set - 1];
         assert_eq!(ack.frame_number, frame_number);
-        // We want to remember when all acks were received exactly, even if they come unordered.
+        // We want to remember when all acks were received exactly, even if they come
+        // unordered.
         ack.acknowledged_at = Some(now);
 
         self.update_stats(frame_number);
@@ -325,7 +326,7 @@ impl ConnectionState {
     }
 
     fn update_stats(&mut self, frame_number: FrameNumber) {
-        // Position of the acknowledged frame + 1 (basically the length, but it should also take into account unordered updates).
+        // Position of the newest acknowledged frame + 1.
         let expected_acknowledged_count = self
             .outgoing_packets_acks
             .iter()
@@ -356,10 +357,10 @@ impl ConnectionState {
                 - acknowledged_frame.sent_at)
                 .as_secs_f32()
                 * 1000.0;
-            self.rtt_millis += (rtt - self.rtt_millis) * RTT_UPDATE_FACTOR;
+            self.rtt_millis += (rtt - self.rtt_millis) * NET_STAT_UPDATE_FACTOR;
         }
 
-        // Calculating average rtt.
+        // Calculating mean rtt.
         let mut acc = 0.0;
         let mut count = 0;
         for rtt in self
@@ -370,28 +371,21 @@ impl ConnectionState {
             acc += rtt;
             count += 1;
         }
-        let avg_rtt = acc / count as f32;
+        let mean_rtt = acc / count as f32;
 
         // Calculating jitter.
-        let mut jitter = 0.0f32;
-        for rtt in self
+        let jitter = self
             .outgoing_packets_acks
             .iter()
             .filter_map(|ack| ack.rtt_millis())
-        {
-            jitter = jitter.max((avg_rtt - rtt).abs() * 1.1);
-        }
-        if jitter > self.jitter_millis {
-            self.last_increased_jitter = Instant::now();
-            self.jitter_millis = jitter;
-        } else if Instant::now().duration_since(self.last_increased_jitter)
-            > Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS)
-        {
-            self.jitter_millis = self.jitter_millis + (jitter - self.jitter_millis) * 0.1;
-        }
+            .map(|rtt| (mean_rtt - rtt) * (mean_rtt - rtt))
+            .sum::<f32>()
+            .sqrt();
+        self.jitter_millis += (jitter - self.jitter_millis) * NET_STAT_UPDATE_FACTOR;
     }
 
-    /// How many elements we can still add to the buffer without shifting old packets out.
+    /// How many elements we can still add to the buffer without shifting old
+    /// packets out.
     fn outgoing_packets_to_fill(&self) -> usize {
         64 - self.outgoing_packets_acks.len()
     }
@@ -402,8 +396,8 @@ struct Acknowledgment {
     frame_number: FrameNumber,
     is_acknowledged: bool,
     /// This field will be left empty if a package was lost.
-    /// Even if we receive acks including this frame later (when it's not the leading one),
-    /// `acknowledged_at` will remain being set to `None`.
+    /// Even if we receive acks including this frame later (when it's not the
+    /// leading one), `acknowledged_at` will remain being set to `None`.
     acknowledged_at: Option<Instant>,
     sent_at: Instant,
 }
@@ -537,7 +531,6 @@ mod tests {
             outgoing_packets_acks: VecDeque::from(acknowledgments),
             packet_loss: 0.0,
             jitter_millis: 0.0,
-            last_increased_jitter: Instant::now(),
             rtt_millis: 0.0,
         }
     }

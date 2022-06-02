@@ -42,11 +42,12 @@ pub fn process_player_input_updates(
         let player_frame_number = player_connection_state
             .incoming_acknowledgments()
             .0
-            // A player has just connected, and it's got only the initial empty update, so it's fine.
+            // A player has just connected, and it's got only the initial empty update, so it's
+            // fine.
             .unwrap_or(time.frame_number);
 
-        // A client might be able to send several messages with the same unacknowledged updates
-        // between runs of this system.
+        // A client might be able to send several messages with the same unacknowledged
+        // updates between runs of this system.
         dedup_by_key_unsorted(&mut player_updates, |update| update.frame_number);
         // We want to sort after deduping, to prevent users from re-ordering inputs.
         player_updates.sort_by_key(|update| update.frame_number);
@@ -89,9 +90,10 @@ pub fn process_player_input_updates(
                 duplicate_updates_to,
             );
 
-            // We fill the buffer of player direction commands with the updates that come from
-            // clients. We populate each frame until a command changes or we've reached the last
-            // acknowledged client's frame (`PlayerUpdate::frame_number`).
+            // We fill the buffer of player direction commands with the updates that come
+            // from clients. We populate each frame until a command changes or
+            // we've reached the last acknowledged client's frame
+            // (`PlayerUpdate::frame_number`).
             for frame_number in duplicate_updates_from..=duplicate_updates_to {
                 let existing_update = updates.get(frame_number);
                 // We don't want to allow re-writing updates.

@@ -98,7 +98,7 @@ pub const PLANE_SIZE: f32 = 20.0;
 pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
 pub const TICKS_PER_NETWORK_BROADCAST: u16 = 2;
 pub const MAX_LAG_COMPENSATION_MILLIS: u16 = 200;
-pub const SIMULATIONS_PER_SECOND: u16 = {
+pub const SIMULATIONS_PER_SECOND: f32 = {
     const fn parse(v: &'static str) -> Option<u16> {
         let parser = konst::Parser::from_str(v);
         Some(konst::unwrap_ctx!(parser.parse_u16()).0)
@@ -106,10 +106,10 @@ pub const SIMULATIONS_PER_SECOND: u16 = {
 
     std::option_env!("SIMULATIONS_PER_SECOND")
         .and_then(parse)
-        .unwrap_or(SIMULATIONS_PER_SECOND_DEFAULT)
+        .unwrap_or(SIMULATIONS_PER_SECOND_DEFAULT) as f32
 };
 pub const LAG_COMPENSATED_FRAMES: FrameNumber = {
-    let v = (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / SIMULATIONS_PER_SECOND as f32)) as u16;
+    let v = (MAX_LAG_COMPENSATION_MILLIS as f32 / (1000.0 / SIMULATIONS_PER_SECOND)) as u16;
     FrameNumber::new(v)
 };
 
@@ -401,7 +401,7 @@ impl Default for GameState {
     }
 }
 
-#[derive(Default, Clone, PartialEq, Debug)]
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub struct GameTime {
     pub session: usize,
     pub frame_number: FrameNumber,
@@ -409,8 +409,8 @@ pub struct GameTime {
 
 #[derive(Debug)]
 pub struct SimulationTime {
-    /// Is expected to be ahead of `server_frame` on the client side, is equal to `server_frame`
-    /// on the server side.
+    /// Is expected to be ahead of `server_frame` on the client side, is equal
+    /// to `server_frame` on the server side.
     pub player_frame: FrameNumber,
     pub player_generation: u64,
     pub server_frame: FrameNumber,
@@ -443,24 +443,27 @@ impl SimulationTime {
     }
 
     pub fn rewind(&mut self, frame_number: FrameNumber) {
+        let prev_server = self.server_frame;
+        let prev_player = self.player_frame;
+
         if cfg!(feature = "client") {
             assert!(self.player_frame >= self.server_frame);
             let frames_ahead = self.player_frame - self.server_frame;
             if frames_ahead.value() > 0 && self.player_frame >= frame_number {
                 // If local server time is behind the delta update frame, we don't want make the
-                // client re-run more more frames that it has to rewind (resulting in being ahead
-                // of the server more than initially).
+                // client re-run more more frames that it has to rewind (resulting in being
+                // ahead of the server more than initially).
                 let delta_update_ahead = if frame_number > self.server_frame {
                     // Take `min` just for safety, to avoid overflowing.
                     frames_ahead.min(frame_number - self.server_frame)
                 } else {
                     FrameNumber::new(0)
                 };
-                // If we read an update before cathing up with GameTime's frame number, we want to
-                // make sure we don't mistakenly overwrite this a lower value, hence the
-                // `get_or_insert` call.
-                self.player_frames_to_rerun
-                    .get_or_insert(frames_ahead - delta_update_ahead);
+                let frames_to_rerun = frames_ahead - delta_update_ahead;
+                if frames_to_rerun.value() > 0 {
+                    self.player_frames_to_rerun
+                        .get_or_insert(frames_ahead - delta_update_ahead);
+                }
             }
         } else {
             assert_eq!(self.player_frame, self.server_frame);
@@ -468,8 +471,8 @@ impl SimulationTime {
 
         if self.server_frame > frame_number {
             if self.server_frame.diff_abs(frame_number).value() > u16::MAX / 2 {
-                // This shouldn't overflow as we start counting from 1, and we never decrement more
-                // than once without incrementing.
+                // This shouldn't overflow as we start counting from 1, and we never decrement
+                // more than once without incrementing.
                 self.server_generation -= 1;
             }
             self.server_frame = frame_number;
@@ -477,17 +480,19 @@ impl SimulationTime {
             self.player_generation = self.server_generation;
         } else if self.player_frame > frame_number {
             if self.player_frame.diff_abs(frame_number).value() > u16::MAX / 2 {
-                // This shouldn't overflow as we start counting from 1, and we never decrement more
-                // than once without incrementing.
+                // This shouldn't overflow as we start counting from 1, and we never decrement
+                // more than once without incrementing.
                 self.player_generation -= 1;
             }
             self.player_frame = frame_number;
         }
 
         log::trace!(
-            "Rewind to {{server: {}, player: {}, frame: {}}}",
+            "Rewind to {{server: {} (prev: {}), player: {} (prev: {}), frame: {}}}",
             self.server_frame,
+            prev_server,
             self.player_frame,
+            prev_player,
             frame_number,
         );
     }
@@ -573,8 +578,8 @@ fn simulation_tick_run_criteria(
 ) -> ShouldRun {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    // Checking that a game frame has changed helps us to avoid the panicking in case we rewind
-    // simulation frame just 1 frame back.
+    // Checking that a game frame has changed helps us to avoid the panicking in
+    // case we rewind simulation frame just 1 frame back.
     if state.last_game_frame != Some(game_time.frame_number) {
         state.last_game_frame = Some(game_time.frame_number);
     } else if state.last_player_frame == simulation_time.player_frame
@@ -633,10 +638,12 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
         time.player_frames_to_rerun,
     );
 
-    // Check whether we finished replaying client inputs to correct mispredictions (check that
-    // we've caught up with the previous `player_frames_to_rerun` value).
-    if let Some(player_frames_to_rerun) = time.player_frames_to_rerun {
-        if time.player_frames_ahead() >= player_frames_to_rerun.value() {
+    // Check whether we finished replaying client inputs to correct mispredictions
+    // (check that we've caught up with the previous `player_frames_to_rerun`
+    // value).
+    if let Some(player_frames_to_rerun) = &mut time.player_frames_to_rerun {
+        *player_frames_to_rerun -= FrameNumber::new(1);
+        if player_frames_to_rerun.value() == 0 {
             time.player_frames_to_rerun = None;
         }
     }

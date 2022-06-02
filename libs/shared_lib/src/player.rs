@@ -29,7 +29,8 @@ pub struct PlayerSystemParamsMut<'w, 's> {
 #[derive(Debug, Default)]
 pub struct PlayerUpdates {
     pub direction: HashMap<PlayerNetId, Framebuffer<Option<PlayerDirectionUpdate>>>,
-    /// Is supposed to be filled and used only by clients, as it contains authoritative updates.
+    /// Is supposed to be filled and used only by clients, as it contains
+    /// authoritative updates.
     pub position: HashMap<PlayerNetId, Framebuffer<Option<Vec2>>>,
 }
 
@@ -80,7 +81,7 @@ impl PlayerUpdates {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Player {
     pub uuid: String,
     pub nickname: String,
@@ -117,7 +118,7 @@ impl Player {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayerRole {
     Runner,
     Builder,

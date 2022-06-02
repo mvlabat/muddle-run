@@ -14,8 +14,8 @@ use bevy_rapier2d::{
 };
 use std::collections::VecDeque;
 
-// NOTE: After adding components for new archetypes, make sure that related entities are cleaned up
-// in the `restart_game` system.
+// NOTE: After adding components for new archetypes, make sure that related
+// entities are cleaned up in the `restart_game` system.
 
 #[derive(Bundle)]
 pub struct PhysicsBundle {
@@ -78,20 +78,23 @@ pub struct LevelObjectTag;
 #[derive(Component, Default)]
 pub struct LevelObjectLabel(pub String);
 
-/// Entity having this component represents a level object at its initial position.
-/// This component points to a parent, so an entity having this component is a child.
+/// Entity having this component represents a level object at its initial
+/// position. This component points to a parent, so an entity having this
+/// component is a child.
 #[derive(Component)]
 pub struct LevelObjectStaticGhostParent(pub Entity);
 
 #[derive(Component)]
 pub struct LevelObjectStaticGhostChild(pub Entity);
 
-/// Entity having this component represents a level object simulated at server time.
-/// This component points to a parent, so an entity having this component is a child.
+/// Entity having this component represents a level object simulated at server
+/// time. This component points to a parent, so an entity having this component
+/// is a child.
 #[derive(Component, Debug)]
 pub struct LevelObjectServerGhostParent(pub Entity);
 
-/// Points to an entity that is a ghost of a level object simulated at server time.
+/// Points to an entity that is a ghost of a level object simulated at server
+/// time.
 #[derive(Component, Debug)]
 pub struct LevelObjectServerGhostChild(pub Entity);
 
@@ -134,27 +137,30 @@ impl Position {
     }
 }
 
-/// Is used only by the client, to lerp the position if an authoritative update arrives from the
-/// server. Using this component only makes sense if it's movement is not deterministic (i.e. it
-/// can be affected by collisions with other entities or is controlled by a player, etc).
+/// Is used only by the client, to lerp the position if an authoritative update
+/// arrives from the server. Using this component only makes sense if it's
+/// movement is not deterministic (i.e. it can be affected by collisions with
+/// other entities or is controlled by a player, etc).
 #[derive(Component, Debug)]
 pub struct PredictedPosition {
     pub value: Vec2,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpawnCommand {
     Spawn,
     Despawn,
 }
 
-/// The purpose of this component is providing a frame number of when a component was spawned,
-/// to be able to avoid processing an entity in case rewind game state during lag compensation.
+/// The purpose of this component is providing a frame number of when a
+/// component was spawned, to be able to avoid processing an entity in case
+/// rewind game state during lag compensation.
 #[derive(Component, Clone, Debug, Default)]
 pub struct Spawned {
-    /// We store an option since FrameNumber represents a wrapped counter (i.e. cycling counter).
-    /// If a component gets old enough, we set the timestamp to `None`, as we become sure that
-    /// we won't try to simulate an entity that wasn't spawned for a given `GameTime::sumilation_frame`.
+    /// We store an option since FrameNumber represents a wrapped counter (i.e.
+    /// cycling counter). If a component gets old enough, we set the
+    /// timestamp to `None`, as we become sure that we won't try to simulate
+    /// an entity that wasn't spawned for a given `GameTime::sumilation_frame`.
     /// See `mark_mature_entities` system.
     commands: VecDeque<(SpawnCommand, FrameNumber)>,
 }
@@ -181,7 +187,8 @@ impl Spawned {
                 SpawnCommand::Despawn => false,
             }
         }
-        // If there is the next command, and it's a Spawn command, the entity isn't spawned yet.
+        // If there is the next command, and it's a Spawn command, the entity isn't
+        // spawned yet.
         if let Some((SpawnCommand::Spawn, _)) =
             self.commands.get(command_index.map_or(0, |i| i + 1))
         {
@@ -229,20 +236,24 @@ pub struct PlayerFrameSimulated;
 
 #[derive(Component, Clone)]
 pub struct LevelObjectMovement {
-    /// May point to the future if it's the start of the game and we have non-zero start offset.
+    /// May point to the future if it's the start of the game and we have
+    /// non-zero start offset.
     pub frame_started: FrameNumber,
-    /// Represents a vector from the attached route point to the initial object position.
-    /// Matters only for radial movement.
+    /// Represents a vector from the attached route point to the initial object
+    /// position. Matters only for radial movement.
     pub init_vec: Vec2,
-    /// Zero period means the object is always staying at the initial position or doesn't rotate.
+    /// Zero period means the object is always staying at the initial position
+    /// or doesn't rotate.
     pub period: FrameNumber,
-    /// How much route progress each point corresponds to. The final one must always equal `1.0`.
-    /// For the radial movement type it contains only 1 element: the attached object (the center).
+    /// How much route progress each point corresponds to. The final one must
+    /// always equal `1.0`. For the radial movement type it contains only 1
+    /// element: the attached object (the center).
     pub points_progress: Vec<LevelObjectMovementPoint>,
     pub movement_type: LevelObjectMovementType,
 }
 
-/// A marker component to tag an entity that is excluded from physics simulations.
+/// A marker component to tag an entity that is excluded from physics
+/// simulations.
 #[derive(Component, Clone, Copy)]
 pub struct LockPhysics(pub bool);
 
@@ -256,9 +267,11 @@ pub struct LevelObjectMovementPoint {
 /// Maps to `ObjectRouteDesc`.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum LevelObjectMovementType {
-    /// Corresponds to either `ObjectRouteDesc::ForwardCycle` or `ObjectRouteDesc::ForwardBackwardsCycle`.
+    /// Corresponds to either `ObjectRouteDesc::ForwardCycle` or
+    /// `ObjectRouteDesc::ForwardBackwardsCycle`.
     Linear,
-    /// If `LevelObjectMovement::period` equals 0, this corresponds to `ObjectRouteDesc::Attached`.
+    /// If `LevelObjectMovement::period` equals 0, this corresponds to
+    /// `ObjectRouteDesc::Attached`.
     Radial,
 }
 

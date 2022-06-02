@@ -57,8 +57,9 @@ pub struct MouseEntityPicker<'w, 's, Q: Send + Sync + 'static, F: Send + Sync + 
 
 #[derive(Clone, Default)]
 pub struct MouseEntityPickerData<T> {
-    /// Hovered entity will never equal picked entity, to make it possible to highlight an object
-    /// underneath, for instance, while dragging another one (not currently used though).
+    /// Hovered entity will never equal picked entity, to make it possible to
+    /// highlight an object underneath, for instance, while dragging another
+    /// one (not currently used though).
     pub hovered_entity: Option<Entity>,
     pub picked_entity: Option<Entity>,
     pub dragging_start_position: Vec2,
@@ -111,8 +112,8 @@ where
         })
     }
 
-    /// If an entity can be changed due to re-creating it because of a network update, this function
-    /// needs to be called before `process_input`.
+    /// If an entity can be changed due to re-creating it because of a network
+    /// update, this function needs to be called before `process_input`.
     pub fn update_entities(&mut self, f: impl Fn(Entity) -> Option<Entity>) {
         if let Some(hovered_entity) = self.state.hovered_entity {
             self.state.hovered_entity = f(hovered_entity);
@@ -167,7 +168,8 @@ where
         }
 
         if self.state.picked_entity != self.prev_state.picked_entity {
-            // This is the point when prev_state can become totally different from the current one.
+            // This is the point when prev_state can become totally different from the
+            // current one.
             *self.state = MouseEntityPickerData {
                 // Hovered entity should never be equal to picked entity.
                 // (See documentation for `hovered_entity`.)
@@ -239,8 +241,9 @@ pub fn cursor_pos_to_ray(
     let object_to_world = camera_transform;
     let object_to_ndc = camera_perspective;
 
-    // Transform the cursor position into object/camera space. This also turns the cursor into
-    // a vector that's pointing from the camera center onto the far plane.
+    // Transform the cursor position into object/camera space. This also turns the
+    // cursor into a vector that's pointing from the camera center onto the far
+    // plane.
     let mut ray_camera = object_to_ndc.inverse().mul_vec4(cursor_ndc);
     ray_camera.z = -1.0;
     ray_camera.w = 0.0; // treat the vector as a direction (0 = Direction, 1 = Position)

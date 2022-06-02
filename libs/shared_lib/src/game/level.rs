@@ -65,14 +65,14 @@ pub struct LevelObject {
     pub collision_logic: CollisionLogic,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ObjectRoute {
     pub period: FrameNumber,
     pub start_frame_offset: FrameNumber,
     pub desc: ObjectRouteDesc,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ObjectRouteDesc {
     Attached(Option<EntityNetId>),
     Radial(Option<EntityNetId>),
@@ -87,7 +87,7 @@ pub enum LevelObjectDesc {
     RoutePoint(RoutePointDesc),
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollisionLogic {
     Finish,
     Death,

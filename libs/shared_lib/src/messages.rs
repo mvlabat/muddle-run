@@ -34,7 +34,8 @@ impl<T: Serialize> DeferredMessagesQueue<T> {
     }
 }
 
-// TODO: refactor to be a part of entity registry, implement reclaiming ids of removed entities.
+// TODO: refactor to be a part of entity registry, implement reclaiming ids of
+// removed entities.
 #[derive(Component, Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct EntityNetId(pub u16);
 
@@ -46,7 +47,8 @@ impl IncrementId for EntityNetId {
     }
 }
 
-// TODO: refactor to be a part of player registry, implement reclaiming ids of removed players.
+// TODO: refactor to be a part of player registry, implement reclaiming ids of
+// removed players.
 #[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct PlayerNetId(pub u16);
 
@@ -58,7 +60,7 @@ impl IncrementId for PlayerNetId {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Message<T> {
     pub session_id: SessionId,
     pub message: T,
@@ -72,7 +74,8 @@ pub enum UnreliableClientMessage {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ReliableClientMessage {
-    /// A kludge message basically, to let our networking stack to initialize properly for webrtc.
+    /// A kludge message basically, to let our networking stack to initialize
+    /// properly for webrtc.
     Initialize,
     /// Is sent as a response to server's `UnreliableServerMessage::Handshake`.
     Handshake {
@@ -99,7 +102,8 @@ pub enum SpawnLevelObjectRequestBody {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ReliableServerMessage {
-    /// A kludge message basically, to let our networking stack to initialize properly for webrtc.
+    /// A kludge message basically, to let our networking stack to initialize
+    /// properly for webrtc.
     Initialize,
     /// Is sent as a response to client's `ReliableClientMessage::Handshake`.
     StartGame(StartGame),
@@ -113,7 +117,7 @@ pub enum ReliableServerMessage {
     Disconnect(DisconnectReason),
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisconnectReason {
     InvalidJwt,
     InvalidUpdate,
@@ -156,7 +160,7 @@ pub struct StartGame {
     pub game_state: DeltaUpdate,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DisconnectedPlayer {
     pub net_id: PlayerNetId,
 }
@@ -172,7 +176,8 @@ pub struct DeltaUpdate {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct PlayerState {
     pub net_id: PlayerNetId,
-    /// Contains the initial position, so that applying all inputs renders a player in its actual position on server.
+    /// Contains the initial position, so that applying all inputs renders a
+    /// player in its actual position on server.
     pub position: Vec2,
     pub inputs: Vec<RunnerInput>,
 }
@@ -189,23 +194,23 @@ pub struct SpawnLevelObject {
     pub command: UpdateLevelObject,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct SwitchRole {
     pub net_id: PlayerNetId,
     pub role: PlayerRole,
     pub frame_number: FrameNumber,
 }
 
-/// This message isn't supposed to trigger the spawn command though. We spawn a player as soon as it
-/// appears in a DeltaUpdate message, as usual.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+/// This message isn't supposed to trigger the spawn command though. We spawn a
+/// player as soon as it appears in a DeltaUpdate message, as usual.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct RespawnPlayer {
     pub net_id: PlayerNetId,
     pub reason: RespawnPlayerReason,
     pub frame_number: FrameNumber,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RespawnPlayerReason {
     Finish,
     Death,

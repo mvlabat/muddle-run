@@ -186,8 +186,9 @@ pub fn switch_player_role(
             player.role
         );
 
-        // If a player is going to be respawned due to a Finish or Death event, we want to prevent
-        // it, as players shouldn't be respawned when in Builder mode.
+        // If a player is going to be respawned due to a Finish or Death event, we want
+        // to prevent it, as players shouldn't be respawned when in Builder
+        // mode.
         player.respawning_at = None;
 
         #[cfg(not(feature = "client"))]
