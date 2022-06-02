@@ -241,7 +241,7 @@ impl MatchmakerUiState {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 enum SelectedLevel {
     NewLevel(String),
     Existing(i64),
@@ -265,7 +265,7 @@ impl Default for MatchmakerUiScreen {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub enum LevelsListFilter {
     All,
     Owned,

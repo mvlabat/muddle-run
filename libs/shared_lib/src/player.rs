@@ -80,7 +80,7 @@ impl PlayerUpdates {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Player {
     pub uuid: String,
     pub nickname: String,
@@ -117,7 +117,7 @@ impl Player {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayerRole {
     Runner,
     Builder,

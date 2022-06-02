@@ -52,7 +52,7 @@ pub const DEFAULT_PLANE_CONCAVE_POINTS: &[[f32; 2]] = &[
 ];
 
 pub fn default_period() -> FrameNumber {
-    FrameNumber::new(SIMULATIONS_PER_SECOND * 10)
+    FrameNumber::new(SIMULATIONS_PER_SECOND as u16 * 10)
 }
 
 #[derive(Default, Clone)]
@@ -564,8 +564,9 @@ fn level_object_ui(
                             egui::widgets::DragValue::new(&mut route.period)
                                 .speed(0.1)
                                 .clamp_range(
-                                    SIMULATIONS_PER_SECOND.max(route.start_frame_offset.value() + 1)
-                                        ..=SIMULATIONS_PER_SECOND * 60,
+                                    (SIMULATIONS_PER_SECOND as u16)
+                                        .max(route.start_frame_offset.value() + 1)
+                                        ..=SIMULATIONS_PER_SECOND as u16 * 60,
                                 ),
                         );
                         ui.end_row();
@@ -669,7 +670,7 @@ fn plane_form(ui: &mut egui::Ui, dirty_plane_form_desc: &mut PlaneFormDesc) {
 }
 
 fn plane_form_type(ui: &mut egui::Ui, dirty_plane_form_desc: &mut PlaneFormDesc) {
-    #[derive(Copy, Clone, PartialEq, Debug)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     enum Type {
         Circle,
         Rectangle,
@@ -852,7 +853,7 @@ fn level_objects_filter(
 }
 
 fn route_type(ui: &mut egui::Ui, dirty_level_object: &mut LevelObject) {
-    #[derive(Copy, Clone, PartialEq, Debug)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     enum Type {
         Stationary,
         Attached,

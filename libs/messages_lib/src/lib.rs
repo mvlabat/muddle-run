@@ -8,7 +8,7 @@ use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializ
 use serde_with::rust::display_fromstr::deserialize as deserialize_fromstr;
 
 // See: https://docs.rs/serde_qs/0.9.1/serde_qs/index.html#flatten-workaround
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PaginationParams {
     #[serde(deserialize_with = "deserialize_fromstr")]
     pub offset: i64,

@@ -27,7 +27,7 @@ pub struct Jwk<'a> {
     #[serde(rename = "use")]
     key_use: KeyUse,
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyUse {
     #[serde(rename = "sig")]
     Signature,

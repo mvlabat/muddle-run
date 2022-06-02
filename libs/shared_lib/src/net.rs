@@ -16,8 +16,7 @@ use std::{collections::VecDeque, time::Duration};
 use thiserror::Error;
 
 pub const CONNECTION_TIMEOUT_MILLIS: u64 = 10000;
-const RTT_UPDATE_FACTOR: f32 = 0.2;
-const JITTER_DECREASE_THRESHOLD_SECS: u64 = 1;
+const NET_STAT_UPDATE_FACTOR: f32 = 0.2;
 
 pub type MessageId = WrappedCounter<u16>;
 pub type SessionId = WrappedCounter<u16>;
@@ -72,7 +71,6 @@ pub struct ConnectionState {
     outgoing_packets_acks: VecDeque<Acknowledgment>,
     packet_loss: f32,
     jitter_millis: f32,
-    last_increased_jitter: Instant,
     rtt_millis: f32,
 }
 
@@ -89,8 +87,6 @@ impl Default for ConnectionState {
             outgoing_packets_acks: VecDeque::new(),
             packet_loss: 0.0,
             jitter_millis: 0.0,
-            last_increased_jitter: Instant::now()
-                - Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS),
             rtt_millis: 100.0,
         }
     }
@@ -325,7 +321,7 @@ impl ConnectionState {
     }
 
     fn update_stats(&mut self, frame_number: FrameNumber) {
-        // Position of the acknowledged frame + 1 (basically the length, but it should also take into account unordered updates).
+        // Position of the newest acknowledged frame + 1.
         let expected_acknowledged_count = self
             .outgoing_packets_acks
             .iter()
@@ -356,10 +352,10 @@ impl ConnectionState {
                 - acknowledged_frame.sent_at)
                 .as_secs_f32()
                 * 1000.0;
-            self.rtt_millis += (rtt - self.rtt_millis) * RTT_UPDATE_FACTOR;
+            self.rtt_millis += (rtt - self.rtt_millis) * NET_STAT_UPDATE_FACTOR;
         }
 
-        // Calculating average rtt.
+        // Calculating mean rtt.
         let mut acc = 0.0;
         let mut count = 0;
         for rtt in self
@@ -370,25 +366,17 @@ impl ConnectionState {
             acc += rtt;
             count += 1;
         }
-        let avg_rtt = acc / count as f32;
+        let mean_rtt = acc / count as f32;
 
         // Calculating jitter.
-        let mut jitter = 0.0f32;
-        for rtt in self
+        let jitter = self
             .outgoing_packets_acks
             .iter()
             .filter_map(|ack| ack.rtt_millis())
-        {
-            jitter = jitter.max((avg_rtt - rtt).abs() * 1.1);
-        }
-        if jitter > self.jitter_millis {
-            self.last_increased_jitter = Instant::now();
-            self.jitter_millis = jitter;
-        } else if Instant::now().duration_since(self.last_increased_jitter)
-            > Duration::from_secs(JITTER_DECREASE_THRESHOLD_SECS)
-        {
-            self.jitter_millis = self.jitter_millis + (jitter - self.jitter_millis) * 0.1;
-        }
+            .map(|rtt| (mean_rtt - rtt) * (mean_rtt - rtt))
+            .sum::<f32>()
+            .sqrt();
+        self.jitter_millis += (jitter - self.jitter_millis) * NET_STAT_UPDATE_FACTOR;
     }
 
     /// How many elements we can still add to the buffer without shifting old packets out.

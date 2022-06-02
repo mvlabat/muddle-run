@@ -142,7 +142,7 @@ pub struct PredictedPosition {
     pub value: Vec2,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpawnCommand {
     Spawn,
     Despawn,

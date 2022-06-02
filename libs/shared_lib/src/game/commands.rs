@@ -47,7 +47,7 @@ pub struct SpawnPlayer {
     pub is_player_frame_simulated: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DespawnPlayer {
     pub net_id: PlayerNetId,
     pub frame_number: FrameNumber,
@@ -59,7 +59,7 @@ pub struct UpdateLevelObject {
     pub frame_number: FrameNumber,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DespawnLevelObject {
     pub net_id: EntityNetId,
     pub frame_number: FrameNumber,

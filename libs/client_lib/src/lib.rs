@@ -1,5 +1,6 @@
 #![feature(assert_matches)]
 #![feature(let_else)]
+#![feature(mixed_integer_ops)]
 #![feature(slice_pattern)]
 #![allow(clippy::only_used_in_recursion)]
 
@@ -68,7 +69,7 @@ mod utils;
 mod visuals;
 mod websocket;
 
-const TICKING_SPEED_FACTOR: u16 = 10;
+const TICKING_SPEED_FACTOR: u16 = 100;
 
 pub struct MuddleClientPlugin;
 
@@ -143,7 +144,6 @@ impl Plugin for MuddleClientPlugin {
         world.get_resource_or_insert_with(GameTicksPerSecond::default);
         world.get_resource_or_insert_with(TargetFramesAhead::default);
         world.get_resource_or_insert_with(DelayServerTime::default);
-        world.get_resource_or_insert_with(AdjustedSpeedReason::default);
         world.get_resource_or_insert_with(ui::debug_ui::DebugUiState::default);
         world.get_resource_or_insert_with(CurrentPlayerNetId::default);
         world.get_resource_or_insert_with(ConnectionState::default);
@@ -200,25 +200,25 @@ impl InitialRtt {
 }
 
 /// We update this only when a client receives a fresh delta update.
-/// If we see that a client is too far ahead of the server, we may pause the game.
-/// See the `pause_simulation` system.
+/// If we see that a client is too far ahead of the server, we may pause the
+/// game. See the `pause_simulation` system.
 #[derive(Default)]
 pub struct EstimatedServerTime {
     pub updated_at: FrameNumber,
     pub frame_number: FrameNumber,
 }
 
-/// If an incoming delta update comes later or earlier than `server_frame` (from the
-/// `SimulationTime` resource), we update this value to let the clocks sync so that a clien
-/// receives updates in time before the simulation.
+/// If an incoming delta update comes later or earlier than `server_frame` (from
+/// the `SimulationTime` resource), we update this value to let the clocks sync
+/// so that a clien receives updates in time before the simulation.
 /// See the `sync_clock` function.
 #[derive(Default)]
 pub struct DelayServerTime {
     pub frame_count: i16,
 }
 
-/// If rtt between a client and a server changes, we need to change how much a client is ahead of
-/// a server. See the `sync_clock` function.
+/// If rtt between a client and a server changes, we need to change how much a
+/// client is ahead of a server. See the `sync_clock` function.
 pub struct TargetFramesAhead {
     /// Stores the results of `SimulationTime::player_frames_ahead`.
     pub actual_frames_ahead: Framebuffer<u16>,
@@ -238,13 +238,13 @@ impl Default for TargetFramesAhead {
 }
 
 pub struct GameTicksPerSecond {
-    pub rate: u16,
+    pub value: f32,
 }
 
 impl Default for GameTicksPerSecond {
     fn default() -> Self {
         Self {
-            rate: SIMULATIONS_PER_SECOND,
+            value: SIMULATIONS_PER_SECOND,
         }
     }
 }
@@ -301,8 +301,8 @@ fn pause_simulation(
         .saturating_sub(estimated_server_time.frame_number.value())
         < COMPONENT_FRAMEBUFFER_LIMIT / 2;
 
-    // We always assume that `GameState::Playing` is the initial state and `GameState::Paused`
-    // is pushed to the top of the stack.
+    // We always assume that `GameState::Playing` is the initial state and
+    // `GameState::Paused` is pushed to the top of the stack.
     if let GameState::Paused = game_state.current() {
         if is_connected && has_server_updates {
             let result = game_state.pop();
@@ -311,7 +311,8 @@ fn pause_simulation(
                     log::info!("Unpausing the game");
                 }
                 Err(StateError::StateAlreadyQueued) => {
-                    // TODO: investigate why this runs more than once before changing the state sometimes.
+                    // TODO: investigate why this runs more than once before
+                    // changing the state sometimes.
                 }
                 Err(StateError::StackEmpty | StateError::AlreadyInState) => unreachable!(),
             }
@@ -326,7 +327,8 @@ fn pause_simulation(
                 log::info!("Pausing the game");
             }
             Err(StateError::AlreadyInState) | Err(StateError::StateAlreadyQueued) => {
-                // It's ok. Bevy won't let us push duplicate values - that's what we rely on.
+                // It's ok. Bevy won't let us push duplicate values - that's
+                // what we rely on.
             }
             Err(StateError::StackEmpty) => unreachable!(),
         }
@@ -367,143 +369,112 @@ fn basic_scene(mut commands: Commands) {
 
 #[derive(SystemParam)]
 pub struct ControlTickingSpeedParams<'w, 's> {
-    tick_rate: ResMut<'w, GameTicksPerSecond>,
+    current_ticks_per_second: ResMut<'w, GameTicksPerSecond>,
     simulation_time: ResMut<'w, SimulationTime>,
     time: ResMut<'w, GameTime>,
     target_frames_ahead: Res<'w, TargetFramesAhead>,
     delay_server_time: ResMut<'w, DelayServerTime>,
-    adjusted_speed_reason: ResMut<'w, AdjustedSpeedReason>,
     #[system_param(ignore)]
     marker: PhantomData<&'s ()>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum AdjustedSpeedReason {
-    SyncServerFrame,
-    NewFramesAheadTarget,
-    None,
-}
-
-impl Default for AdjustedSpeedReason {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 fn control_ticking_speed(
     mut frames_ticked: Local<u16>,
     mut prev_generation: Local<usize>,
-    mut prev_tick_rate: Local<GameTicksPerSecond>,
     mut params: ControlTickingSpeedParams,
 ) {
-    use std::cmp::Ordering;
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
 
     let target_frames_ahead = params.target_frames_ahead.target;
-    let target_player_frame =
-        params.simulation_time.server_frame + FrameNumber::new(target_frames_ahead);
+    let actual_frames_ahead = params.simulation_time.player_frames_ahead();
 
-    // We want to sync the server clock time first and only then reach the new "frames ahead"
-    // target, to avoid oscillating.
-    params.tick_rate.rate = match params.delay_server_time.frame_count.cmp(&0) {
-        Ordering::Equal => {
-            *params.adjusted_speed_reason = AdjustedSpeedReason::None;
-            SIMULATIONS_PER_SECOND
+    let frames_to_go_ahead = target_frames_ahead as i16 - actual_frames_ahead as i16;
+    let new_ticks_per_second = if *frames_ticked < TICKING_SPEED_FACTOR {
+        params.current_ticks_per_second.value
+    } else if frames_to_go_ahead.abs() > params.delay_server_time.frame_count.abs() {
+        if frames_to_go_ahead > 0 {
+            ticks_per_second_faster()
+        } else {
+            ticks_per_second_slower()
         }
-        Ordering::Greater => {
-            *params.adjusted_speed_reason = AdjustedSpeedReason::SyncServerFrame;
-            slower_tick_rate()
-        }
-        Ordering::Less => {
-            *params.adjusted_speed_reason = AdjustedSpeedReason::SyncServerFrame;
-            faster_tick_rate()
-        }
+    } else if params.delay_server_time.frame_count > 0 {
+        ticks_per_second_slower()
+    } else if params.delay_server_time.frame_count < 0 {
+        ticks_per_second_faster()
+    } else {
+        SIMULATIONS_PER_SECOND
     };
+    params.current_ticks_per_second.value = new_ticks_per_second;
 
-    if !matches!(
-        *params.adjusted_speed_reason,
-        AdjustedSpeedReason::SyncServerFrame
-    ) {
-        params.tick_rate.rate = match params
-            .simulation_time
-            .player_frame
-            .cmp(&target_player_frame)
+    let slow_down_server = params.delay_server_time.frame_count > 0;
+    let speed_up_server = params.delay_server_time.frame_count < 0;
+    let slow_down_player = frames_to_go_ahead < 0;
+    let speed_up_player = frames_to_go_ahead > 0;
+
+    #[cfg(debug_assertions)]
+    log::trace!(
+        "Server time: {}, player_time: {}, frames_to_go_ahead: {}, delay server: {}, ticks per second: {}, c: {}",
+        params.simulation_time.server_frame,
+        params.simulation_time.player_frame,
+        frames_to_go_ahead,
+        params.delay_server_time.frame_count,
+        new_ticks_per_second,
+        *frames_ticked,
+    );
+
+    if *frames_ticked == TICKING_SPEED_FACTOR / 2 {
+        if params.current_ticks_per_second.value == ticks_per_second_faster()
+            && slow_down_server
+            && speed_up_player
         {
-            Ordering::Equal => {
-                *params.adjusted_speed_reason = AdjustedSpeedReason::None;
-                SIMULATIONS_PER_SECOND
-            }
-            Ordering::Greater => {
-                *params.adjusted_speed_reason = AdjustedSpeedReason::NewFramesAheadTarget;
-                slower_tick_rate()
-            }
-            Ordering::Less => {
-                *params.adjusted_speed_reason = AdjustedSpeedReason::NewFramesAheadTarget;
-                faster_tick_rate()
-            }
-        };
-    }
-
-    if prev_tick_rate.rate != params.tick_rate.rate || *prev_generation != params.time.session {
+            params.delay_server_time.frame_count -= 1;
+            params.simulation_time.server_frame -= FrameNumber::new(1);
+        } else if params.current_ticks_per_second.value == ticks_per_second_slower()
+            && speed_up_server
+            && slow_down_player
+        {
+            params.simulation_time.player_frame -= FrameNumber::new(1);
+        }
+    } else if *frames_ticked == TICKING_SPEED_FACTOR {
         *frames_ticked = 0;
-    }
-
-    if *frames_ticked == TICKING_SPEED_FACTOR {
-        *frames_ticked = 0;
-        match *params.adjusted_speed_reason {
-            AdjustedSpeedReason::SyncServerFrame => {
-                if params.tick_rate.rate == faster_tick_rate() {
-                    params.delay_server_time.frame_count += 1;
-                    log::trace!(
-                        "Speed server up (adjust: sync, delay: {})",
-                        params.delay_server_time.frame_count
-                    );
-                } else if params.tick_rate.rate == slower_tick_rate() {
-                    log::trace!(
-                        "Slow server down (adjust: sync, delay: {})",
-                        params.delay_server_time.frame_count
-                    );
-                    params.delay_server_time.frame_count -= 1;
-                }
-            }
-            AdjustedSpeedReason::NewFramesAheadTarget => {
-                if params.tick_rate.rate == faster_tick_rate() {
-                    log::trace!("Slow server down (adjust: target)");
-                    params.simulation_time.server_frame -= FrameNumber::new(1);
-                } else if params.tick_rate.rate == slower_tick_rate() {
-                    log::trace!("Speed player up (adjust: target)");
+        if params.current_ticks_per_second.value == ticks_per_second_faster() {
+            if speed_up_server {
+                params.delay_server_time.frame_count += 1;
+                if slow_down_player {
                     params.simulation_time.player_frame -= FrameNumber::new(1);
-                    params.time.frame_number -= FrameNumber::new(1);
                 }
+            } else if speed_up_player {
+                params.simulation_time.server_frame -= FrameNumber::new(1);
+            } else {
+                unreachable!("Can't speed up when neither the server time is delayed, nor the player time is behind the frames ahead target");
             }
-            AdjustedSpeedReason::None => {}
+        } else if params.current_ticks_per_second.value == ticks_per_second_slower() {
+            if slow_down_server {
+                params.delay_server_time.frame_count -= 1;
+                if speed_up_player {
+                    params.simulation_time.server_frame -= FrameNumber::new(1);
+                }
+            } else if slow_down_player {
+                params.simulation_time.player_frame -= FrameNumber::new(1);
+            } else {
+                unreachable!("Can't slow down when neither the server time is ahead, nor the player time is ahead of the frames ahead target");
+            }
         }
     }
 
     *frames_ticked += 1;
-    prev_tick_rate.rate = params.tick_rate.rate;
     *prev_generation = params.time.session;
 }
 
 #[allow(clippy::assertions_on_constants)]
-fn faster_tick_rate() -> u16 {
-    assert!(
-        SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR == 0,
-        "SIMULATIONS_PER_SECOND must a multiple of {}",
-        TICKING_SPEED_FACTOR
-    );
-    SIMULATIONS_PER_SECOND + SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
+fn ticks_per_second_faster() -> f32 {
+    SIMULATIONS_PER_SECOND as f32 + SIMULATIONS_PER_SECOND as f32 / TICKING_SPEED_FACTOR as f32
 }
 
 #[allow(clippy::assertions_on_constants)]
-fn slower_tick_rate() -> u16 {
-    assert!(
-        SIMULATIONS_PER_SECOND % TICKING_SPEED_FACTOR == 0,
-        "SIMULATIONS_PER_SECOND must a multiple of {}",
-        TICKING_SPEED_FACTOR
-    );
-    SIMULATIONS_PER_SECOND - SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR
+fn ticks_per_second_slower() -> f32 {
+    SIMULATIONS_PER_SECOND as f32 - SIMULATIONS_PER_SECOND as f32 / TICKING_SPEED_FACTOR as f32
 }
 
 #[derive(Default, Clone)]
@@ -521,17 +492,18 @@ fn net_adaptive_run_criteria(
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
     // See `control_ticking_speed` for the rate value changes.
-    let rate = game_ticks_per_second.rate;
+    let rate = game_ticks_per_second.value;
     let step = 1.0 / rate as f64;
 
-    // If it's the first run after the previous render (or it's the first run ever), we add the
-    // delta to the accumulator and start looping while it's higher or equals the step.
+    // If it's the first run after the previous render (or it's the first run ever),
+    // we add the delta to the accumulator and start looping while it's higher
+    // or equals the step.
     if state.started_looping_at.is_none() {
         state.accumulator += time.delta_seconds_f64();
     }
 
-    // In the scenario when a client was frozen (minimized, for example) and it got disconnected,
-    // we don't want to replay all the accumulated frames.
+    // In the scenario when a client was frozen (minimized, for example) and it got
+    // disconnected, we don't want to replay all the accumulated frames.
     if game_state.current() != &GameState::Playing {
         state.accumulator = state.accumulator.min(1.0);
     }
@@ -542,8 +514,8 @@ fn net_adaptive_run_criteria(
             let secs_being_in_loop = Instant::now()
                 .duration_since(started_looping_at)
                 .as_secs_f32();
-            // We can't afford running game logic for too long without rendering, so we target
-            // at least 20 fps.
+            // We can't afford running game logic for too long without rendering, so we
+            // target at least 20 fps.
             let threshold_secs = 0.05;
             if secs_being_in_loop > threshold_secs {
                 state.started_looping_at = None;

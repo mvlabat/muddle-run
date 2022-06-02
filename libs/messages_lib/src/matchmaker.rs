@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 
 pub const PLAYER_CAPACITY: u16 = 5;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MatchmakerMessage {
     /// Is sent when a client is connected, contains a list of active servers.
     Init { servers: Vec<Server> },
@@ -43,7 +43,7 @@ impl MatchmakerRequest {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Server {
     pub name: String,
     pub state: GameServerState,
@@ -55,7 +55,7 @@ pub struct Server {
 }
 
 /// The list of all the possible states: https://github.com/googleforgames/agones/blob/7770aa67fa5a19b5fc37386d220ecedf1044c0c3/pkg/apis/agones/v1/gameserver.go#L35-L62.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum GameServerState {
     PortAllocation,

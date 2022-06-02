@@ -13,7 +13,7 @@ use bevy::{
 use bevy_rapier2d::geometry::ColliderView;
 use rand::Rng;
 
-pub const PLAYER_RESPAWN_TIME: FrameNumber = FrameNumber::new(SIMULATIONS_PER_SECOND * 3);
+pub const PLAYER_RESPAWN_TIME: FrameNumber = FrameNumber::new(SIMULATIONS_PER_SECOND as u16 * 3);
 
 pub fn player_sensor_outline() -> Vec<Vec2> {
     let sensors_count = 8;

@@ -1,6 +1,6 @@
 use crate::{
-    helpers::MouseEntityPicker, ui::MuddleInspectable, AdjustedSpeedReason, DelayServerTime,
-    EstimatedServerTime, GameTicksPerSecond, TargetFramesAhead,
+    helpers::MouseEntityPicker, ui::MuddleInspectable, DelayServerTime, EstimatedServerTime,
+    GameTicksPerSecond, TargetFramesAhead,
 };
 use bevy::{
     diagnostic::{DiagnosticMeasurement, Diagnostics, FrameTimeDiagnosticsPlugin},
@@ -32,9 +32,8 @@ use std::{collections::VecDeque, marker::PhantomData};
 pub struct DebugData<'w, 's> {
     game_state: Res<'w, State<GameState>>,
     time: Res<'w, SimulationTime>,
-    tick_rate: Res<'w, GameTicksPerSecond>,
+    current_ticks_per_second: Res<'w, GameTicksPerSecond>,
     delay_server_time: Res<'w, DelayServerTime>,
-    adjusted_speed_reason: Res<'w, AdjustedSpeedReason>,
     target_frames_ahead: Res<'w, TargetFramesAhead>,
     estimated_server_time: Res<'w, EstimatedServerTime>,
     connection_state: Res<'w, ConnectionState>,
@@ -52,13 +51,12 @@ pub struct DebugUiState {
     pub game_state: GameState,
     pub actual_frames_ahead: u16,
     pub target_frames_ahead: u16,
-    pub tick_rate: u16,
+    pub current_ticks_per_second: f32,
     pub player_frame: FrameNumber,
     pub local_server_frame: FrameNumber,
     pub estimated_server_frame: FrameNumber,
     pub ahead_of_server: i32,
     pub delay_server_time: i16,
-    pub adjusted_speed_reason: AdjustedSpeedReason,
     pub rtt_millis: usize,
     pub packet_loss: f32,
     pub jitter_millis: usize,
@@ -88,12 +86,11 @@ pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_dat
     debug_ui_state.game_state = debug_data.game_state.current().clone();
     debug_ui_state.actual_frames_ahead = debug_data.time.player_frames_ahead();
     debug_ui_state.target_frames_ahead = debug_data.target_frames_ahead.target;
-    debug_ui_state.tick_rate = debug_data.tick_rate.rate;
+    debug_ui_state.current_ticks_per_second = debug_data.current_ticks_per_second.value;
     debug_ui_state.player_frame = debug_data.time.player_frame;
     debug_ui_state.local_server_frame = debug_data.time.server_frame;
     debug_ui_state.estimated_server_frame = debug_data.estimated_server_time.frame_number;
     debug_ui_state.delay_server_time = debug_data.delay_server_time.frame_count;
-    debug_ui_state.adjusted_speed_reason = *debug_data.adjusted_speed_reason;
     debug_ui_state.rtt_millis = debug_data.connection_state.rtt_millis() as usize;
     debug_ui_state.packet_loss = debug_data.connection_state.packet_loss() * 100.0;
     debug_ui_state.jitter_millis = debug_data.connection_state.jitter_millis() as usize;
@@ -174,7 +171,10 @@ pub fn debug_ui(
                 debug_ui_state.target_frames_ahead,
             ));
             ui.separator();
-            ui.label(format!("Tick rate: {}", debug_ui_state.tick_rate));
+            ui.label(format!(
+                "Tick rate: {} per second",
+                debug_ui_state.current_ticks_per_second
+            ));
             ui.label(format!("Player frame: {}", debug_ui_state.player_frame));
             ui.label(format!(
                 "Local server frame: {}",
@@ -188,7 +188,6 @@ pub fn debug_ui(
                 "Delay server time: {}",
                 debug_ui_state.delay_server_time
             ));
-            ui.label(format!("{:?}", debug_ui_state.adjusted_speed_reason));
             ui.separator();
             ui.label(format!("RTT: {}ms", debug_ui_state.rtt_millis));
             ui.label(format!("Packet loss: {:.2}%", debug_ui_state.packet_loss));

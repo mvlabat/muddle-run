@@ -58,7 +58,7 @@ impl IncrementId for PlayerNetId {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Message<T> {
     pub session_id: SessionId,
     pub message: T,
@@ -113,7 +113,7 @@ pub enum ReliableServerMessage {
     Disconnect(DisconnectReason),
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisconnectReason {
     InvalidJwt,
     InvalidUpdate,
@@ -156,7 +156,7 @@ pub struct StartGame {
     pub game_state: DeltaUpdate,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DisconnectedPlayer {
     pub net_id: PlayerNetId,
 }
@@ -189,7 +189,7 @@ pub struct SpawnLevelObject {
     pub command: UpdateLevelObject,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct SwitchRole {
     pub net_id: PlayerNetId,
     pub role: PlayerRole,
@@ -198,14 +198,14 @@ pub struct SwitchRole {
 
 /// This message isn't supposed to trigger the spawn command though. We spawn a player as soon as it
 /// appears in a DeltaUpdate message, as usual.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct RespawnPlayer {
     pub net_id: PlayerNetId,
     pub reason: RespawnPlayerReason,
     pub frame_number: FrameNumber,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RespawnPlayerReason {
     Finish,
     Death,
