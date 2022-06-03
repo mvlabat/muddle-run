@@ -998,7 +998,6 @@ fn broadcast_delta_update_messages(
                         create_player_state(
                             player_net_id,
                             time,
-                            connection_state,
                             entity,
                             player_entities,
                         )
@@ -1086,7 +1085,6 @@ fn broadcast_start_game_messages(
                             create_player_state(
                                 iter_player_net_id,
                                 time,
-                                connection_state,
                                 entity,
                                 player_entities,
                             )
@@ -1148,7 +1146,6 @@ fn broadcast_start_game_messages(
 fn create_player_state(
     net_id: PlayerNetId,
     time: &SimulationTime,
-    connection_state: &ConnectionState,
     entity: Entity,
     player_entities: &Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
 ) -> Option<PlayerState> {
@@ -1157,19 +1154,11 @@ fn create_player_state(
         return None;
     }
 
-    let updates_start_frame = if connection_state.packet_loss() > 0.0 {
-        // TODO: avoid doing the same searches when gathering updates for every player?
-        connection_state
-            .first_unacknowledged_outgoing_packet()
-            .unwrap_or(time.server_frame)
-    } else {
-        time.server_frame
-    };
+    let updates_start_frame = time.server_frame;
 
     let direction = player_direction
         .buffer
-        // TODO: avoid iterating from the beginning?
-        .get_with_interpolation(updates_start_frame)
+        .get_with_extrapolation(updates_start_frame)
         .map(|(_frame_number, direction)| *direction)
         .unwrap_or_else(|| {
             log::debug!(
