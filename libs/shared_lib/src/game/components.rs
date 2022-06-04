@@ -1,6 +1,6 @@
 use crate::{
     framebuffer::{FrameNumber, Framebuffer},
-    game::level::CollisionLogic,
+    game::{commands::DespawnReason, level::CollisionLogic},
     COMPONENT_FRAMEBUFFER_LIMIT,
 };
 use bevy::{
@@ -149,7 +149,7 @@ pub struct PredictedPosition {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpawnCommand {
     Spawn,
-    Despawn,
+    Despawn(DespawnReason),
 }
 
 /// The purpose of this component is providing a frame number of when a
@@ -184,7 +184,7 @@ impl Spawned {
             command_index = Some(i);
             res = match command {
                 SpawnCommand::Spawn => true,
-                SpawnCommand::Despawn => false,
+                SpawnCommand::Despawn(_) => false,
             }
         }
         // If there is the next command, and it's a Spawn command, the entity isn't
@@ -198,7 +198,7 @@ impl Spawned {
     }
 
     pub fn can_be_removed(&self, frame_number: FrameNumber) -> bool {
-        if let Some((SpawnCommand::Despawn, command_frame_number)) = self.commands.back() {
+        if let Some((SpawnCommand::Despawn(_), command_frame_number)) = self.commands.back() {
             return frame_number
                 >= *command_frame_number + FrameNumber::new(COMPONENT_FRAMEBUFFER_LIMIT);
         }
@@ -206,11 +206,27 @@ impl Spawned {
     }
 
     pub fn push_command(&mut self, frame_number: FrameNumber, command: SpawnCommand) {
-        let command_differs = self.commands.is_empty()
-            || self
+        if let SpawnCommand::Despawn(DespawnReason::Disconnect | DespawnReason::SwitchRole) =
+            command
+        {
+            self.commands = self
                 .commands
-                .back()
-                .map_or(false, |(last_command, _)| *last_command != command);
+                .iter()
+                .filter(|(_command, command_frame_number)| *command_frame_number < frame_number)
+                .cloned()
+                .collect();
+            self.commands.push_back((command, frame_number));
+            return;
+        }
+
+        let command_differs = self.commands.is_empty()
+            || self.commands.back().map_or(false, |(last_command, _)| {
+                matches!(
+                    (last_command, &command),
+                    (SpawnCommand::Spawn, SpawnCommand::Despawn(_))
+                        | (SpawnCommand::Despawn(_), SpawnCommand::Spawn)
+                )
+            });
         let command_is_new = self
             .commands
             .back()

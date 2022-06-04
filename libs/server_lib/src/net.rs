@@ -12,7 +12,7 @@ use bevy_networking_turbulence::{ConnectionHandle, NetworkEvent, NetworkResource
 use mr_messages_lib::{GetLevelResponse, PLAYER_CAPACITY};
 use mr_shared_lib::{
     game::{
-        commands::{self, DeferredPlayerQueues, DeferredQueue},
+        commands::{self, DeferredPlayerQueues, DeferredQueue, DespawnReason},
         components::{PlayerDirection, Position, Spawned},
         level::{LevelObject, LevelState},
     },
@@ -754,6 +754,7 @@ fn disconnect_players(
                     .push(commands::DespawnPlayer {
                         net_id: player_net_id,
                         frame_number: time.frame_number,
+                        reason: DespawnReason::Disconnect,
                     });
                 players
                     .get_mut(&player_net_id)
@@ -995,12 +996,7 @@ fn broadcast_delta_update_messages(
                 players_registry
                     .get_entity(player_net_id)
                     .and_then(|entity| {
-                        create_player_state(
-                            player_net_id,
-                            time,
-                            entity,
-                            player_entities,
-                        )
+                        create_player_state(player_net_id, time, entity, player_entities)
                     })
             })
             .collect(),
@@ -1082,12 +1078,7 @@ fn broadcast_start_game_messages(
                             // `DeltaUpdate` message.
                             None
                         } else {
-                            create_player_state(
-                                iter_player_net_id,
-                                time,
-                                entity,
-                                player_entities,
-                            )
+                            create_player_state(iter_player_net_id, time, entity, player_entities)
                         }
                     })
             })

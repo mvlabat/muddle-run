@@ -9,7 +9,7 @@ use mr_shared_lib::{
     framebuffer::FrameNumber,
     game::{
         commands,
-        commands::{DeferredQueue, DespawnPlayer},
+        commands::{DeferredQueue, DespawnPlayer, DespawnReason},
         events::{PlayerDeath, PlayerFinish},
     },
     messages::{DeferredMessagesQueue, PlayerNetId, RespawnPlayer, RespawnPlayerReason},
@@ -69,6 +69,7 @@ pub fn process_player_events(
         despawn_players_commands.push(DespawnPlayer {
             net_id,
             frame_number: time.server_frame + FrameNumber::new(1),
+            reason: DespawnReason::DeathOrFinish,
         })
     }
 }

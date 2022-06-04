@@ -24,8 +24,8 @@ use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
     game::{
         commands::{
-            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
-            SwitchPlayerRole, UpdateLevelObject,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, DespawnReason, RestartGame,
+            SpawnPlayer, SwitchPlayerRole, UpdateLevelObject,
         },
         components::{PlayerDirection, Spawned},
     },
@@ -1005,7 +1005,13 @@ fn process_delta_update_message(
     update_params: &mut UpdateParams,
 ) {
     log::trace!("Processing DeltaUpdate message: {:?}", delta_update);
-    let mut rewind_to_simulation_frame = delta_update.frame_number;
+    if delta_update.frame_number < update_params.simulation_time.server_frame {
+        log::trace!(
+            "Delta update is late (server simulation frame: {}, update frame: {})",
+            update_params.simulation_time.server_frame,
+            delta_update.frame_number
+        );
+    }
 
     sync_clock(&delta_update, connection_state, update_params);
 
@@ -1044,6 +1050,7 @@ fn process_delta_update_message(
             update_params.despawn_player_commands.push(DespawnPlayer {
                 net_id: player_net_id,
                 frame_number: delta_update.frame_number,
+                reason: DespawnReason::NetworkUpdate,
             });
         }
     }
@@ -1082,9 +1089,6 @@ fn process_delta_update_message(
             }),
         );
 
-        rewind_to_simulation_frame =
-            std::cmp::min(rewind_to_simulation_frame, delta_update.frame_number);
-
         let position_updates = update_params.player_updates.get_position_mut(
             player_state.net_id,
             delta_update.frame_number,
@@ -1103,13 +1107,13 @@ fn process_delta_update_message(
     if let ConnectionStatus::Connected = connection_state.status() {
         log::trace!(
             "Rewinding to frame {} (current server frame: {}, current player frame: {})",
-            rewind_to_simulation_frame,
+            delta_update.frame_number,
             update_params.simulation_time.server_frame,
             update_params.simulation_time.player_frame
         );
         update_params
             .simulation_time
-            .rewind(rewind_to_simulation_frame);
+            .rewind(delta_update.frame_number);
     }
 }
 

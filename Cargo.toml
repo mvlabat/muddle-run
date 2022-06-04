@@ -24,7 +24,7 @@ opt-level = 1
 [patch.crates-io]
 dotenv = { git = "https://github.com/mvlabat/dotenv.git" }
 bevy = { git = "https://github.com/mvlabat/bevy.git", branch = "muddle-run" }
-bevy_rapier2d = { git = "https://github.com/dimforge/bevy_rapier.git", rev = "e7aa26ad50e7471ce4119fb0ed42007787d1b5a7" }
+bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "muddle-run" }
 #parry2d = { git = "https://github.com/dimforge/parry", rev = "5c957b9" }
 #rapier2d = { git = "https://github.com/dimforge/rapier.git", rev = "3a2f5f7cf5e21cfa5a3cc687caa8f4fbc3c04984" }
 puffin = { git = "https://github.com/EmbarkStudios/puffin.git", rev = "4616fee7fb8a143afdf0821587ba531e4f3671e9" }

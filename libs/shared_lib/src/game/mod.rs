@@ -1,3 +1,10 @@
+#[cfg(not(feature = "client"))]
+use crate::{
+    game::commands::DespawnReason,
+    messages::{DeferredMessagesQueue, SwitchRole},
+    player::PlayerRole,
+    server::level_spawn_location_service::LevelSpawnLocationService,
+};
 use crate::{
     game::{
         commands::{
@@ -10,12 +17,6 @@ use crate::{
     player::{Player, PlayerEvent, PlayerUpdates},
     registry::EntityRegistry,
     util::dedup_by_key_unsorted,
-};
-#[cfg(not(feature = "client"))]
-use crate::{
-    messages::{DeferredMessagesQueue, SwitchRole},
-    player::PlayerRole,
-    server::level_spawn_location_service::LevelSpawnLocationService,
     SimulationTime,
 };
 use bevy::{
@@ -44,7 +45,7 @@ pub fn restart_game(world: &mut World) {
     let mut restart_game_commands = world
         .get_resource_mut::<DeferredQueue<RestartGame>>()
         .unwrap();
-    if restart_game_commands.drain().is_empty() {
+    if restart_game_commands.drain(&Default::default()).is_empty() {
         return;
     }
 
@@ -118,29 +119,25 @@ pub fn restart_game(world: &mut World) {
         world.despawn(entity);
     }
 
-    world
+    *world
         .get_resource_mut::<DeferredQueue<SpawnPlayer>>()
-        .unwrap()
-        .drain();
-    world
+        .unwrap() = Default::default();
+    *world
         .get_resource_mut::<DeferredQueue<DespawnPlayer>>()
-        .unwrap()
-        .drain();
-    world
+        .unwrap() = Default::default();
+    *world
         .get_resource_mut::<DeferredQueue<UpdateLevelObject>>()
-        .unwrap()
-        .drain();
-    world
+        .unwrap() = Default::default();
+    *world
         .get_resource_mut::<DeferredQueue<DespawnLevelObject>>()
-        .unwrap()
-        .drain();
+        .unwrap() = Default::default();
     *world.get_resource_mut::<PlayerUpdates>().unwrap() = PlayerUpdates::default();
 }
 
 pub fn switch_player_role(
     mut switch_role_commands: ResMut<DeferredQueue<SwitchPlayerRole>>,
     mut players: ResMut<HashMap<PlayerNetId, Player>>,
-    #[cfg(not(feature = "client"))] time: Res<SimulationTime>,
+    time: Res<SimulationTime>,
     #[cfg(not(feature = "client"))] mut despawn_player_commands: ResMut<
         DeferredQueue<DespawnPlayer>,
     >,
@@ -152,7 +149,7 @@ pub fn switch_player_role(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    let mut switch_role_commands = switch_role_commands.drain();
+    let mut switch_role_commands = switch_role_commands.drain(&time);
     // We want to keep the last command instead of the first one.
     switch_role_commands.reverse();
     dedup_by_key_unsorted(&mut switch_role_commands, |command| command.net_id);
@@ -206,6 +203,7 @@ pub fn switch_player_role(
                     despawn_player_commands.push(DespawnPlayer {
                         net_id: switch_role_command.net_id,
                         frame_number: switch_role_command.frame_number,
+                        reason: DespawnReason::SwitchRole,
                     });
                 }
             }

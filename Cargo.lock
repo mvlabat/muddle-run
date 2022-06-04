@@ -1040,7 +1040,7 @@ dependencies = [
 [[package]]
 name = "bevy_rapier2d"
 version = "0.13.2"
-source = "git+https://github.com/dimforge/bevy_rapier.git?rev=e7aa26ad50e7471ce4119fb0ed42007787d1b5a7#e7aa26ad50e7471ce4119fb0ed42007787d1b5a7"
+source = "git+https://github.com/mvlabat/bevy_rapier.git?branch=muddle-run#3265d049a3a9f996714bf219fa0305d8f516738b"
 dependencies = [
  "bevy",
  "bitflags",

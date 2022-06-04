@@ -220,9 +220,9 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::PHYSICS,
                 SystemStage::single_threaded()
-                    .with_system(rapier_systems::init_async_colliders)
+                    .with_system(rapier_systems::init_async_shapes)
                     .with_system(
-                        rapier_systems::apply_scale.after(rapier_systems::init_async_colliders),
+                        rapier_systems::apply_scale.after(rapier_systems::init_async_shapes),
                     )
                     .with_system(
                         rapier_systems::apply_collider_user_changes
@@ -243,7 +243,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                     .with_system(
                         rapier_systems::init_colliders
                             .after(rapier_systems::init_rigid_bodies)
-                            .after(rapier_systems::init_async_colliders),
+                            .after(rapier_systems::init_async_shapes),
                     )
                     .with_system(rapier_systems::init_joints.after(rapier_systems::init_colliders))
                     .with_system(rapier_systems::sync_removals.after(rapier_systems::init_joints))
@@ -500,6 +500,9 @@ impl SimulationTime {
     pub fn player_frames_ahead(&self) -> u16 {
         assert!(self.player_frame >= self.server_frame);
         (self.player_frame - self.server_frame).value()
+            + self
+                .player_frames_to_rerun
+                .map_or(0, |frames| frames.value())
     }
 
     pub fn prev_frame(&self) -> SimulationTime {
