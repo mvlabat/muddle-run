@@ -20,7 +20,7 @@ bevy = "0.7"
 bevy_egui = "0.14"
 bevy-inspector-egui = "0.11.0"
 bevy-inspector-egui-rapier = { version = "0.3.0", features = ["rapier2d"] }
-bevy_mod_picking = { version = "0.6.1" }
+bevy_mod_picking = { version = "0.7.0" }
 bevy_networking_turbulence = { version = "0.4", default-features = false }
 bevy_rapier2d = { version = "0.14", features = ["wasm-bindgen"] }
 chrono = "0.4.19"
