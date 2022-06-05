@@ -107,8 +107,7 @@ pub fn process_player_input_updates(
                         }),
                     );
                 } else if existing_update != Some(&update_to_insert) {
-                    // TODO: is just discarding old updates good enough?
-                    log::warn!(
+                    log::trace!(
                         "Ignoring player {:?} input for frame {} which differs from the existing one (current: {})",
                         player_net_id,
                         frame_number,

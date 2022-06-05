@@ -672,8 +672,7 @@ dependencies = [
 [[package]]
 name = "bevy-inspector-egui"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a758d0cf2b972292038bebef85005986c94a6545e36d73495937eb53216186f0"
+source = "git+https://github.com/mvlabat/bevy-inspector-egui.git?branch=update-bevy-rapier#05bae977d76223fe6e1d963be4556e5df16bb5ec"
 dependencies = [
  "bevy",
  "bevy-inspector-egui-derive",
@@ -686,8 +685,7 @@ dependencies = [
 [[package]]
 name = "bevy-inspector-egui-derive"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34652d3e6733bcb48375c05b0ad0a71f0222045cf73011a9e6bb003546bf629b"
+source = "git+https://github.com/mvlabat/bevy-inspector-egui.git?branch=update-bevy-rapier#05bae977d76223fe6e1d963be4556e5df16bb5ec"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -697,8 +695,7 @@ dependencies = [
 [[package]]
 name = "bevy-inspector-egui-rapier"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99c1a09051c00fecc97388de44fb2dbdba2cbe77a59c222848da0a064d953af6"
+source = "git+https://github.com/mvlabat/bevy-inspector-egui.git?branch=update-bevy-rapier#05bae977d76223fe6e1d963be4556e5df16bb5ec"
 dependencies = [
  "bevy",
  "bevy-inspector-egui",
@@ -1082,8 +1079,8 @@ dependencies = [
 
 [[package]]
 name = "bevy_rapier2d"
-version = "0.13.2"
-source = "git+https://github.com/dimforge/bevy_rapier.git?rev=e7aa26ad50e7471ce4119fb0ed42007787d1b5a7#e7aa26ad50e7471ce4119fb0ed42007787d1b5a7"
+version = "0.14.1"
+source = "git+https://github.com/mvlabat/bevy_rapier.git?branch=reorder-updates#3f430763a542966c1d8973d6c5687bb3df66d919"
 dependencies = [
  "bevy",
  "bitflags",
@@ -4818,9 +4815,9 @@ checksum = "63e935c45e09cc6dcf00d2f0b2d630a58f4095320223d47fc68918722f0538b6"
 
 [[package]]
 name = "rapier2d"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c575f233b1c105e17366b9d2edb82ab1bb4c95d55d22741c20e2e1c0aa6932a3"
+checksum = "43f7f18a9281f4c4176754437a768e1b7124ce5729060c8743db670f7ebb3c43"
 dependencies = [
  "approx",
  "arrayvec",

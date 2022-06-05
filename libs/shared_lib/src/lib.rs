@@ -49,8 +49,8 @@ use bevy_networking_turbulence::{LinkConditionerConfig, NetworkingPlugin};
 use bevy_rapier2d::{
     pipeline::{CollisionEvent, PhysicsHooksWithQueryResource},
     plugin::{
-        systems as rapier_systems, RapierConfiguration, RapierContext, SimulationToRenderTime,
-        TimestepMode,
+        PhysicsStages, RapierConfiguration, RapierContext, RapierPhysicsPlugin,
+        SimulationToRenderTime, TimestepMode,
     },
 };
 use messages::{EntityNetId, PlayerNetId};
@@ -114,6 +114,14 @@ pub const LAG_COMPENSATED_FRAMES: FrameNumber = {
 };
 
 const SIMULATIONS_PER_SECOND_DEFAULT: u16 = 120;
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemLabel)]
+pub enum PhysicsSystemSetLabel {
+    SyncBackend,
+    StepSimulation,
+    Writeback,
+    DetectDespawn,
+}
 
 pub struct MuddleSharedPlugin<S: System<In = (), Out = ShouldRun>> {
     main_run_criteria: Mutex<Option<S>>,
@@ -220,43 +228,19 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::PHYSICS,
                 SystemStage::single_threaded()
-                    .with_system(rapier_systems::init_async_colliders)
-                    .with_system(
-                        rapier_systems::apply_scale.after(rapier_systems::init_async_colliders),
+                    .with_system_set(
+                        RapierPhysicsPlugin::<()>::get_systems(PhysicsStages::SyncBackend)
+                            .label(PhysicsSystemSetLabel::SyncBackend),
                     )
-                    .with_system(
-                        rapier_systems::apply_collider_user_changes
-                            .after(rapier_systems::apply_scale),
+                    .with_system_set(
+                        RapierPhysicsPlugin::<()>::get_systems(PhysicsStages::StepSimulation)
+                            .label(PhysicsSystemSetLabel::StepSimulation)
+                            .after(PhysicsSystemSetLabel::SyncBackend),
                     )
-                    .with_system(
-                        rapier_systems::apply_rigid_body_user_changes
-                            .after(rapier_systems::apply_collider_user_changes),
-                    )
-                    .with_system(
-                        rapier_systems::apply_joint_user_changes
-                            .after(rapier_systems::apply_rigid_body_user_changes),
-                    )
-                    .with_system(
-                        rapier_systems::init_rigid_bodies
-                            .after(rapier_systems::apply_joint_user_changes),
-                    )
-                    .with_system(
-                        rapier_systems::init_colliders
-                            .after(rapier_systems::init_rigid_bodies)
-                            .after(rapier_systems::init_async_colliders),
-                    )
-                    .with_system(rapier_systems::init_joints.after(rapier_systems::init_colliders))
-                    .with_system(rapier_systems::sync_removals.after(rapier_systems::init_joints))
-                    .with_system(
-                        rapier_systems::step_simulation::<()>.after(rapier_systems::sync_removals),
-                    )
-                    .with_system(
-                        rapier_systems::update_colliding_entities
-                            .after(rapier_systems::step_simulation::<()>),
-                    )
-                    .with_system(
-                        rapier_systems::writeback_rigid_bodies
-                            .after(rapier_systems::step_simulation::<()>),
+                    .with_system_set(
+                        RapierPhysicsPlugin::<()>::get_systems(PhysicsStages::Writeback)
+                            .label(PhysicsSystemSetLabel::Writeback)
+                            .after(PhysicsSystemSetLabel::StepSimulation),
                     ),
             )
             .with_stage(
@@ -266,7 +250,9 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                         process_collision_events.chain(process_players_with_new_collisions),
                     )
                     .with_system(sync_position)
-                    .with_system(rapier_systems::sync_removals),
+                    .with_system_set(RapierPhysicsPlugin::<()>::get_systems(
+                        PhysicsStages::DetectDespawn,
+                    )),
             )
             .with_stage(
                 stage::POST_GAME,
@@ -306,7 +292,9 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 post_tick_stage
                     .take()
                     .expect("Can't initialize the plugin more than once")
-                    .with_system(rapier_systems::sync_removals),
+                    .with_system_set(RapierPhysicsPlugin::<()>::get_systems(
+                        PhysicsStages::DetectDespawn,
+                    )),
             );
 
         app.add_stage_before(
@@ -470,7 +458,10 @@ impl SimulationTime {
         }
 
         if self.server_frame > frame_number {
-            if self.server_frame.diff_abs(frame_number).value() > u16::MAX / 2 {
+            if (self.server_frame.value() as i32 - frame_number.value() as i32).unsigned_abs()
+                as u16
+                > u16::MAX / 2
+            {
                 // This shouldn't overflow as we start counting from 1, and we never decrement
                 // more than once without incrementing.
                 self.server_generation -= 1;
@@ -479,7 +470,10 @@ impl SimulationTime {
             self.player_frame = frame_number;
             self.player_generation = self.server_generation;
         } else if self.player_frame > frame_number {
-            if self.player_frame.diff_abs(frame_number).value() > u16::MAX / 2 {
+            if (self.player_frame.value() as i32 - frame_number.value() as i32).unsigned_abs()
+                as u16
+                > u16::MAX / 2
+            {
                 // This shouldn't overflow as we start counting from 1, and we never decrement
                 // more than once without incrementing.
                 self.player_generation -= 1;
@@ -500,6 +494,9 @@ impl SimulationTime {
     pub fn player_frames_ahead(&self) -> u16 {
         assert!(self.player_frame >= self.server_frame);
         (self.player_frame - self.server_frame).value()
+            + self
+                .player_frames_to_rerun
+                .map_or(0, |frames| frames.value())
     }
 
     pub fn prev_frame(&self) -> SimulationTime {

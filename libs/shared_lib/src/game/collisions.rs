@@ -133,7 +133,7 @@ pub fn process_collision_events(
                 changed_players.insert(player_entity);
             }
         } else {
-            log::error!(
+            log::warn!(
                 "Contact event for neither a player, nor a player sensor: {:?}",
                 other_entity
             );
@@ -186,13 +186,17 @@ pub fn process_players_with_new_collisions(
     mut player_finish_events: EventWriter<PlayerFinish>,
 ) {
     for entity in players_with_new_collisions {
-        let (player_position, player_frame_simulated, player_sensors) = players
+        let (player_position_buffer, player_frame_simulated, player_sensors) = players
             .get(entity)
             .expect("Expected an existing player for a collision event");
-        let _player_position = player_position
-            .buffer
-            .get(time.entity_simulation_frame(player_frame_simulated))
-            .unwrap();
+        let frame_number = time.entity_simulation_frame(player_frame_simulated);
+        let _player_position = match player_position_buffer.buffer.get(frame_number) {
+            Some(position) => position,
+            None => {
+                log::warn!("Player position doesn't exist for frame {} (the entity {:?} is likely despawned), ignoring", frame_number, entity);
+                continue;
+            }
+        };
 
         if player_sensors.player_is_dead() {
             #[cfg(not(feature = "client"))]

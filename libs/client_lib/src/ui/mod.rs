@@ -34,16 +34,16 @@ pub trait MuddleInspectable {
 
 impl MuddleInspectable for PlayerDirection {
     fn inspect(&self, ui: &mut Ui) {
-        let first_value = self
+        let latest_value = self
             .buffer
-            .last()
-            .and_then(|v| v.as_ref())
+            .get_with_extrapolation(self.buffer.end_frame())
+            .map(|(_, v)| *v)
             .map(|v| format!("[{: <5.2};{: >5.2}]", v.x, v.y))
             .unwrap_or_else(|| "[None]".to_owned());
 
         egui::CollapsingHeader::new(format!(
             "Direction {}  -  ([{}; {}] ({}/{})",
-            first_value,
+            latest_value,
             self.buffer.start_frame().value(),
             self.buffer.end_frame().value(),
             self.buffer.limit(),

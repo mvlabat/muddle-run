@@ -179,7 +179,7 @@ pub struct PlayerState {
     /// Contains the initial position, so that applying all inputs renders a
     /// player in its actual position on server.
     pub position: Vec2,
-    pub inputs: Vec<RunnerInput>,
+    pub direction: Vec2,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

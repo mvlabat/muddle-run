@@ -3,9 +3,20 @@ use crate::{
     game::level::LevelObject,
     messages::{EntityNetId, PlayerNetId},
     player::PlayerRole,
+    SimulationTime,
 };
 use bevy::{math::Vec2, utils::HashMap};
 use serde::{Deserialize, Serialize};
+
+pub trait DeferredCommand {
+    fn is_player_frame_simulated(&self) -> bool {
+        true
+    }
+
+    fn frame_number(&self) -> Option<FrameNumber> {
+        None
+    }
+}
 
 pub struct DeferredQueue<T> {
     commands: Vec<T>,
@@ -19,13 +30,24 @@ impl<T> Default for DeferredQueue<T> {
     }
 }
 
-impl<T> DeferredQueue<T> {
+impl<T: DeferredCommand> DeferredQueue<T> {
     pub fn push(&mut self, command: T) {
         self.commands.push(command);
     }
 
-    pub fn drain(&mut self) -> Vec<T> {
-        std::mem::take(&mut self.commands)
+    pub fn drain(&mut self, time: &SimulationTime) -> Vec<T> {
+        self.commands
+            .drain_filter(|command| {
+                let current_frame_number = if command.is_player_frame_simulated() {
+                    time.player_frame
+                } else {
+                    time.server_frame
+                };
+                command
+                    .frame_number()
+                    .map_or(true, |frame_number| frame_number <= current_frame_number)
+            })
+            .collect()
     }
 }
 
@@ -34,11 +56,23 @@ impl<T> DeferredQueue<T> {
 
 pub struct RestartGame;
 
+impl DeferredCommand for RestartGame {}
+
 pub struct SwitchPlayerRole {
     pub net_id: PlayerNetId,
     pub role: PlayerRole,
     pub frame_number: FrameNumber,
     pub is_player_frame_simulated: bool,
+}
+
+impl DeferredCommand for SwitchPlayerRole {
+    fn is_player_frame_simulated(&self) -> bool {
+        self.is_player_frame_simulated
+    }
+
+    fn frame_number(&self) -> Option<FrameNumber> {
+        Some(self.frame_number)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -48,10 +82,31 @@ pub struct SpawnPlayer {
     pub is_player_frame_simulated: bool,
 }
 
+impl DeferredCommand for SpawnPlayer {
+    fn is_player_frame_simulated(&self) -> bool {
+        self.is_player_frame_simulated
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DespawnPlayer {
     pub net_id: PlayerNetId,
     pub frame_number: FrameNumber,
+    pub reason: DespawnReason,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum DespawnReason {
+    DeathOrFinish,
+    SwitchRole,
+    Disconnect,
+    NetworkUpdate,
+}
+
+impl DeferredCommand for DespawnPlayer {
+    fn frame_number(&self) -> Option<FrameNumber> {
+        Some(self.frame_number)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -60,10 +115,22 @@ pub struct UpdateLevelObject {
     pub frame_number: FrameNumber,
 }
 
+impl DeferredCommand for UpdateLevelObject {
+    fn frame_number(&self) -> Option<FrameNumber> {
+        Some(self.frame_number)
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DespawnLevelObject {
     pub net_id: EntityNetId,
     pub frame_number: FrameNumber,
+}
+
+impl DeferredCommand for DespawnLevelObject {
+    fn frame_number(&self) -> Option<FrameNumber> {
+        Some(self.frame_number)
+    }
 }
 
 pub struct DeferredPlayerQueues<T> {

@@ -12,7 +12,7 @@ use bevy_networking_turbulence::{ConnectionHandle, NetworkEvent, NetworkResource
 use mr_messages_lib::{GetLevelResponse, PLAYER_CAPACITY};
 use mr_shared_lib::{
     game::{
-        commands::{self, DeferredPlayerQueues, DeferredQueue},
+        commands::{self, DeferredPlayerQueues, DeferredQueue, DespawnReason},
         components::{PlayerDirection, Position, Spawned},
         level::{LevelObject, LevelState},
     },
@@ -754,11 +754,15 @@ fn disconnect_players(
                     .push(commands::DespawnPlayer {
                         net_id: player_net_id,
                         frame_number: time.frame_number,
+                        reason: DespawnReason::Disconnect,
                     });
-                players
+                let mut player = players
                     .get_mut(&player_net_id)
-                    .expect("Expected a registered player with an existing player_net_id")
-                    .is_connected = false;
+                    .expect("Expected a registered player with an existing player_net_id");
+                player.is_connected = false;
+                // If a player is going to be respawned due to a Finish or Death event, we want
+                // to prevent it.
+                player.respawning_at = None;
             } else {
                 log::warn!("A disconnected player wasn't in the connections list");
             }
@@ -995,13 +999,7 @@ fn broadcast_delta_update_messages(
                 players_registry
                     .get_entity(player_net_id)
                     .and_then(|entity| {
-                        create_player_state(
-                            player_net_id,
-                            time,
-                            connection_state,
-                            entity,
-                            player_entities,
-                        )
+                        create_player_state(player_net_id, time, entity, player_entities)
                     })
             })
             .collect(),
@@ -1083,13 +1081,7 @@ fn broadcast_start_game_messages(
                             // `DeltaUpdate` message.
                             None
                         } else {
-                            create_player_state(
-                                iter_player_net_id,
-                                time,
-                                connection_state,
-                                entity,
-                                player_entities,
-                            )
+                            create_player_state(iter_player_net_id, time, entity, player_entities)
                         }
                     })
             })
@@ -1148,7 +1140,6 @@ fn broadcast_start_game_messages(
 fn create_player_state(
     net_id: PlayerNetId,
     time: &SimulationTime,
-    connection_state: &ConnectionState,
     entity: Entity,
     player_entities: &Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
 ) -> Option<PlayerState> {
@@ -1157,60 +1148,38 @@ fn create_player_state(
         return None;
     }
 
-    let updates_start_frame = if connection_state.packet_loss() > 0.0 {
-        // TODO: avoid doing the same searches when gathering updates for every player?
-        connection_state
-            .first_unacknowledged_outgoing_packet()
-            .unwrap_or(time.server_frame)
-    } else {
-        time.server_frame
-    };
+    let updates_start_frame = time.server_frame;
 
-    // TODO: deduplicate updates (the same code is written for client).
-    let mut inputs: Vec<RunnerInput> = Vec::new();
-    for (frame_number, &direction) in player_direction
+    let direction = player_direction
         .buffer
-        // TODO: avoid iterating from the beginning?
-        .iter_with_interpolation()
-        .skip_while(|(frame_number, _)| *frame_number < updates_start_frame)
-    {
-        if Some(direction) != inputs.last().map(|i| i.direction) {
-            inputs.push(RunnerInput {
-                frame_number,
-                direction,
-            });
-        }
-    }
-    if inputs.is_empty() && player_direction.buffer.len() > 1 {
-        log::debug!(
-            "Missing updates for Player {} (updates start frame: {}, last player direction frame: {:?})",
-            net_id.0,
-            updates_start_frame,
-            player_direction.buffer.end_frame(),
-        );
-    }
-
-    let start_position_frame = inputs.first().map_or_else(
-        || std::cmp::max(updates_start_frame, position.buffer.start_frame()),
-        |input| input.frame_number,
-    );
+        .get_with_extrapolation(updates_start_frame)
+        .map(|(_frame_number, direction)| *direction)
+        .unwrap_or_else(|| {
+            log::debug!(
+                "Missing updates for Player {} (updates start frame: {}, last player direction frame: {:?})",
+                net_id.0,
+                updates_start_frame,
+                player_direction.buffer.end_frame(),
+            );
+            Vec2::ZERO
+        });
 
     Some(PlayerState {
         net_id,
         position: *position
             .buffer
-            .get(start_position_frame)
+            .get(updates_start_frame)
             .unwrap_or_else(|| {
                 panic!(
                     "Player ({}) position for frame {} doesn't exist (current frame: {}, entity: {:?}): {:?}",
                     net_id.0,
-                    start_position_frame.value(),
+                    updates_start_frame,
                     time.server_frame.value(),
                     entity,
                     position.buffer,
                 )
             }),
-        inputs,
+        direction,
     })
 }
 

@@ -1,5 +1,5 @@
 use crate::wrapped_counter::WrappedCounter;
-use bevy::log;
+use bevy::{log, math::Vec2};
 use std::collections::VecDeque;
 
 pub type FrameNumber = WrappedCounter<u16>;
@@ -11,13 +11,67 @@ pub struct Framebuffer<T> {
     limit: FrameNumber,
 }
 
-impl<T: std::fmt::Debug> std::fmt::Debug for Framebuffer<T> {
+impl std::fmt::Debug for Framebuffer<Vec2> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_struct("Position")
+        let buffer_edge_elements: Vec<String> = if self.buffer.len() > 6 {
+            vec![self.buffer[0].to_string(), "...".to_owned()]
+                .into_iter()
+                .chain(
+                    self.buffer
+                        .iter()
+                        .rev()
+                        .take(5)
+                        .map(ToString::to_string)
+                        .rev(),
+                )
+                .collect()
+        } else {
+            self.buffer
+                .iter()
+                .take(6)
+                .map(ToString::to_string)
+                .collect()
+        };
+
+        f.debug_struct("Framebuffer")
             .field("start_frame", &self.start_frame())
             .field("end_frame", &self.end_frame())
             .field("limit", &self.limit())
-            .field("last", &self.last())
+            .field(
+                "buffer",
+                &format_args!("[{}]", buffer_edge_elements.join(", ")),
+            )
+            .finish()
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Framebuffer<Option<T>> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fn format_option<T: std::fmt::Debug>(v: &Option<T>) -> String {
+            if let Some(v) = v {
+                format!("{v:?}")
+            } else {
+                "None".to_owned()
+            }
+        }
+
+        let buffer_edge_elements: Vec<String> = if self.buffer.len() > 6 {
+            vec![format_option(&self.buffer[0]), "...".to_owned()]
+                .into_iter()
+                .chain(self.buffer.iter().rev().take(5).map(format_option).rev())
+                .collect()
+        } else {
+            self.buffer.iter().take(6).map(format_option).collect()
+        };
+
+        f.debug_struct("Framebuffer")
+            .field("start_frame", &self.start_frame())
+            .field("end_frame", &self.end_frame())
+            .field("limit", &self.limit())
+            .field(
+                "buffer",
+                &format_args!("[{}]", buffer_edge_elements.join(", ")),
+            )
             .finish()
     }
 }
@@ -166,8 +220,9 @@ impl<T> Framebuffer<Option<T>> {
     }
 
     /// If the value is `None`, looks behind to find the closest existing value.
-    /// If `frame_number` is out of possible range in regards to current
-    /// start_frame, returns `None`. Returns a corresponding `FrameNumber`
+    /// If `frame_number` is out of possible range in regards to the current
+    /// `start_frame` (i.e. inserting a new value at this frame would remove all
+    /// other entries), returns `None`. Returns a corresponding `FrameNumber`
     /// as the first tuple element.
     pub fn get_with_extrapolation(
         &self,

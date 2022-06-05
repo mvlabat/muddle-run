@@ -8,7 +8,8 @@ use crate::{
             RoutePointClientFactory,
         },
         commands::{
-            DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, UpdateLevelObject,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, DespawnReason, SpawnPlayer,
+            UpdateLevelObject,
         },
         components::{
             LevelObjectLabel, LevelObjectServerGhostChild, LevelObjectServerGhostParent,
@@ -101,7 +102,7 @@ pub fn spawn_players(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    let mut spawn_player_commands = spawn_player_commands.drain();
+    let mut spawn_player_commands = spawn_player_commands.drain(&time);
     dedup_by_key_unsorted(&mut spawn_player_commands, |command| command.net_id);
 
     for command in spawn_player_commands {
@@ -257,6 +258,7 @@ pub fn spawn_players(
 
 pub fn despawn_players(
     mut commands: Commands,
+    time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
     mut despawn_player_commands: ResMut<DeferredQueue<DespawnPlayer>>,
     player_entities: Res<EntityRegistry<PlayerNetId>>,
@@ -273,7 +275,7 @@ pub fn despawn_players(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    for command in despawn_player_commands.drain() {
+    for command in despawn_player_commands.drain(&time) {
         let entity = match player_entities.get_entity(command.net_id) {
             Some(entity) => entity,
             None => {
@@ -292,12 +294,18 @@ pub fn despawn_players(
                 continue;
             }
         };
+
         if !spawned.is_spawned(command.frame_number) {
             log::debug!(
-                "Player ({}) is not spawned at frame {}, skipping the despawn command",
+                "Player ({}) is not spawned at frame {}, skipping the despawn command {:?}",
                 command.net_id.0,
-                command.frame_number
+                command.frame_number,
+                spawned,
             );
+            // We want to push the command anyway, as we rely on the `push_command` internal
+            // logic to clean up newer spawn commands if we disconnect a player
+            // or switch a role.
+            spawned.push_command(command.frame_number, SpawnCommand::Despawn(command.reason));
             continue;
         }
 
@@ -317,7 +325,7 @@ pub fn despawn_players(
                 &mut pbr_client_params,
             );
         }
-        spawned.push_command(command.frame_number, SpawnCommand::Despawn);
+        spawned.push_command(command.frame_number, SpawnCommand::Despawn(command.reason));
     }
 }
 
@@ -352,7 +360,7 @@ pub fn update_level_objects(
     // There may be several updates of the same entity per frame. We need to dedup
     // them, otherwise we crash when trying to clone from the entities that
     // haven't been created yet (because of not yet flushed command buffer).
-    let mut update_level_object_commands = update_level_object_commands.drain();
+    let mut update_level_object_commands = update_level_object_commands.drain(&time);
     dedup_by_key_unsorted(&mut update_level_object_commands, |command| {
         command.object.net_id
     });
@@ -636,6 +644,7 @@ fn insert_client_components(
 
 pub fn despawn_level_objects(
     mut commands: Commands,
+    time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
     mut despawn_level_object_commands: ResMut<DeferredQueue<DespawnLevelObject>>,
     object_entities: Res<EntityRegistry<EntityNetId>>,
@@ -651,7 +660,7 @@ pub fn despawn_level_objects(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    for command in despawn_level_object_commands.drain() {
+    for command in despawn_level_object_commands.drain(&time) {
         let entity = match object_entities.get_entity(command.net_id) {
             Some(entity) => entity,
             None => {
@@ -729,7 +738,10 @@ pub fn despawn_level_objects(
                 }
             }
         }
-        spawned.push_command(command.frame_number, SpawnCommand::Despawn);
+        spawned.push_command(
+            command.frame_number,
+            SpawnCommand::Despawn(DespawnReason::NetworkUpdate),
+        );
     }
 }
 

@@ -85,7 +85,7 @@ pub fn read_movement_updates(
                 .and_then(|p| *p)
             {
                 log::trace!(
-                    "Position update for player {} (frame_number: {}): {:?}",
+                    "Position update for player {} (frame_number: {}): {}",
                     player_net_id.0,
                     frame_number,
                     position_update
@@ -358,10 +358,14 @@ pub fn sync_position(
                 let lerp = new_predicted_position
                     + (new_position - new_predicted_position) * lerp_factor();
                 log::trace!(
-                    "Lerping position (current: {:?}, new: {:?}, lerp: {:?})",
+                    "Lerping position (e: {:?}, frame: {}, current: {}, new: {}, lerp: {}, player frame: {:?}, positions: {:?})",
+                    simulated_entity.entity,
+                    frame_number,
                     current_position,
                     new_predicted_position,
-                    lerp
+                    lerp,
+                    player_frame_simulated,
+                    simulated_entity.position,
                 );
 
                 // The `Transform` component will be updated before the next physics simulation
