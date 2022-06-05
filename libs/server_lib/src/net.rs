@@ -756,10 +756,13 @@ fn disconnect_players(
                         frame_number: time.frame_number,
                         reason: DespawnReason::Disconnect,
                     });
-                players
+                let mut player = players
                     .get_mut(&player_net_id)
-                    .expect("Expected a registered player with an existing player_net_id")
-                    .is_connected = false;
+                    .expect("Expected a registered player with an existing player_net_id");
+                player.is_connected = false;
+                // If a player is going to be respawned due to a Finish or Death event, we want
+                // to prevent it.
+                player.respawning_at = None;
             } else {
                 log::warn!("A disconnected player wasn't in the connections list");
             }
