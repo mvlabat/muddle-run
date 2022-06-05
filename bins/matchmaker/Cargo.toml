@@ -13,7 +13,7 @@ mr_utils_lib = { path = "../../libs/utils_lib", features = ["kube_discovery", "j
 anyhow = "1.0.57"
 env_logger = "0.9.0"
 futures = "0.3.19"
-hyper = { version = "0.14.16", features = ["server"] }
+hyper = { version = "0.14.19", features = ["server"] }
 kube = { version = "0.71.0", features = ["derive"] }
 log = "0.4.17"
 k8s-openapi = { version = "0.14.0", default-features = false, features = ["v1_20"] }
