@@ -24,7 +24,7 @@ opt-level = 1
 [patch.crates-io]
 dotenv = { git = "https://github.com/mvlabat/dotenv.git" }
 bevy = { git = "https://github.com/mvlabat/bevy.git", branch = "muddle-run" }
-bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "muddle-run" }
+bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "reorder-updates" }
 #parry2d = { git = "https://github.com/dimforge/parry", rev = "5c957b9" }
 #rapier2d = { git = "https://github.com/dimforge/rapier.git", rev = "3a2f5f7cf5e21cfa5a3cc687caa8f4fbc3c04984" }
 puffin = { git = "https://github.com/EmbarkStudios/puffin.git", rev = "4616fee7fb8a143afdf0821587ba531e4f3671e9" }
@@ -42,8 +42,9 @@ naia-server-socket = { git = "https://github.com/mvlabat/naia-socket.git", branc
 #naia-client-socket = { path = "../naia-socket/client" }
 #naia-server-socket = { path = "../naia-socket/server" }
 
-#bevy-inspector-egui = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "bevy_egui-0.12" }
+bevy-inspector-egui = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "update-bevy-rapier" }
 #bevy-inspector-egui = { path = "../bevy-inspector-egui" }
+bevy-inspector-egui-rapier = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "update-bevy-rapier" }
 
 tracing = { git = "https://github.com/mvlabat/tracing.git", branch = "muddle-run" }
 tracing-subscriber = { git = "https://github.com/mvlabat/tracing.git", branch = "muddle-run" }

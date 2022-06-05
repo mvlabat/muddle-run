@@ -133,7 +133,7 @@ pub fn process_collision_events(
                 changed_players.insert(player_entity);
             }
         } else {
-            log::error!(
+            log::warn!(
                 "Contact event for neither a player, nor a player sensor: {:?}",
                 other_entity
             );

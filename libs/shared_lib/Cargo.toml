@@ -16,7 +16,7 @@ bevy = { version = "0.7", default-features = false }
 bevy_egui = { version = "0.14", optional = true }
 bevy_mod_picking = { version = "0.6.1", optional = true }
 bevy_networking_turbulence = { version = "0.4", default-features = false }
-bevy_rapier2d = { version = "0.13", features = ["wasm-bindgen", "serde-serialize"] }
+bevy_rapier2d = { version = "0.14", features = ["wasm-bindgen", "serde-serialize"] }
 chrono = "0.4.19"
 crossbeam-channel = "0.5.2"
 futures-lite = "1.12.0"
