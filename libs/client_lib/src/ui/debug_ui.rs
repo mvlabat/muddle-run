@@ -53,7 +53,9 @@ pub struct DebugUiState {
     pub target_frames_ahead: u16,
     pub current_ticks_per_second: f32,
     pub player_frame: FrameNumber,
+    pub player_generation: u64,
     pub local_server_frame: FrameNumber,
+    pub local_server_generation: u64,
     pub estimated_server_frame: FrameNumber,
     pub ahead_of_server: i32,
     pub delay_server_time: i16,
@@ -88,7 +90,9 @@ pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_dat
     debug_ui_state.target_frames_ahead = debug_data.target_frames_ahead.target;
     debug_ui_state.current_ticks_per_second = debug_data.current_ticks_per_second.value;
     debug_ui_state.player_frame = debug_data.time.player_frame;
+    debug_ui_state.player_generation = debug_data.time.player_generation;
     debug_ui_state.local_server_frame = debug_data.time.server_frame;
+    debug_ui_state.local_server_generation = debug_data.time.server_generation;
     debug_ui_state.estimated_server_frame = debug_data.estimated_server_time.frame_number;
     debug_ui_state.delay_server_time = debug_data.delay_server_time.frame_count;
     debug_ui_state.rtt_millis = debug_data.connection_state.rtt_millis() as usize;
@@ -175,10 +179,13 @@ pub fn debug_ui(
                 "Tick rate: {} per second",
                 debug_ui_state.current_ticks_per_second
             ));
-            ui.label(format!("Player frame: {}", debug_ui_state.player_frame));
             ui.label(format!(
-                "Local server frame: {}",
-                debug_ui_state.local_server_frame
+                "Player frame: {} (generation: {})",
+                debug_ui_state.player_frame, debug_ui_state.player_generation,
+            ));
+            ui.label(format!(
+                "Local server frame: {} (generation: {})",
+                debug_ui_state.local_server_frame, debug_ui_state.local_server_generation,
             ));
             ui.label(format!(
                 "Estimated server frame: {}",

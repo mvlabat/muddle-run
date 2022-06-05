@@ -458,7 +458,10 @@ impl SimulationTime {
         }
 
         if self.server_frame > frame_number {
-            if self.server_frame.diff_abs(frame_number).value() > u16::MAX / 2 {
+            if (self.server_frame.value() as i32 - frame_number.value() as i32).unsigned_abs()
+                as u16
+                > u16::MAX / 2
+            {
                 // This shouldn't overflow as we start counting from 1, and we never decrement
                 // more than once without incrementing.
                 self.server_generation -= 1;
@@ -467,7 +470,10 @@ impl SimulationTime {
             self.player_frame = frame_number;
             self.player_generation = self.server_generation;
         } else if self.player_frame > frame_number {
-            if self.player_frame.diff_abs(frame_number).value() > u16::MAX / 2 {
+            if (self.player_frame.value() as i32 - frame_number.value() as i32).unsigned_abs()
+                as u16
+                > u16::MAX / 2
+            {
                 // This shouldn't overflow as we start counting from 1, and we never decrement
                 // more than once without incrementing.
                 self.player_generation -= 1;
