@@ -11,7 +11,7 @@ mr_client_lib = { path = "../../libs/client_lib", features = ["use-udp", "profil
 mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 
 bevy = { version = "0.7" }
-sentry = "0.25.0"
+sentry = "0.26.0"
 bevy_puffin = "0.1.0"
 
 [build-dependencies]
