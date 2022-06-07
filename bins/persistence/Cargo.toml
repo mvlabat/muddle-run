@@ -24,7 +24,7 @@ serde = "1.0.133"
 serde_derive = "1.0.133"
 serde_json = "1.0.81"
 sqlx = { version = "0.5.10", features = ["runtime-actix-native-tls", "postgres", "chrono", "offline", "json"] }
-tokio = "1.19.1"
+tokio = "1.19.2"
 
 [build-dependencies]
 mr_build_dotenv = { path = "../../libs/build_dotenv" }
