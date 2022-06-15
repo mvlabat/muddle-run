@@ -49,7 +49,7 @@ tokio-tungstenite = "0.17.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 serde-wasm-bindgen = "0.4.3"
-wasm-bindgen = "0.2.78"
+wasm-bindgen = "0.2.81"
 wasm-bindgen-futures = "0.4.28"
 ws_stream_wasm = "0.7.3"
 js-sys = "0.3.55"
