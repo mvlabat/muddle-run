@@ -10,7 +10,7 @@ edition = "2021"
 mr_messages_lib = { path = "../../libs/messages_lib", features = ["schemars"] }
 mr_utils_lib = { path = "../../libs/utils_lib", features = ["kube_discovery", "jwks"] }
 
-anyhow = "1.0.57"
+anyhow = "1.0.58"
 env_logger = "0.9.0"
 futures = "0.3.19"
 hyper = { version = "0.14.19", features = ["server"] }
