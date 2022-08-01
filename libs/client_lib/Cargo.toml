@@ -14,7 +14,7 @@ web = ["mr_shared_lib/web", "chrono/wasmbind"]
 profiler = ["puffin", "puffin_egui", "mr_shared_lib/profiler"]
 
 [dependencies]
-anyhow = "1.0.57"
+anyhow = "1.0.59"
 base64 = "0.20.0-alpha.1"
 bevy = "0.7"
 bevy_egui = "0.14"
