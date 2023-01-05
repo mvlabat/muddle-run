@@ -4248,7 +4248,7 @@ dependencies = [
  "mr_build_dotenv",
  "mr_client_lib",
  "mr_utils_lib",
- "sentry 0.26.0",
+ "sentry",
 ]
 
 [[package]]
@@ -4267,7 +4267,7 @@ dependencies = [
  "mr_utils_lib",
  "reqwest",
  "schemars",
- "sentry 0.29.1",
+ "sentry",
  "serde",
  "serde_derive",
  "serde_json",
@@ -4307,7 +4307,7 @@ dependencies = [
  "mr_messages_lib",
  "mr_utils_lib",
  "reqwest",
- "sentry 0.26.0",
+ "sentry",
  "serde",
  "serde_derive",
  "serde_json",
@@ -4324,7 +4324,7 @@ dependencies = [
  "mr_server_lib",
  "mr_utils_lib",
  "rymder",
- "sentry 0.26.0",
+ "sentry",
  "tokio",
 ]
 
@@ -6036,21 +6036,6 @@ checksum = "930c0acf610d3fdb5e2ab6213019aaa04e227ebe9547b0649ba599b16d788bd7"
 
 [[package]]
 name = "sentry"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "904eca4fb30c6112a1dae60c0a9e29cfb42f42129da4260f1ee20e94151b62e3"
-dependencies = [
- "httpdate",
- "reqwest",
- "sentry-backtrace 0.26.0",
- "sentry-contexts 0.26.0",
- "sentry-core 0.26.0",
- "sentry-panic 0.26.0",
- "tokio",
-]
-
-[[package]]
-name = "sentry"
 version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17ad137b9df78294b98cab1a650bef237cc6c950e82e5ce164655e674d07c5cc"
@@ -6058,24 +6043,12 @@ dependencies = [
  "httpdate",
  "native-tls",
  "reqwest",
- "sentry-backtrace 0.29.1",
- "sentry-contexts 0.29.1",
- "sentry-core 0.29.1",
- "sentry-panic 0.29.1",
+ "sentry-backtrace",
+ "sentry-contexts",
+ "sentry-core",
+ "sentry-panic",
  "tokio",
  "ureq",
-]
-
-[[package]]
-name = "sentry-backtrace"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1671189d1b759879fa4bdde46c50a499abb14332ed81f84fc6f60658f41b2fdb"
-dependencies = [
- "backtrace",
- "lazy_static",
- "regex",
- "sentry-core 0.26.0",
 ]
 
 [[package]]
@@ -6087,20 +6060,7 @@ dependencies = [
  "backtrace",
  "once_cell",
  "regex",
- "sentry-core 0.29.1",
-]
-
-[[package]]
-name = "sentry-contexts"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db80ceff16bb1a4b2689b8758e5e61e405fc4d8ff9f2d1b5b845b76ce37fa34e"
-dependencies = [
- "hostname",
- "libc",
- "rustc_version 0.4.0",
- "sentry-core 0.26.0",
- "uname",
+ "sentry-core",
 ]
 
 [[package]]
@@ -6113,21 +6073,8 @@ dependencies = [
  "libc",
  "os_info",
  "rustc_version 0.4.0",
- "sentry-core 0.29.1",
+ "sentry-core",
  "uname",
-]
-
-[[package]]
-name = "sentry-core"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c9f509d3959ed4dbbd80ca42572caad682aaa1cdd92c719e0815d0e87f82c96"
-dependencies = [
- "lazy_static",
- "rand",
- "sentry-types 0.26.0",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -6138,19 +6085,9 @@ checksum = "4df9b9d8de2658a1ecd4e45f7b06c80c5dd97b891bfbc7c501186189b7e9bbdf"
 dependencies = [
  "once_cell",
  "rand",
- "sentry-types 0.29.1",
+ "sentry-types",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "sentry-panic"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8b442769cc34115f64393f7bfe4f863c3c38749e0c0b9613a7ae25b37c7ba53"
-dependencies = [
- "sentry-backtrace 0.26.0",
- "sentry-core 0.26.0",
 ]
 
 [[package]]
@@ -6159,25 +6096,8 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0af37b8500f273e511ebd6eb0d342ff7937d64ce3f134764b2b4653112d48cb4"
 dependencies = [
- "sentry-backtrace 0.29.1",
- "sentry-core 0.29.1",
-]
-
-[[package]]
-name = "sentry-types"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "254b600e93e9ef00a48382c9f1e86d27884bd9a5489efa4eb9210c20c72e88a6"
-dependencies = [
- "debugid",
- "getrandom 0.2.8",
- "hex",
- "serde",
- "serde_json",
- "thiserror",
- "time 0.3.17",
- "url",
- "uuid 1.2.2",
+ "sentry-backtrace",
+ "sentry-core",
 ]
 
 [[package]]
@@ -7711,7 +7631,7 @@ dependencies = [
  "js-sys",
  "log",
  "naga",
- "parking_lot 0.12.1",
+ "parking_lot 0.11.2",
  "raw-window-handle 0.5.0",
  "smallvec",
  "static_assertions",
@@ -7737,7 +7657,7 @@ dependencies = [
  "fxhash",
  "log",
  "naga",
- "parking_lot 0.12.1",
+ "parking_lot 0.11.2",
  "profiling",
  "raw-window-handle 0.5.0",
  "smallvec",
@@ -7773,7 +7693,7 @@ dependencies = [
  "metal",
  "naga",
  "objc",
- "parking_lot 0.12.1",
+ "parking_lot 0.11.2",
  "profiling",
  "range-alloc",
  "raw-window-handle 0.5.0",
