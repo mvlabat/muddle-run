@@ -35,7 +35,7 @@ WHERE o.subject = $1 AND o.issuer = $2
     .await;
 
     match user {
-        Ok(Some(user)) => HttpResponse::Ok().json(&user),
+        Ok(Some(user)) => HttpResponse::Ok().json(user),
         Ok(None) => HttpResponse::NotFound().json(ErrorResponse::<()> {
             message: "User doesn't exist".to_owned(),
             error_kind: ErrorKind::NotFound,
@@ -158,7 +158,7 @@ WHERE id NOT IN (
     };
 
     match inserted_level {
-        Ok(inserted_level) => HttpResponse::Ok().json(&inserted_level),
+        Ok(inserted_level) => HttpResponse::Ok().json(inserted_level),
         Err(err) => {
             log::error!("Failed to insert a level: ${:?}", err);
             HttpResponse::InternalServerError().finish()

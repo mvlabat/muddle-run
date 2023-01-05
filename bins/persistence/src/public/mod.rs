@@ -540,7 +540,7 @@ pub async fn get_levels(data: web::Data<Data>, body: web::Query<GetLevelsRequest
     };
 
     match levels {
-        Ok(levels) => HttpResponse::Ok().json(&levels),
+        Ok(levels) => HttpResponse::Ok().json(levels),
         Err(err) => {
             log::error!("Failed to get levels: ${:?}", err);
             HttpResponse::InternalServerError().finish()

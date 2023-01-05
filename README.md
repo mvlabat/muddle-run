@@ -36,6 +36,8 @@ The workspace contains the following binary projects:
 - `mr_dekstop_client`
 - `mr_web_client`
 - `mr_server` 
+- `mr_matchmaker`
+- `mr_persistence`
 
 ### Running the desktop client and the server
 
@@ -60,6 +62,20 @@ MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server
 cd bins/web_client
 wasm-pack build --target web
 basic-http-server . # or any other tool that can serve static files
+```
+
+### Running the persistence service
+
+#### Prerequisites:
+
+- PostgreSQL database
+- sqlx-cli
+- Auth0 and Google OAuth 2.0 client credentials (see the environment variables section)
+
+#### Creating a database
+
+```
+DATABASE_URL=postgres://postgres@localhost/mr_persistence_development sqlx database setup
 ```
 
 ### Environment variables
