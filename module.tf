@@ -17,7 +17,7 @@ terraform {
 }
 
 variable "agones_version" {
-  default = "1.18.0"
+  default = "1.28.0"
 }
 
 variable "cluster_name" {

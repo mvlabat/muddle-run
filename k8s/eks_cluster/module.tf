@@ -123,7 +123,7 @@ module "eks" {
   cluster_name     = var.cluster_name
   subnets          = module.vpc.public_subnets
   vpc_id           = module.vpc.vpc_id
-  cluster_version  = "1.21"
+  cluster_version  = "1.23"
   write_kubeconfig = false
   enable_irsa      = true
 

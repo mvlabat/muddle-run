@@ -169,10 +169,10 @@ docker build -t mvlabat/mr_server -f mr_server.dockerfile . --platform linux/amd
 
 ### Prerequisites
 
-- [aws-cli](https://aws.amazon.com/cli/) (tested with 2.3.2)
+- [aws-cli](https://aws.amazon.com/cli/) (tested with 2.9.12)
   - Make sure to [configure AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html): `aws configure` 
-- [kubectl](https://kubernetes.io/docs/tasks/tools/) (v1.21.0)
-- [helm](https://helm.sh/docs/intro/install/) (tested with v3.7.1)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/) (v1.23.0)
+- [helm](https://helm.sh/docs/intro/install/) (tested with v3.10.3)
 
 ### Applying
 
