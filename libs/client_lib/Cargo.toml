@@ -43,7 +43,7 @@ whoami = "1.2"
 clipboard = "0.5"
 directories = "4.0"
 hyper = { version = "1.0.0-rc.1", features = ["full"] }
-tokio-tungstenite = "0.17"
+tokio-tungstenite = "0.18"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 serde-wasm-bindgen = "0.4"
