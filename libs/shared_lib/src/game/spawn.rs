@@ -31,11 +31,10 @@ use bevy::{
     },
     log,
     prelude::*,
-    tasks::AsyncComputeTaskPool,
 };
 use bevy_rapier2d::{
     dynamics::{LockedAxes, RigidBody, Velocity},
-    geometry::{ActiveEvents, Collider, Sensor},
+    geometry::{ActiveEvents, Collider, Group, Sensor},
     prelude::CollisionGroups,
     rapier::geometry::ColliderShape,
 };
@@ -43,13 +42,13 @@ use std::fmt::Debug;
 
 #[derive(WorldQuery)]
 #[world_query(mutable)]
-pub struct SpawnedQuery<'w, T: WorldQuery> {
-    pub spawned: &'w Spawned,
-    pub player_frame_simulated: Option<&'w PlayerFrameSimulated>,
+pub struct SpawnedQuery<T: WorldQuery> {
+    pub spawned: &'static Spawned,
+    pub player_frame_simulated: Option<&'static PlayerFrameSimulated>,
     pub item: T,
 }
 
-pub fn iter_spawned<'w, 's, T: WorldQuery>(
+pub fn iter_spawned<'w, T: WorldQuery>(
     query: impl Iterator<Item = SpawnedQueryItem<'w, T>> + 'w,
     time: &'w SimulationTime,
 ) -> impl Iterator<Item = SpawnedQueryItem<'w, T>> + 'w {
@@ -62,7 +61,7 @@ pub fn iter_spawned<'w, 's, T: WorldQuery>(
     )
 }
 
-pub fn iter_spawned_read_only<'w, 's, T: WorldQuery>(
+pub fn iter_spawned_read_only<'w, T: WorldQuery>(
     query: impl Iterator<Item = SpawnedQueryReadOnlyItem<'w, T>> + 'w,
     time: &'w SimulationTime,
 ) -> impl Iterator<Item = SpawnedQueryReadOnlyItem<'w, T>> + 'w {
@@ -76,8 +75,12 @@ pub fn iter_spawned_read_only<'w, 's, T: WorldQuery>(
 }
 
 pub type ColliderShapePromiseResult = (Entity, Option<ColliderShape>);
-pub type ColliderShapeSender = crossbeam_channel::Sender<ColliderShapePromiseResult>;
-pub type ColliderShapeReceiver = crossbeam_channel::Receiver<ColliderShapePromiseResult>;
+
+#[derive(Resource, Deref, DerefMut, Clone)]
+pub struct ColliderShapeSender(pub crossbeam_channel::Sender<ColliderShapePromiseResult>);
+
+#[derive(Resource, Deref, DerefMut, Clone)]
+pub struct ColliderShapeReceiver(pub crossbeam_channel::Receiver<ColliderShapePromiseResult>);
 
 #[derive(WorldQuery)]
 #[world_query(mutable, derive(Debug))]
@@ -165,13 +168,13 @@ pub fn spawn_players(
             continue;
         }
 
-        let mut entity_commands = commands.spawn();
+        let mut entity_commands = commands.spawn_empty();
         let player_entity = entity_commands.id();
 
         let mut sensors = Vec::new();
         entity_commands.with_children(|parent| {
             for sensor_position in player_sensor_outline() {
-                let mut sensor_commands = parent.spawn();
+                let mut sensor_commands = parent.spawn_empty();
                 PlayerSensorClientFactory::insert_components(
                     &mut sensor_commands,
                     &mut pbr_client_params,
@@ -179,13 +182,13 @@ pub fn spawn_players(
                 );
                 sensor_commands
                     .insert(Collider::ball(PLAYER_SENSOR_RADIUS))
-                    .insert(Sensor(true))
+                    .insert(Sensor)
                     .insert(player_sensor_collision_groups(
                         !command.is_player_frame_simulated,
                     ))
                     .insert(ActiveEvents::COLLISION_EVENTS)
                     .insert(Transform::from_translation(sensor_position.extend(0.0)))
-                    .insert(GlobalTransform::identity())
+                    .insert(GlobalTransform::IDENTITY)
                     .insert(PlayerSensor(player_entity));
                 #[cfg(feature = "client")]
                 if command.is_player_frame_simulated {
@@ -199,11 +202,10 @@ pub fn spawn_players(
 
         entity_commands
             .insert(PlayerTag)
-            .insert_bundle(PhysicsBundle {
+            .insert(PhysicsBundle {
                 rigid_body: RigidBody::Dynamic,
                 collider: Collider::ball(PLAYER_RADIUS),
                 collision_groups: player_collision_groups(!command.is_player_frame_simulated),
-                sensor: Sensor(false),
                 locked_axes: LockedAxes::ROTATION_LOCKED,
             })
             .insert(ActiveEvents::COLLISION_EVENTS)
@@ -220,7 +222,7 @@ pub fn spawn_players(
             .insert(Transform::from_translation(
                 command.start_position.extend(0.0),
             ))
-            .insert(GlobalTransform::identity())
+            .insert(GlobalTransform::IDENTITY)
             .insert(Velocity::zero())
             .insert(Spawned::new(time.server_frame));
 
@@ -315,11 +317,11 @@ pub fn despawn_players(
             command.frame_number
         );
         let mut entity_commands = commands.entity(entity);
-        collider_flags.memberships = 0;
+        collider_flags.memberships = Group::NONE;
         PlayerClientFactory::remove_components(&mut entity_commands, &mut pbr_client_params);
         for (player_sensor_entity, _state) in &mut sensors.sensors {
             let mut collider_flags = player_sensors.get_mut(*player_sensor_entity).unwrap();
-            collider_flags.memberships = 0;
+            collider_flags.memberships = Group::NONE;
             PlayerSensorClientFactory::remove_components(
                 &mut commands.entity(*player_sensor_entity),
                 &mut pbr_client_params,
@@ -352,7 +354,6 @@ pub fn update_level_objects(
     mut pbr_client_params: PbrClientParams,
     mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut level_object_params: LevelObjectsParams,
-    task_pool: Res<AsyncComputeTaskPool>,
     shape_sender: Res<ColliderShapeSender>,
 ) {
     #[cfg(feature = "profiler")]
@@ -409,12 +410,12 @@ pub fn update_level_objects(
             .level_state
             .objects
             .insert(command.object.net_id, command.object.clone());
-        let mut entity_commands = commands.spawn();
-        let shape = match command.object.desc.calculate_collider_shape(
-            &task_pool,
-            entity_commands.id(),
-            shape_sender.clone(),
-        ) {
+        let mut entity_commands = commands.spawn_empty();
+        let shape = match command
+            .object
+            .desc
+            .calculate_collider_shape(entity_commands.id(), shape_sender.clone())
+        {
             ColliderShapeResponse::Immediate(shape) => Some(shape),
             ColliderShapeResponse::Promise => None,
         };
@@ -452,18 +453,17 @@ pub fn update_level_objects(
             .insert(command.object.net_id)
             .insert(LevelObjectTag)
             .insert(LevelObjectLabel(command.object.label.clone()))
-            .insert(GlobalTransform::identity())
             .insert(transform)
-            .insert(GlobalTransform::identity())
+            .insert(GlobalTransform::IDENTITY)
             .insert(spawned_component);
 
         if let Some(ref shape) = shape {
-            let physics_bundle = command
+            let (physics_bundle, sensor) = command
                 .object
                 .desc
                 .physics_bundle(shape.clone(), cfg!(not(feature = "client")));
-            // Insert client components later, as they can overwrite some of them (z
-            // coordinates of translations for instance).
+            // Insert client components later, as they can overwrite some of them
+            // (z coordinates of translations for instance).
             insert_client_components(
                 &mut entity_commands,
                 &command.object,
@@ -471,7 +471,10 @@ pub fn update_level_objects(
                 &physics_bundle.collider.raw,
                 &mut pbr_client_params,
             );
-            entity_commands.insert_bundle(physics_bundle);
+            entity_commands.insert(physics_bundle);
+            if let Some(sensor) = sensor {
+                entity_commands.insert(sensor);
+            }
         }
 
         let level_object_entity = entity_commands.id();
@@ -481,9 +484,9 @@ pub fn update_level_objects(
 
         if cfg!(feature = "client") {
             // Spawning the ghost objects.
-            let static_ghost = entity_commands.commands().spawn();
+            let static_ghost = entity_commands.commands().spawn_empty();
             let static_ghost_entity = static_ghost.id();
-            let server_ghost = entity_commands.commands().spawn();
+            let server_ghost = entity_commands.commands().spawn_empty();
             let server_ghost_entity = server_ghost.id();
 
             entity_commands
@@ -496,7 +499,7 @@ pub fn update_level_objects(
                 // Even if we don't necessarily render an object, we still want nested transforms
                 // to work.
                 .insert(transform)
-                .insert(GlobalTransform::identity())
+                .insert(GlobalTransform::IDENTITY)
                 .insert(LevelObjectStaticGhostParent(level_object_entity));
             if let Some(ref shape) = shape {
                 insert_client_components(
@@ -509,14 +512,17 @@ pub fn update_level_objects(
             }
 
             let mut server_ghost_commands = commands.entity(server_ghost_entity);
+            server_ghost_commands
+                .insert(LockPhysics(false))
+                .insert(LevelObjectServerGhostParent(level_object_entity))
+                .insert(transform)
+                .insert(GlobalTransform::IDENTITY);
             if let Some(shape) = shape {
-                let physics_bundle = command.object.desc.physics_bundle(shape, true);
-                server_ghost_commands
-                    .insert(LockPhysics(false))
-                    .insert_bundle(physics_bundle)
-                    .insert(LevelObjectServerGhostParent(level_object_entity))
-                    .insert(transform)
-                    .insert(GlobalTransform::identity());
+                let (physics_bundle, sensor) = command.object.desc.physics_bundle(shape, true);
+                server_ghost_commands.insert(physics_bundle);
+                if let Some(sensor) = sensor {
+                    server_ghost_commands.insert(sensor);
+                }
             }
         }
     }
@@ -568,7 +574,7 @@ pub fn poll_calculating_shapes(
             }
         };
 
-        let physics_bundle = level_object
+        let (physics_bundle, sensor) = level_object
             .desc
             .physics_bundle(shape.clone(), cfg!(not(feature = "client")));
         insert_client_components(
@@ -578,7 +584,10 @@ pub fn poll_calculating_shapes(
             &physics_bundle.collider.raw,
             &mut pbr_client_params,
         );
-        entity_commands.insert_bundle(physics_bundle);
+        entity_commands.insert(physics_bundle);
+        if let Some(sensor) = sensor {
+            entity_commands.insert(sensor);
+        }
 
         if let Some((
             LevelObjectStaticGhostChild(static_ghost_entity),
@@ -595,8 +604,11 @@ pub fn poll_calculating_shapes(
             );
 
             let mut server_ghost_commands = commands.entity(*server_ghost_entity);
-            let physics_bundle = level_object.desc.physics_bundle(shape, true);
-            server_ghost_commands.insert_bundle(physics_bundle);
+            let (physics_bundle, sensor) = level_object.desc.physics_bundle(shape, true);
+            server_ghost_commands.insert(physics_bundle);
+            if let Some(sensor) = sensor {
+                server_ghost_commands.insert(sensor);
+            }
         }
     }
 }
@@ -694,7 +706,7 @@ pub fn despawn_level_objects(
             entity,
             command.frame_number
         );
-        collider_flags.memberships = 0;
+        collider_flags.memberships = Group::NONE;
         match level_state
             .objects
             .remove(&command.net_id)

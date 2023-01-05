@@ -241,7 +241,7 @@ pub async fn patch_level(
     };
 
     match result {
-        Ok(()) => HttpResponse::Ok().json(&()),
+        Ok(()) => HttpResponse::Ok().json(()),
         Err(sqlx::Error::RowNotFound) => HttpResponse::NotFound().json(ErrorResponse::<()> {
             message: "Level doesn't exist".to_owned(),
             error_kind: ErrorKind::NotFound,
@@ -271,7 +271,7 @@ pub async fn delete_level(data: web::Data<Data>, id: web::Path<i64>) -> HttpResp
     match result {
         Ok(result) => {
             if result.rows_affected() > 0 {
-                HttpResponse::Ok().json(&())
+                HttpResponse::Ok().json(())
             } else {
                 HttpResponse::NotFound().json(ErrorResponse::<()> {
                     message: "Level doesn't exist".to_owned(),

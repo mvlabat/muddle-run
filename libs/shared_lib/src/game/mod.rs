@@ -14,7 +14,7 @@ use crate::{
         components::{LevelObjectStaticGhostParent, PlayerSensor},
     },
     messages::{EntityNetId, PlayerNetId},
-    player::{Player, PlayerEvent, PlayerUpdates},
+    player::{PlayerEvent, PlayerUpdates, Players},
     registry::EntityRegistry,
     util::dedup_by_key_unsorted,
     SimulationTime,
@@ -23,11 +23,11 @@ use bevy::{
     ecs::{
         entity::Entity,
         query::With,
-        system::{Res, ResMut},
+        system::{Res, ResMut, Resource},
         world::World,
     },
     log,
-    utils::HashMap,
+    prelude::{Deref, DerefMut},
 };
 
 pub mod client_factories;
@@ -40,6 +40,9 @@ pub mod level_objects;
 pub mod movement;
 pub mod spawn;
 
+#[derive(Resource, Deref, DerefMut)]
+pub struct PlayerEventSender(pub Option<tokio::sync::mpsc::UnboundedSender<PlayerEvent>>);
+
 // TODO: track https://github.com/bevyengine/rfcs/pull/16.
 pub fn restart_game(world: &mut World) {
     let mut restart_game_commands = world
@@ -51,9 +54,7 @@ pub fn restart_game(world: &mut World) {
 
     log::info!("Restarting the game");
 
-    let mut players = world
-        .get_resource_mut::<HashMap<PlayerNetId, Player>>()
-        .unwrap();
+    let mut players = world.get_resource_mut::<Players>().unwrap();
     players.clear();
 
     let mut entities_to_despawn = Vec::new();
@@ -136,7 +137,7 @@ pub fn restart_game(world: &mut World) {
 
 pub fn switch_player_role(
     mut switch_role_commands: ResMut<DeferredQueue<SwitchPlayerRole>>,
-    mut players: ResMut<HashMap<PlayerNetId, Player>>,
+    mut players: ResMut<Players>,
     time: Res<SimulationTime>,
     #[cfg(not(feature = "client"))] mut despawn_player_commands: ResMut<
         DeferredQueue<DespawnPlayer>,
@@ -219,8 +220,8 @@ pub fn switch_player_role(
 
 pub fn remove_disconnected_players(
     player_entities: Res<EntityRegistry<PlayerNetId>>,
-    mut players: ResMut<HashMap<PlayerNetId, Player>>,
-    mut players_tracking_channel: Option<ResMut<tokio::sync::mpsc::UnboundedSender<PlayerEvent>>>,
+    mut players: ResMut<Players>,
+    #[cfg(not(feature = "client"))] mut players_tracking_channel: ResMut<PlayerEventSender>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -228,7 +229,9 @@ pub fn remove_disconnected_players(
         let remove = !player.is_connected && player_entities.get_entity(*player_net_id).is_none();
         if remove {
             log::info!("Player {} is disconnected and removed", player_net_id.0);
-            if let Some(players_tracking_channel) = players_tracking_channel.as_mut() {
+
+            #[cfg(not(feature = "client"))]
+            if let Some(players_tracking_channel) = &mut **players_tracking_channel {
                 if let Err(err) =
                     players_tracking_channel.send(PlayerEvent::Disconnected(player.uuid.clone()))
                 {

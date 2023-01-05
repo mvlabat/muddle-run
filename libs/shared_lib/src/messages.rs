@@ -9,9 +9,14 @@ use crate::{
     player::{Player, PlayerRole},
     registry::IncrementId,
 };
-use bevy::{ecs::component::Component, math::Vec2};
+use bevy::{
+    ecs::{component::Component, system::Resource},
+    math::Vec2,
+    prelude::{Deref, DerefMut},
+};
 use serde::{Deserialize, Serialize};
 
+#[derive(Resource)]
 pub struct DeferredMessagesQueue<T: Serialize> {
     messages: Vec<T>,
 }
@@ -39,6 +44,9 @@ impl<T: Serialize> DeferredMessagesQueue<T> {
 #[derive(Component, Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct EntityNetId(pub u16);
 
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct EntityNetIdCounter(pub EntityNetId);
+
 impl IncrementId for EntityNetId {
     fn increment(&mut self) -> Self {
         let old = *self;
@@ -51,6 +59,9 @@ impl IncrementId for EntityNetId {
 // removed players.
 #[derive(Serialize, Deserialize, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct PlayerNetId(pub u16);
+
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct PlayerNetIdCounter(pub PlayerNetId);
 
 impl IncrementId for PlayerNetId {
     fn increment(&mut self) -> Self {

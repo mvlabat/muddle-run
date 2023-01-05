@@ -7,10 +7,10 @@ use crate::{
     wrapped_counter::WrappedCounter,
     TICKS_PER_NETWORK_BROADCAST,
 };
-use bevy::{ecs::system::ResMut, utils::Instant};
-use bevy_networking_turbulence::{
+use bevy::{ecs::system::Resource, prelude::NonSendMut, utils::Instant};
+use bevy_disturbulence::{
     ConnectionChannelsBuilder, MessageChannelMode, MessageChannelSettings, NetworkResource,
-    ReliableChannelSettings,
+    ReliableChannelSettings, UnreliableChannelSettings,
 };
 use std::{collections::VecDeque, time::Duration};
 use thiserror::Error;
@@ -57,6 +57,7 @@ pub enum AddOutgoingPacketError {
 // Note: We don't expect clients or server to re-send lost packets. If we detect
 // packet loss, we enable redundancy to include the lost updates in future
 // packets.
+#[derive(Resource)]
 pub struct ConnectionState {
     pub handshake_id: MessageId,
     pub session_id: SessionId,
@@ -409,7 +410,7 @@ impl Acknowledgment {
     }
 }
 
-pub fn network_setup(mut net: ResMut<NetworkResource>) {
+pub fn network_setup(mut net: NonSendMut<NetworkResource>) {
     net.set_channels_builder(|builder: &mut ConnectionChannelsBuilder| {
         builder
             .register::<Message<UnreliableClientMessage>>(CLIENT_INPUT_MESSAGE_SETTINGS)
@@ -428,7 +429,13 @@ pub fn network_setup(mut net: ResMut<NetworkResource>) {
 
 const CLIENT_INPUT_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
     channel: 0,
-    channel_mode: MessageChannelMode::Unreliable,
+    channel_mode: MessageChannelMode::Unreliable {
+        settings: UnreliableChannelSettings {
+            bandwidth: 4096,
+            burst_bandwidth: 1024,
+        },
+        max_message_len: 1024,
+    },
     message_buffer_size: 128,
     packet_buffer_size: 128,
 };
@@ -436,13 +443,13 @@ const CLIENT_INPUT_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSett
 const CLIENT_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
     channel: 1,
     channel_mode: MessageChannelMode::Reliable {
-        reliability_settings: ReliableChannelSettings {
+        settings: ReliableChannelSettings {
             bandwidth: 1024 * 1024,
             recv_window_size: 1024,
             send_window_size: 1024,
             burst_bandwidth: 1024,
             init_send: 512,
-            wakeup_time: Duration::from_millis(100),
+            resend_time: Duration::from_millis(100),
             initial_rtt: Duration::from_millis(200),
             max_rtt: Duration::from_secs(2),
             rtt_update_factor: 0.1,
@@ -457,13 +464,13 @@ const CLIENT_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelS
 const SERVER_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
     channel: 2,
     channel_mode: MessageChannelMode::Reliable {
-        reliability_settings: ReliableChannelSettings {
+        settings: ReliableChannelSettings {
             bandwidth: 1024 * 1024,
             recv_window_size: 1024,
             send_window_size: 1024,
             burst_bandwidth: 1024,
             init_send: 512,
-            wakeup_time: Duration::from_millis(100),
+            resend_time: Duration::from_millis(100),
             initial_rtt: Duration::from_millis(200),
             max_rtt: Duration::from_secs(2),
             rtt_update_factor: 0.1,
@@ -477,7 +484,13 @@ const SERVER_RELIABLE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelS
 
 const SERVER_DELTA_UPDATE_MESSAGE_SETTINGS: MessageChannelSettings = MessageChannelSettings {
     channel: 3,
-    channel_mode: MessageChannelMode::Unreliable,
+    channel_mode: MessageChannelMode::Unreliable {
+        settings: UnreliableChannelSettings {
+            bandwidth: 4096,
+            burst_bandwidth: 1024,
+        },
+        max_message_len: 1024,
+    },
     message_buffer_size: 128,
     packet_buffer_size: 128,
 };

@@ -6,7 +6,7 @@ use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
 pub fn connection_status_overlay(
     mut egui_context: ResMut<EguiContext>,
     connection_state: Res<ConnectionState>,
-    server_to_connect: Res<Option<ServerToConnect>>,
+    server_to_connect: Res<ServerToConnect>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();

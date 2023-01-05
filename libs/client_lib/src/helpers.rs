@@ -3,18 +3,18 @@ use crate::{
     CurrentPlayerNetId, MainCameraEntity,
 };
 use bevy::{
-    core::Time,
     ecs::{
         entity::Entity,
-        query::{FilterFetch, WorldQuery},
+        query::{ReadOnlyWorldQuery, WorldQuery},
         system::{Local, Query, Res, SystemParam},
     },
     input::{mouse::MouseButton, Input},
     math::{Mat4, Vec2, Vec4},
-    utils::{HashMap, Instant},
+    time::Time,
+    utils::Instant,
     window::Window,
 };
-use mr_shared_lib::{messages::PlayerNetId, player::Player};
+use mr_shared_lib::player::{Player, Players};
 use std::{marker::PhantomData, time::Duration};
 
 /// Radius in screen coordinates.
@@ -23,7 +23,7 @@ const DOUBLE_CLICK_MAX_DELAY_SECS: f64 = 0.3;
 
 #[derive(SystemParam)]
 pub struct PlayerParams<'w, 's> {
-    pub players: Res<'w, HashMap<PlayerNetId, Player>>,
+    pub players: Res<'w, Players>,
     pub current_player_net_id: Res<'w, CurrentPlayerNetId>,
     #[system_param(ignore)]
     marker: PhantomData<&'s ()>,
@@ -94,22 +94,21 @@ impl From<MouseEntityPickerData<Current>> for MouseEntityPickerData<Previous> {
 impl<'w, 's, Q, F> MouseEntityPicker<'w, 's, Q, F>
 where
     Q: WorldQuery + Send + Sync + 'static,
-    F: WorldQuery + Send + Sync + 'static,
-    F::Fetch: FilterFetch,
+    F: ReadOnlyWorldQuery + Send + Sync + 'static,
 {
     pub fn hovered_entity(&self, filter_query: &mut Option<&mut Query<Q, F>>) -> Option<Entity> {
         let picking_camera = self.camera_query.get(self.camera_entity.0).unwrap();
-        picking_camera.intersect_list().and_then(|list| {
-            list.iter()
-                .map(|(entity, _)| entity)
-                .cloned()
-                .filter(|entity| {
-                    filter_query
-                        .as_mut()
-                        .map_or(true, |query| query.get_mut(*entity).is_ok())
-                })
-                .find(|entity| Some(*entity) != self.state.picked_entity)
-        })
+        picking_camera
+            .intersections()
+            .iter()
+            .map(|(entity, _)| entity)
+            .cloned()
+            .filter(|entity| {
+                filter_query
+                    .as_mut()
+                    .map_or(true, |query| query.get_mut(*entity).is_ok())
+            })
+            .find(|entity| Some(*entity) != self.state.picked_entity)
     }
 
     /// If an entity can be changed due to re-creating it because of a network
@@ -232,8 +231,8 @@ pub fn cursor_pos_to_ray(
 ) -> MouseRay {
     // Calculate the cursor pos in NDC space [(-1,-1), (1,1)].
     let cursor_ndc = Vec4::from((
-        (cursor_viewport.x / window.width() as f32) * 2.0 - 1.0,
-        (cursor_viewport.y / window.height() as f32) * 2.0 - 1.0,
+        (cursor_viewport.x / window.width()) * 2.0 - 1.0,
+        (cursor_viewport.y / window.height()) * 2.0 - 1.0,
         -1.0, // let the cursor be on the far clipping plane
         1.0,
     ));

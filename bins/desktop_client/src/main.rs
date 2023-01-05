@@ -23,14 +23,21 @@ fn main() {
         server_addr: server_addr(),
     })
     // Window and rendering.
-    .insert_resource(WindowDescriptor {
-        title: "Muddle Run".to_owned(),
-        width: 1024.0,
-        height: 768.0,
-        ..Default::default()
-    })
     .insert_resource(Msaa { samples: 4 })
-    .add_plugins_with(DefaultPlugins, |plugin| plugin.disable::<LogPlugin>())
+    .add_plugins(
+        DefaultPlugins
+            .build()
+            .disable::<LogPlugin>()
+            .set(WindowPlugin {
+                window: WindowDescriptor {
+                    title: "Muddle Run".to_owned(),
+                    width: 1024.0,
+                    height: 768.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+    )
     .add_plugin(MuddleClientPlugin)
     .run();
 }

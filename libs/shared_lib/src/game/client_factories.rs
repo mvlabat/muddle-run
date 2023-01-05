@@ -49,7 +49,7 @@ impl<'w, 's> ClientFactory<'w, 's> for PlayerClientFactory {
         deps: &mut Self::Dependencies,
         position: Self::Input,
     ) {
-        commands.insert_bundle(PbrBundle {
+        commands.insert(PbrBundle {
             mesh: deps.meshes.add(Mesh::from(XyCircle {
                 radius: PLAYER_RADIUS,
             })),
@@ -58,13 +58,13 @@ impl<'w, 's> ClientFactory<'w, 's> for PlayerClientFactory {
             ..Default::default()
         });
         commands.insert(PredictedPosition { value: position });
-        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
+        commands.insert(bevy_mod_picking::PickableBundle::default());
     }
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
-        commands.remove_bundle::<PbrBundle>();
-        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
+        commands.remove::<PbrBundle>();
+        commands.remove::<bevy_mod_picking::PickableBundle>();
         commands.remove::<PredictedPosition>();
         let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
@@ -84,7 +84,7 @@ impl<'w, 's> ClientFactory<'w, 's> for PlayerSensorClientFactory {
         (): Self::Input,
     ) {
         commands
-            .insert_bundle(PbrBundle {
+            .insert(PbrBundle {
                 mesh: deps.assets.meshes.player_sensor.clone(),
                 material: deps.assets.materials.player_sensor_normal.clone(),
                 visibility: Visibility {
@@ -97,9 +97,7 @@ impl<'w, 's> ClientFactory<'w, 's> for PlayerSensorClientFactory {
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands, _deps: &mut Self::Dependencies) {
-        commands
-            .remove_bundle::<PbrBundle>()
-            .remove::<DebugUiVisibility>();
+        commands.remove::<PbrBundle>().remove::<DebugUiVisibility>();
     }
 }
 
@@ -205,7 +203,7 @@ impl<'w, 's> ClientFactory<'w, 's> for PlaneClientFactory {
             }
         };
 
-        commands.insert_bundle(PbrBundle {
+        commands.insert(PbrBundle {
             visibility: Visibility {
                 is_visible: if input.is_ghost {
                     deps.visibility_settings.ghosts
@@ -234,13 +232,13 @@ impl<'w, 's> ClientFactory<'w, 's> for PlaneClientFactory {
             ),
             ..Default::default()
         });
-        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
+        commands.insert(bevy_mod_picking::PickableBundle::default());
     }
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
-        commands.remove_bundle::<PbrBundle>();
-        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
+        commands.remove::<PbrBundle>();
+        commands.remove::<bevy_mod_picking::PickableBundle>();
         let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
@@ -263,7 +261,7 @@ impl<'w, 's> ClientFactory<'w, 's> for CubeClientFactory {
         } else {
             1.0
         };
-        commands.insert_bundle(PbrBundle {
+        commands.insert(PbrBundle {
             visibility: Visibility {
                 is_visible: if input.is_ghost {
                     deps.visibility_settings.ghosts
@@ -295,13 +293,13 @@ impl<'w, 's> ClientFactory<'w, 's> for CubeClientFactory {
             ),
             ..Default::default()
         });
-        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
+        commands.insert(bevy_mod_picking::PickableBundle::default());
     }
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
-        commands.remove_bundle::<PbrBundle>();
-        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
+        commands.remove::<PbrBundle>();
+        commands.remove::<bevy_mod_picking::PickableBundle>();
         let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
@@ -327,7 +325,7 @@ impl<'w, 's> ClientFactory<'w, 's> for RoutePointClientFactory {
         } else {
             1.0
         };
-        commands.insert_bundle(PbrBundle {
+        commands.insert(PbrBundle {
             visibility: Visibility {
                 is_visible: if input.is_ghost {
                     deps.visibility_settings.ghosts
@@ -347,20 +345,20 @@ impl<'w, 's> ClientFactory<'w, 's> for RoutePointClientFactory {
             transform: Transform::from_translation(input.desc.position.extend(0.0)),
             ..Default::default()
         });
-        commands.insert_bundle(bevy_mod_picking::PickableBundle::default());
+        commands.insert(bevy_mod_picking::PickableBundle::default());
     }
 
     #[cfg(feature = "client")]
     fn remove_components(commands: &mut EntityCommands, deps: &mut Self::Dependencies) {
-        commands.remove_bundle::<PbrBundle>();
-        commands.remove_bundle::<bevy_mod_picking::PickableBundle>();
+        commands.remove::<PbrBundle>();
+        commands.remove::<bevy_mod_picking::PickableBundle>();
         let mesh = deps.mesh_query.get(commands.id()).unwrap().clone();
         deps.meshes.remove(mesh);
     }
 }
 
 #[cfg(feature = "client")]
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct VisibilitySettings {
     pub debug: bool,
     pub route_points: bool,

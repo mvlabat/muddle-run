@@ -156,7 +156,7 @@ pub async fn link_account(
     )
     .await
     {
-        Ok(()) => HttpResponse::Ok().json(&()),
+        Ok(()) => HttpResponse::Ok().json(()),
         Err(InsertOidcError::NotFound) => {
             HttpResponse::NotFound().json(ErrorResponse::<LinkAccountError> {
                 message: "User doesn't exist".to_owned(),
@@ -298,7 +298,7 @@ WHERE u.id = $1
         return HttpResponse::InternalServerError().finish();
     }
 
-    HttpResponse::Ok().json(&())
+    HttpResponse::Ok().json(())
 }
 
 enum InsertOidcError {

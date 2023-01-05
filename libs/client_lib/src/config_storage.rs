@@ -1,4 +1,5 @@
 use crate::utils::parse_jwt;
+use bevy::ecs::system::Resource;
 use jwt_compact::Claims;
 use mr_utils_lib::JwtAuthClaims;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -6,7 +7,7 @@ use std::fmt::{Debug, Formatter};
 
 pub const AUTH_CONFIG_KEY: &str = "auth";
 
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Resource, Serialize, Deserialize, Default, Clone)]
 pub struct OfflineAuthConfig {
     #[serde(default)]
     pub username: String,

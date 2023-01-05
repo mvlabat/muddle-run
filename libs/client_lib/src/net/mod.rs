@@ -11,13 +11,8 @@ use crate::{
     MuddleClientConfig, TargetFramesAhead,
 };
 use auth::{AuthMessage, AuthRequest};
-use bevy::{
-    ecs::system::SystemParam,
-    log,
-    prelude::*,
-    utils::{HashMap, Instant},
-};
-use bevy_networking_turbulence::{NetworkEvent, NetworkResource};
+use bevy::{ecs::system::SystemParam, log, prelude::*, utils::Instant};
+use bevy_disturbulence::{NetworkEvent, NetworkResource};
 use futures::{select, FutureExt};
 use mr_messages_lib::{MatchmakerMessage, MatchmakerRequest, Server};
 use mr_shared_lib::{
@@ -38,7 +33,7 @@ use mr_shared_lib::{
         AcknowledgeError, ConnectionState, ConnectionStatus, MessageId, SessionId,
         CONNECTION_TIMEOUT_MILLIS,
     },
-    player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
+    player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates, Players},
     registry::EntityRegistry,
     GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
 };
@@ -86,7 +81,7 @@ pub struct UpdateParams<'w, 's> {
 
 #[derive(SystemParam)]
 pub struct NetworkParams<'w, 's> {
-    net: ResMut<'w, NetworkResource>,
+    net: NonSendMut<'w, NetworkResource>,
     connection_state: ResMut<'w, ConnectionState>,
     #[system_param(ignore)]
     marker: PhantomData<&'s ()>,
@@ -99,12 +94,14 @@ pub enum TcpConnectionStatus {
     Connected,
 }
 
+#[derive(Resource)]
 pub struct MatchmakerState {
     pub status: TcpConnectionStatus,
     pub id_token: Option<String>,
     pub user_id: Option<i64>,
 }
 
+#[derive(Resource)]
 pub struct MainMenuUiChannels {
     pub auth_request_tx: UnboundedSender<AuthRequest>,
     pub auth_message_tx: UnboundedSender<AuthMessage>,
@@ -117,7 +114,8 @@ pub struct MainMenuUiChannels {
     pub persistence_message_rx: UnboundedReceiver<PersistenceMessage>,
 }
 
-pub struct ServerToConnect(pub Server);
+#[derive(Resource, DerefMut, Deref, Default)]
+pub struct ServerToConnect(pub Option<Server>);
 
 pub fn init_matchmaker_connection(mut commands: Commands, client_config: Res<MuddleClientConfig>) {
     let matchmaker_url = match &client_config.matchmaker_url {
@@ -271,7 +269,7 @@ where
 #[derive(SystemParam)]
 pub struct MatchmakerParams<'w, 's> {
     matchmaker_state: Option<ResMut<'w, MatchmakerState>>,
-    server_to_connect: ResMut<'w, Option<ServerToConnect>>,
+    server_to_connect: ResMut<'w, ServerToConnect>,
     main_menu_ui_channels: Option<Res<'w, MainMenuUiChannels>>,
     #[system_param(ignore)]
     marker: PhantomData<&'s ()>,
@@ -281,7 +279,7 @@ pub fn process_network_events(
     mut network_params: NetworkParams,
     mut network_events: EventReader<NetworkEvent>,
     mut current_player_net_id: ResMut<CurrentPlayerNetId>,
-    mut players: ResMut<HashMap<PlayerNetId, Player>>,
+    mut players: ResMut<Players>,
     mut update_params: UpdateParams,
     mut matchmaker_params: MatchmakerParams,
 ) {
@@ -642,7 +640,7 @@ pub fn process_network_events(
                         if let Some(matchmaker_state) = matchmaker_params.matchmaker_state.as_mut()
                         {
                             matchmaker_state.id_token = None;
-                            *matchmaker_params.server_to_connect = None;
+                            **matchmaker_params.server_to_connect = None;
                             matchmaker_params
                                 .main_menu_ui_channels
                                 .unwrap()
@@ -694,7 +692,7 @@ pub fn maintain_connection(
     client_config: Res<MuddleClientConfig>,
     matchmaker_state: Option<ResMut<MatchmakerState>>,
     matchmaker_channels: Option<ResMut<MainMenuUiChannels>>,
-    mut server_to_connect: ResMut<Option<ServerToConnect>>,
+    mut server_to_connect: ResMut<ServerToConnect>,
     mut network_params: NetworkParams,
     mut initial_rtt: ResMut<InitialRtt>,
 ) {
@@ -706,7 +704,7 @@ pub fn maintain_connection(
         ConnectionStatus::Connected
     ) && server_to_connect.is_some()
     {
-        *server_to_connect = None;
+        **server_to_connect = None;
         if let Some(matchmaker_channels) = matchmaker_channels.as_ref() {
             matchmaker_channels
                 .connection_request_tx
@@ -785,7 +783,7 @@ pub fn maintain_connection(
     }
 
     if network_params.net.connections.is_empty() {
-        if let Some((matchmaker_state, matchmaker_channels)) = matchmaker.as_mut() {
+        let addr = if let Some((matchmaker_state, matchmaker_channels)) = matchmaker.as_mut() {
             if matches!(matchmaker_state.status, TcpConnectionStatus::Disconnected) {
                 log::trace!("Requesting a connection to the matchmaker");
                 matchmaker_channels
@@ -795,18 +793,21 @@ pub fn maintain_connection(
                 return;
             }
 
-            if let Some(ServerToConnect(server)) = &*server_to_connect {
-                log::info!("Connecting to {}: {}", server.name, server.addr);
-                network_params.net.connect(server.addr);
-            }
+            let Some(server) = &**server_to_connect else {
+                return;
+            };
+            log::info!("Connecting to {}: {}", server.name, server.addr);
+            format!("http://{}", server.addr)
         } else {
             let server_socket_addr = client_config
                 .server_addr
                 .unwrap_or_else(|| SocketAddr::new(DEFAULT_SERVER_IP_ADDR, DEFAULT_SERVER_PORT));
 
             log::info!("Connecting to {}", server_socket_addr);
-            network_params.net.connect(server_socket_addr);
-        }
+            format!("http://{server_socket_addr}")
+        };
+
+        network_params.net.connect(&addr);
     }
 }
 
@@ -819,7 +820,7 @@ pub fn send_network_updates(
     time: Res<GameTime>,
     mut network_params: NetworkParams,
     current_player_net_id: Res<CurrentPlayerNetId>,
-    players: Res<HashMap<PlayerNetId, Player>>,
+    players: Res<Players>,
     player_registry: Res<EntityRegistry<PlayerNetId>>,
     player_update_params: PlayerUpdateParams,
 ) {
@@ -1001,7 +1002,7 @@ fn process_delta_update_message(
     delta_update: DeltaUpdate,
     connection_state: &ConnectionState,
     current_player_net_id: Option<PlayerNetId>,
-    players: &mut HashMap<PlayerNetId, Player>,
+    players: &mut Players,
     update_params: &mut UpdateParams,
 ) {
     log::trace!("Processing DeltaUpdate message: {:?}", delta_update);
@@ -1183,10 +1184,10 @@ fn sync_clock(
         }) as i16;
 
     // Update rtt, packet loss and jitter values.
-    let frames_rtt = SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0;
+    let frames_rtt = SIMULATIONS_PER_SECOND * connection_state.rtt_millis() / 1000.0;
     let packet_loss_buffer = frames_rtt * connection_state.packet_loss();
     let jitter_buffer = packet_loss_buffer
-        + SIMULATIONS_PER_SECOND as f32 * connection_state.jitter_millis() * 2.0 / 1000.0;
+        + SIMULATIONS_PER_SECOND * connection_state.jitter_millis() * 2.0 / 1000.0;
 
     // Adjusting the speed to synchronize with the server clock.
     let new_delay = (update_params.simulation_time.server_frame.value() as i32
@@ -1241,7 +1242,7 @@ fn process_start_game_message(
     start_game: StartGame,
     connection_state: &mut ConnectionState,
     current_player_net_id: &mut CurrentPlayerNetId,
-    players: &mut HashMap<PlayerNetId, Player>,
+    players: &mut Players,
     update_params: &mut UpdateParams,
 ) {
     log::debug!("Processing StartGame message: {:?}", start_game);
@@ -1259,11 +1260,10 @@ fn process_start_game_message(
         },
     );
     update_params.game_time.session += 1;
-    let rtt_frames = FrameNumber::new(
-        (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0) as u16,
-    );
+    let rtt_frames =
+        FrameNumber::new((SIMULATIONS_PER_SECOND * connection_state.rtt_millis() / 1000.0) as u16);
     let half_rtt_frames = FrameNumber::new(
-        (SIMULATIONS_PER_SECOND as f32 * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
+        (SIMULATIONS_PER_SECOND * connection_state.rtt_millis() / 1000.0 / 2.0) as u16,
     );
     update_params.simulation_time.server_generation = start_game.generation;
     update_params.simulation_time.player_generation = start_game.generation;
@@ -1348,7 +1348,7 @@ fn process_start_game_message(
 fn process_connected_player_message(
     player_net_id: PlayerNetId,
     connected_player: Player,
-    players: &mut HashMap<PlayerNetId, Player>,
+    players: &mut Players,
 ) {
     // Player is spawned when the first DeltaUpdate with it arrives, so we don't do
     // it here.
@@ -1371,7 +1371,7 @@ fn process_connected_player_message(
 
 fn process_disconnected_player_message(
     disconnected_player: DisconnectedPlayer,
-    players: &mut HashMap<PlayerNetId, Player>,
+    players: &mut Players,
 ) {
     log::info!("A player ({}) disconnected", disconnected_player.net_id.0);
     if let Some(player) = players.get_mut(&disconnected_player.net_id) {

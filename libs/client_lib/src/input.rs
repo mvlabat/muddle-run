@@ -8,14 +8,14 @@ use bevy::{
     log,
     prelude::*,
     render::camera::CameraProjection,
-    utils::{HashMap, Instant},
+    utils::Instant,
 };
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::WorldInspectorParams;
 use mr_shared_lib::{
     game::{components::Spawned, level::LevelObject},
     messages::{EntityNetId, PlayerNetId, SpawnLevelObjectRequest},
-    player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
+    player::{PlayerDirectionUpdate, PlayerRole, PlayerUpdates, Players},
     registry::EntityRegistry,
     GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
@@ -24,13 +24,13 @@ use std::marker::PhantomData;
 const SWITCH_ROLE_COOLDOWN_SECS: u64 = 1;
 
 /// Is drained by `send_requests`.
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct PlayerRequestsQueue {
     pub switch_role: Vec<PlayerRole>,
 }
 
 /// Is drained by `send_requests`.
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct LevelObjectRequestsQueue {
     pub spawn_requests: Vec<SpawnLevelObjectRequest>,
     pub update_requests: Vec<LevelObject>,
@@ -46,14 +46,15 @@ pub struct InputEvents<'w, 's> {
 
 /// Represents a cursor position in window coordinates (the ones that are coming
 /// from Window events).
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct MouseScreenPosition(pub Vec2);
 
 /// MouseRay intersection with the (center=[0.0, 0.0, 0.0], normal=[0.0, 0.0,
 /// 1.0]) plane.
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct MouseWorldPosition(pub Vec2);
 
+#[derive(Resource)]
 pub struct MouseRay {
     pub origin: Vec3,
     pub direction: Vec3,
@@ -72,7 +73,7 @@ impl Default for MouseRay {
 pub struct PlayerUpdatesParams<'w, 's> {
     switched_role_at: Local<'s, Option<Instant>>,
     current_player_net_id: Res<'w, CurrentPlayerNetId>,
-    players: Res<'w, HashMap<PlayerNetId, Player>>,
+    players: Res<'w, Players>,
     player_registry: Res<'w, EntityRegistry<PlayerNetId>>,
     players_query: Query<'w, 's, &'static Spawned>,
     main_camera_pivot_entity: Res<'w, MainCameraPivotEntity>,
@@ -184,11 +185,7 @@ pub fn cast_mouse_ray(
     windows: Res<Windows>,
     mouse_position: Res<MouseScreenPosition>,
     main_camera_entity: Res<MainCameraEntity>,
-    cameras: Query<(
-        &GlobalTransform,
-        &bevy::render::camera::Camera,
-        &bevy::render::camera::PerspectiveProjection,
-    )>,
+    cameras: Query<(&GlobalTransform, &Camera, &Projection)>,
     mut mouse_ray: ResMut<MouseRay>,
     mut mouse_world_position: ResMut<MouseWorldPosition>,
 ) {

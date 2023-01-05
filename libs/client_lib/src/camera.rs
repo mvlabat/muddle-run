@@ -3,7 +3,6 @@ use crate::{
     CurrentPlayerNetId, MainCameraPivotEntity,
 };
 use bevy::{
-    core::Time,
     ecs::{
         entity::Entity,
         query::{Changed, With},
@@ -11,6 +10,7 @@ use bevy::{
     },
     hierarchy::{BuildChildren, Parent},
     log,
+    time::Time,
     transform::components::Transform,
 };
 use mr_shared_lib::{

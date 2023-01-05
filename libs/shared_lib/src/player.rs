@@ -4,13 +4,17 @@ use crate::{
     registry::EntityRegistry,
 };
 use bevy::{
-    ecs::system::{ResMut, SystemParam},
+    ecs::system::{ResMut, Resource, SystemParam},
     log,
     math::Vec2,
+    prelude::{Deref, DerefMut},
     utils::HashMap,
 };
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
+
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct Players(pub HashMap<PlayerNetId, Player>);
 
 #[derive(Debug)]
 pub enum PlayerEvent {
@@ -20,13 +24,13 @@ pub enum PlayerEvent {
 
 #[derive(SystemParam)]
 pub struct PlayerSystemParamsMut<'w, 's> {
-    pub players: ResMut<'w, HashMap<PlayerNetId, Player>>,
+    pub players: ResMut<'w, Players>,
     pub player_registry: ResMut<'w, EntityRegistry<PlayerNetId>>,
     #[system_param(ignore)]
     marker: PhantomData<&'s ()>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Resource, Debug, Default)]
 pub struct PlayerUpdates {
     pub direction: HashMap<PlayerNetId, Framebuffer<Option<PlayerDirectionUpdate>>>,
     /// Is supposed to be filled and used only by clients, as it contains

@@ -5,7 +5,7 @@ use crate::{
     player::PlayerRole,
     SimulationTime,
 };
-use bevy::{math::Vec2, utils::HashMap};
+use bevy::{ecs::system::Resource, math::Vec2, utils::HashMap};
 use serde::{Deserialize, Serialize};
 
 pub trait DeferredCommand {
@@ -18,6 +18,7 @@ pub trait DeferredCommand {
     }
 }
 
+#[derive(Resource)]
 pub struct DeferredQueue<T> {
     commands: Vec<T>,
 }
@@ -133,6 +134,7 @@ impl DeferredCommand for DespawnLevelObject {
     }
 }
 
+#[derive(Resource)]
 pub struct DeferredPlayerQueues<T> {
     updates: HashMap<PlayerNetId, Vec<T>>,
 }

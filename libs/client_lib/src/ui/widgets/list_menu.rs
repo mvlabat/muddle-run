@@ -1,11 +1,13 @@
 use crate::ui::without_item_spacing;
 use bevy_egui::egui;
 
+type UiFunc = dyn FnOnce(&mut egui::Ui);
+
 pub struct MenuListItem<Secondary, Collapsing> {
     title: String,
     id: egui::Id,
     is_selected: bool,
-    image_widget: Option<Box<dyn FnOnce(&mut egui::Ui)>>,
+    image_widget: Option<Box<UiFunc>>,
     secondary: Secondary,
     collapsing: Collapsing,
 }

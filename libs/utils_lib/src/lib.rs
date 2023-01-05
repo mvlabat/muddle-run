@@ -1,4 +1,3 @@
-#![feature(let_else)]
 #![feature(try_blocks)]
 
 use serde::{Deserialize, Serialize};

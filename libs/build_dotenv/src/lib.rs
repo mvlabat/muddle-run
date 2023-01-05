@@ -24,7 +24,7 @@ pub fn load_env() {
             );
             for entry in vars {
                 let (key, value) = entry.expect("Failed to parse a dotenv file entry");
-                println!("cargo:rustc-env={}={}", key, value);
+                println!("cargo:rustc-env={key}={value}");
             }
             println!("cargo:rerun-if-changed={}", path.to_string_lossy());
         }

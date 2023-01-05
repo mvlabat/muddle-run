@@ -26,32 +26,24 @@ use crate::{
         spawn::{
             despawn_level_objects, despawn_players, poll_calculating_shapes,
             process_spawned_entities, spawn_players, update_level_objects,
-            ColliderShapePromiseResult,
+            ColliderShapePromiseResult, ColliderShapeReceiver, ColliderShapeSender,
         },
         switch_player_role,
     },
     messages::{DeferredMessagesQueue, SwitchRole},
     net::network_setup,
-    player::{Player, PlayerUpdates},
+    player::{PlayerUpdates, Players},
     registry::EntityRegistry,
 };
 use bevy::{
-    ecs::{
-        event::Events,
-        schedule::{ParallelSystemDescriptorCoercion, ShouldRun},
-        system::IntoSystem,
-    },
+    ecs::{event::Events, schedule::ShouldRun, system::IntoSystem},
     log,
     prelude::*,
-    utils::HashMap,
 };
-use bevy_networking_turbulence::{LinkConditionerConfig, NetworkingPlugin};
+use bevy_disturbulence::{NetworkingPlugin, SocketConfig};
 use bevy_rapier2d::{
-    pipeline::{CollisionEvent, PhysicsHooksWithQueryResource},
-    plugin::{
-        PhysicsStages, RapierConfiguration, RapierContext, RapierPhysicsPlugin,
-        SimulationToRenderTime, TimestepMode,
-    },
+    pipeline::CollisionEvent,
+    plugin::{PhysicsStages, RapierConfiguration, RapierPhysicsPlugin, TimestepMode},
 };
 use messages::{EntityNetId, PlayerNetId};
 use std::sync::Mutex;
@@ -91,11 +83,13 @@ pub mod stage {
     pub const POST_GAME: &str = "mr_shared_post_game";
     pub const SIMULATION_FINAL: &str = "mr_shared_simulation_final";
 }
+
 pub const GHOST_SIZE_MULTIPLIER: f32 = 1.001;
 pub const PLAYER_RADIUS: f32 = 0.35;
 pub const PLAYER_SENSOR_RADIUS: f32 = 0.05;
 pub const PLANE_SIZE: f32 = 20.0;
-pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10; // 10 seconds of 120fps
+pub const COMPONENT_FRAMEBUFFER_LIMIT: u16 = 120 * 10;
+// 10 seconds of 120fps
 pub const TICKS_PER_NETWORK_BROADCAST: u16 = 2;
 pub const MAX_LAG_COMPENSATION_MILLIS: u16 = 200;
 pub const SIMULATIONS_PER_SECOND: f32 = {
@@ -129,7 +123,7 @@ pub struct MuddleSharedPlugin<S: System<In = (), Out = ShouldRun>> {
     post_game_stage: Mutex<Option<SystemStage>>,
     broadcast_updates_stage: Mutex<Option<SystemStage>>,
     post_tick_stage: Mutex<Option<SystemStage>>,
-    link_conditioner: Option<LinkConditionerConfig>,
+    socket_config: Option<SocketConfig>,
 }
 
 impl<S: System<In = (), Out = ShouldRun>> MuddleSharedPlugin<S> {
@@ -139,7 +133,7 @@ impl<S: System<In = (), Out = ShouldRun>> MuddleSharedPlugin<S> {
         post_game_stage: SystemStage,
         broadcast_updates_stage: SystemStage,
         post_tick_stage: SystemStage,
-        link_conditioner: Option<LinkConditionerConfig>,
+        socket_config: Option<SocketConfig>,
     ) -> Self {
         Self {
             main_run_criteria: Mutex::new(Some(main_run_criteria)),
@@ -147,16 +141,24 @@ impl<S: System<In = (), Out = ShouldRun>> MuddleSharedPlugin<S> {
             post_game_stage: Mutex::new(Some(post_game_stage)),
             broadcast_updates_stage: Mutex::new(Some(broadcast_updates_stage)),
             post_tick_stage: Mutex::new(Some(post_tick_stage)),
-            link_conditioner,
+            socket_config,
         }
     }
 }
 
 impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
     fn build(&self, app: &mut App) {
-        app.add_plugin(RapierResourcesPlugin);
+        app.add_plugin(RapierPhysicsPlugin::<()>::default().with_default_system_setup(false));
+        app.insert_resource(RapierConfiguration {
+            gravity: Vec2::ZERO,
+            timestep_mode: TimestepMode::Fixed {
+                dt: 1.0 / SIMULATIONS_PER_SECOND,
+                substeps: 1,
+            },
+            ..RapierConfiguration::default()
+        });
         app.add_plugin(NetworkingPlugin {
-            link_conditioner: self.link_conditioner.clone(),
+            socket_config: self.socket_config.clone().unwrap_or_default(),
             ..NetworkingPlugin::default()
         });
 
@@ -246,9 +248,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::POST_PHYSICS,
                 SystemStage::single_threaded()
-                    .with_system(
-                        process_collision_events.chain(process_players_with_new_collisions),
-                    )
+                    .with_system(process_collision_events.pipe(process_players_with_new_collisions))
                     .with_system(sync_position)
                     .with_system_set(RapierPhysicsPlugin::<()>::get_systems(
                         PhysicsStages::DetectDespawn,
@@ -306,7 +306,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             stage::MAIN_SCHEDULE,
             stage::READ_INPUT_UPDATES,
             SystemStage::single_threaded()
-                .with_system(restart_game.exclusive_system().label("restart_game"))
+                .with_system(restart_game.label("restart_game"))
                 .with_system_set(
                     SystemSet::on_update(GameState::Playing)
                         .after("restart_game")
@@ -343,7 +343,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         world.get_resource_or_insert_with(DeferredQueue::<SwitchPlayerRole>::default);
         world.get_resource_or_insert_with(EntityRegistry::<PlayerNetId>::default);
         world.get_resource_or_insert_with(EntityRegistry::<EntityNetId>::default);
-        world.get_resource_or_insert_with(HashMap::<PlayerNetId, Player>::default);
+        world.get_resource_or_insert_with(Players::default);
         world.get_resource_or_insert_with(Events::<CollisionLogicChanged>::default);
         world.get_resource_or_insert_with(Events::<PlayerDeath>::default);
         world.get_resource_or_insert_with(Events::<PlayerFinish>::default);
@@ -352,28 +352,8 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
 
         let (shape_sender, shape_receiver) =
             crossbeam_channel::unbounded::<ColliderShapePromiseResult>();
-        world.insert_resource(shape_sender);
-        world.insert_resource(shape_receiver);
-    }
-}
-
-pub struct RapierResourcesPlugin;
-
-impl Plugin for RapierResourcesPlugin {
-    fn build(&self, builder: &mut App) {
-        builder
-            .insert_resource(RapierConfiguration {
-                gravity: Vec2::ZERO,
-                timestep_mode: TimestepMode::Fixed {
-                    dt: 1.0 / SIMULATIONS_PER_SECOND as f32,
-                    substeps: 1,
-                },
-                ..RapierConfiguration::default()
-            })
-            .insert_resource(SimulationToRenderTime::default())
-            .insert_resource(RapierContext::default())
-            .insert_resource(Events::<CollisionEvent>::default())
-            .insert_resource(PhysicsHooksWithQueryResource::<()>(Box::new(())));
+        world.insert_resource(ColliderShapeSender(shape_sender));
+        world.insert_resource(ColliderShapeReceiver(shape_receiver));
     }
 }
 
@@ -389,13 +369,13 @@ impl Default for GameState {
     }
 }
 
-#[derive(Default, Clone, Debug, PartialEq, Eq)]
+#[derive(Resource, Default, Clone, Debug, PartialEq, Eq)]
 pub struct GameTime {
     pub session: usize,
     pub frame_number: FrameNumber,
 }
 
-#[derive(Debug)]
+#[derive(Resource, Debug)]
 pub struct SimulationTime {
     /// Is expected to be ahead of `server_frame` on the client side, is equal
     /// to `server_frame` on the server side.

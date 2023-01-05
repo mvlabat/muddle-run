@@ -17,6 +17,7 @@ use bevy::{
         system::{Query, Res, ResMut, SystemParam},
     },
     math::Vec2,
+    prelude::Resource,
     tasks::AsyncComputeTaskPool,
     utils::HashMap,
 };
@@ -49,7 +50,7 @@ impl<'w, 's> LevelParams<'w, 's> {
     }
 }
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct LevelState {
     pub objects: HashMap<EntityNetId, LevelObject>,
     pub spawn_areas: Vec<EntityNetId>,
@@ -131,7 +132,6 @@ impl LevelObjectDesc {
 
     pub fn calculate_collider_shape(
         &self,
-        task_pool: &AsyncComputeTaskPool,
         entity: Entity,
         collider_shape_sender: ColliderShapeSender,
     ) -> ColliderShapeResponse {
@@ -159,7 +159,7 @@ impl LevelObjectDesc {
                         .map(|i| [i as u32, i as u32 + 1])
                         .collect::<Vec<_>>();
                     indices.push([indices.last().unwrap()[1], 0]);
-                    task_pool
+                    AsyncComputeTaskPool::get()
                         .spawn(async move {
                             let r = std::panic::catch_unwind(|| {
                                 ColliderShape::convex_decomposition_with_params(
@@ -187,22 +187,30 @@ impl LevelObjectDesc {
         })
     }
 
-    pub fn physics_bundle(&self, shape: ColliderShape, server_simulated: bool) -> PhysicsBundle {
+    pub fn physics_bundle(
+        &self,
+        shape: ColliderShape,
+        server_simulated: bool,
+    ) -> (PhysicsBundle, Option<Sensor>) {
         match self {
-            Self::Plane(_) | Self::RoutePoint(_) => PhysicsBundle {
-                rigid_body: RigidBody::KinematicPositionBased,
-                collider: shape.into(),
-                sensor: Sensor(true),
-                collision_groups: level_object_collision_groups(server_simulated),
-                locked_axes: LockedAxes::TRANSLATION_LOCKED_Z,
-            },
-            Self::Cube(_) => PhysicsBundle {
-                rigid_body: RigidBody::KinematicPositionBased,
-                collider: shape.into(),
-                sensor: Sensor(false),
-                collision_groups: level_object_collision_groups(server_simulated),
-                locked_axes: LockedAxes::TRANSLATION_LOCKED_Z,
-            },
+            Self::Plane(_) | Self::RoutePoint(_) => (
+                PhysicsBundle {
+                    rigid_body: RigidBody::KinematicPositionBased,
+                    collider: shape.into(),
+                    collision_groups: level_object_collision_groups(server_simulated),
+                    locked_axes: LockedAxes::TRANSLATION_LOCKED_Z,
+                },
+                Some(Sensor),
+            ),
+            Self::Cube(_) => (
+                PhysicsBundle {
+                    rigid_body: RigidBody::KinematicPositionBased,
+                    collider: shape.into(),
+                    collision_groups: level_object_collision_groups(server_simulated),
+                    locked_axes: LockedAxes::TRANSLATION_LOCKED_Z,
+                },
+                None,
+            ),
         }
     }
 

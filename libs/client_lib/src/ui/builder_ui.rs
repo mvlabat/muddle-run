@@ -9,8 +9,8 @@ use bevy::{
         entity::Entity,
         event::{EventReader, EventWriter},
         query::WorldQuery,
-        schedule::{ParallelSystemDescriptorCoercion, ShouldRun, SystemSet},
-        system::{Local, Query, Res, ResMut, SystemParam},
+        schedule::{IntoSystemDescriptor, ShouldRun, SystemSet},
+        system::{Local, Query, Res, ResMut, Resource, SystemParam},
     },
     input::{mouse::MouseButton, Input},
     log,
@@ -55,7 +55,7 @@ pub fn default_period() -> FrameNumber {
     FrameNumber::new(SIMULATIONS_PER_SECOND as u16 * 10)
 }
 
-#[derive(Default, Clone)]
+#[derive(Resource, Default, Clone)]
 pub struct EditedLevelObject {
     pub object: Option<(Entity, LevelObject)>,
     pub dragged_control_point_index: Option<usize>,
@@ -73,12 +73,12 @@ impl EditedLevelObject {
 }
 
 #[derive(WorldQuery)]
-pub struct LevelObjectQuery<'w> {
+pub struct LevelObjectQuery {
     entity: Entity,
-    label: &'w LevelObjectLabel,
+    label: &'static LevelObjectLabel,
     // Can be absent for despawned query.
-    transform: Option<&'w Transform>,
-    ghost_entity: &'w LevelObjectStaticGhostChild,
+    transform: Option<&'static Transform>,
+    ghost_entity: &'static LevelObjectStaticGhostChild,
 }
 
 #[derive(SystemParam)]
@@ -89,7 +89,7 @@ pub struct LevelObjects<'w, 's> {
     requests_queue: ResMut<'w, LevelObjectRequestsQueue>,
     level_state: Res<'w, LevelState>,
     entity_registry: Res<'w, EntityRegistry<EntityNetId>>,
-    query: Query<'w, 's, SpawnedQuery<'static, LevelObjectQuery<'static>>>,
+    query: Query<'w, 's, SpawnedQuery<LevelObjectQuery>>,
     ghosts_query: Query<'w, 's, (&'static LevelObjectStaticGhostParent, &'static Transform)>,
 }
 
@@ -575,7 +575,7 @@ fn level_object_ui(
                         ui.label("Period (second)");
                         ui.label(format!(
                             "{:.2}",
-                            route.period.value() as f32 / SIMULATIONS_PER_SECOND as f32
+                            route.period.value() as f32 / SIMULATIONS_PER_SECOND
                         ));
                         ui.end_row();
 
@@ -753,7 +753,7 @@ fn route_settings(
                 let point_label = route_point
                     .and_then(|point| level_objects.level_state.objects.get(&point))
                     .map_or("None".to_owned(), |level_object| level_object.label.clone());
-                ui.label(format!("Route point: {}", point_label));
+                ui.label(format!("Route point: {point_label}"));
             }
             ObjectRouteDesc::ForwardCycle(route_points)
             | ObjectRouteDesc::ForwardBackwardsCycle(route_points) => {

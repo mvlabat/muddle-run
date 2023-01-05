@@ -304,7 +304,7 @@ impl AuthRequestsHandler {
                     log::trace!("Initialized redirect_uri");
                     #[cfg(not(target_arch = "wasm32"))]
                     {
-                        self.req_redirect_uri = Some(format!("http://localhost:{}", _port));
+                        self.req_redirect_uri = Some(format!("http://localhost:{_port}"));
                     }
 
                     #[cfg(target_arch = "wasm32")]

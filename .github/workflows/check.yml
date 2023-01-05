@@ -134,7 +134,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -p mr_server --features "use-udp" --release -- -D warnings
+          args: -p mr_server --release -- -D warnings
 
   mr_matchmaker:
     name: Check mr_matchmaker
@@ -279,4 +279,4 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -p mr_client_lib --features "use-udp"
+          args: -p mr_client_lib

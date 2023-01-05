@@ -1,6 +1,6 @@
 use crate::{
-    Agones, LastPlayerDisconnectedAt, MuddleServerConfig, PersistenceMessage, PersistenceRequest,
-    TOKIO,
+    Agones, LastPlayerDisconnectedAt, MuddleServerConfig, PersistenceMessage,
+    PersistenceMessageReceiver, PersistenceRequest, PersistenceRequestSender, TOKIO,
 };
 use bevy::{
     ecs::system::SystemParam,
@@ -8,13 +8,14 @@ use bevy::{
     prelude::*,
     utils::{Entry, HashMap, HashSet, Instant},
 };
-use bevy_networking_turbulence::{ConnectionHandle, NetworkEvent, NetworkResource};
+use bevy_disturbulence::{ConnectionHandle, NetworkEvent, NetworkResource, ServerAddrs};
 use mr_messages_lib::{GetLevelResponse, PLAYER_CAPACITY};
 use mr_shared_lib::{
     game::{
         commands::{self, DeferredPlayerQueues, DeferredQueue, DespawnReason},
         components::{PlayerDirection, Position, Spawned},
         level::{LevelObject, LevelState},
+        PlayerEventSender,
     },
     messages::{
         DeferredMessagesQueue, DeltaUpdate, DisconnectReason, DisconnectedPlayer, EntityNetId,
@@ -24,7 +25,7 @@ use mr_shared_lib::{
         UnreliableServerMessage,
     },
     net::{ConnectionState, ConnectionStatus, MessageId, SessionId, CONNECTION_TIMEOUT_MILLIS},
-    player::{random_name, Player, PlayerEvent, PlayerRole},
+    player::{random_name, Player, PlayerEvent, PlayerRole, Players},
     registry::{EntityRegistry, Registry},
     server::level_spawn_location_service::LevelSpawnLocationService,
     GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
@@ -33,9 +34,10 @@ use rymder::{futures_util::stream::StreamExt, GameServer};
 use std::{
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    ops::Deref,
     time::Duration,
 };
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 
 pub fn watch_agones_updates(
     mut agones_sdk: rymder::Sdk,
@@ -76,7 +78,7 @@ pub fn watch_agones_updates(
 
 pub fn startup(
     config: Res<MuddleServerConfig>,
-    mut net: ResMut<NetworkResource>,
+    mut net: NonSendMut<NetworkResource>,
     agones: Option<Res<Agones>>,
 ) {
     log::info!("Starting the server");
@@ -101,14 +103,20 @@ pub fn startup(
     let (listen, public) = listen_addr(&config, agones_status)
         .zip(public_id_addr(&config, agones_status))
         .expect("Expected MUDDLE_LISTEN_PORT and MUDDLE_PUBLIC_IP_ADDR env variables");
-    net.listen(
-        listen,
-        Some(listen),
-        Some(SocketAddr::new(public, listen.port())),
-    );
+    net.listen(&ServerAddrs {
+        session_listen_addr: listen,
+        webrtc_listen_addr: listen,
+        public_webrtc_url: format!("http://{}:{}", public, listen.port()),
+    });
 }
 
 pub type PlayerConnections = Registry<PlayerNetId, u32>;
+
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct ConnectionStates(pub HashMap<u32, ConnectionState>);
+
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct NewPlayerConnections(pub Vec<(PlayerNetId, u32)>);
 
 #[derive(SystemParam)]
 pub struct UpdateParams<'w, 's> {
@@ -125,21 +133,21 @@ pub struct UpdateParams<'w, 's> {
 
 #[derive(SystemParam)]
 pub struct NetworkParams<'w, 's> {
-    net: ResMut<'w, NetworkResource>,
-    connection_states: ResMut<'w, HashMap<u32, ConnectionState>>,
+    net: NonSendMut<'w, NetworkResource>,
+    connection_states: ResMut<'w, ConnectionStates>,
     player_connections: ResMut<'w, PlayerConnections>,
-    new_player_connections: ResMut<'w, Vec<(PlayerNetId, u32)>>,
+    new_player_connections: ResMut<'w, NewPlayerConnections>,
     last_player_disconnected_at: ResMut<'w, LastPlayerDisconnectedAt>,
-    players_tracking_channel: Option<ResMut<'w, tokio::sync::mpsc::UnboundedSender<PlayerEvent>>>,
+    players_tracking_channel: ResMut<'w, PlayerEventSender>,
     pending_requests: Local<'s, HashMap<MessageId, ConnectionHandle>>,
-    persistence_req_tx: Option<Res<'w, UnboundedSender<PersistenceRequest>>>,
-    persistence_msg_rx: Option<ResMut<'w, UnboundedReceiver<PersistenceMessage>>>,
+    persistence_req_tx: Res<'w, PersistenceRequestSender>,
+    persistence_msg_rx: ResMut<'w, PersistenceMessageReceiver>,
 }
 
 pub fn process_network_events(
     mut despawned_players_for_handles: Local<HashSet<u32>>,
     time: Res<GameTime>,
-    mut players: ResMut<HashMap<PlayerNetId, Player>>,
+    mut players: ResMut<Players>,
     mut network_events: EventReader<NetworkEvent>,
     mut network_params: NetworkParams,
     mut update_params: UpdateParams,
@@ -147,7 +155,6 @@ pub fn process_network_events(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    log::trace!("Processing network updates (frame: {})", time.frame_number);
 
     // Processing connection events.
     for event in network_events.iter() {
@@ -197,7 +204,7 @@ pub fn process_network_events(
     let mut handshake_messages_to_send = Vec::new();
     let mut disconnect_messages_to_send = Vec::new();
 
-    if let Some(msg_rx) = network_params.persistence_msg_rx.as_mut() {
+    if let Some(msg_rx) = &mut **network_params.persistence_msg_rx {
         while let Ok(persistence_message) = msg_rx.try_recv() {
             match persistence_message {
                 PersistenceMessage::UserInfoResponse { id, user } => {
@@ -236,7 +243,8 @@ pub fn process_network_events(
                         new_player_connections: &mut network_params.new_player_connections,
                         players_tracking_channel: network_params
                             .players_tracking_channel
-                            .as_deref_mut(),
+                            .as_mut()
+                            .as_mut(),
                     };
                     register_player(
                         &time,
@@ -456,7 +464,7 @@ pub fn process_network_events(
                     }
 
                     if let Some(id_token) = id_token {
-                        let Some(req_tx) = network_params.persistence_req_tx.as_ref() else {
+                        let Some(req_tx) = &**network_params.persistence_req_tx else {
                             disconnect_messages_to_send.push((
                                 *handle,
                                 Message {
@@ -492,7 +500,8 @@ pub fn process_network_events(
                         new_player_connections: &mut network_params.new_player_connections,
                         players_tracking_channel: network_params
                             .players_tracking_channel
-                            .as_deref_mut(),
+                            .as_mut()
+                            .as_mut(),
                     };
                     register_player(
                         &time,
@@ -629,10 +638,10 @@ pub fn process_network_events(
 }
 
 struct RegisterPlayerDeps<'a> {
-    players: &'a mut HashMap<PlayerNetId, Player>,
+    players: &'a mut Players,
     player_connections: &'a mut PlayerConnections,
     new_player_connections: &'a mut Vec<(PlayerNetId, u32)>,
-    players_tracking_channel: Option<&'a mut tokio::sync::mpsc::UnboundedSender<PlayerEvent>>,
+    players_tracking_channel: Option<&'a mut UnboundedSender<PlayerEvent>>,
 }
 
 fn register_player(
@@ -683,7 +692,7 @@ fn disconnect_players(
     time: &GameTime,
     network_params: &mut NetworkParams,
     update_params: &mut UpdateParams,
-    players: &mut HashMap<PlayerNetId, Player>,
+    players: &mut Players,
 ) {
     // Disconnecting players that have been failing to deliver updates for some
     // time.
@@ -798,9 +807,12 @@ pub struct DeferredMessageQueues<'w, 's> {
     marker: PhantomData<&'s ()>,
 }
 
+#[derive(Resource, Deref, DerefMut)]
+pub struct FetchedLevelInfo(pub GetLevelResponse);
+
 #[derive(SystemParam)]
 pub struct LevelParams<'w, 's> {
-    level_info: Option<Res<'w, GetLevelResponse>>,
+    fetched_level_info: Option<Res<'w, FetchedLevelInfo>>,
     level_state: Res<'w, LevelState>,
     #[system_param(ignore)]
     marker: PhantomData<&'s ()>,
@@ -810,7 +822,7 @@ pub fn send_network_updates(
     mut network_params: NetworkParams,
     time: Res<SimulationTime>,
     level_params: LevelParams,
-    players: Res<HashMap<PlayerNetId, Player>>,
+    players: Res<Players>,
     player_entities: Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
     players_registry: Res<EntityRegistry<PlayerNetId>>,
     mut deferred_message_queues: DeferredMessageQueues,
@@ -820,12 +832,14 @@ pub fn send_network_updates(
     // We run this system after we've concluded the simulation. As we don't have
     // updates for the next frame yet, we decrement the frame number.
     let time = time.prev_frame();
-    log::trace!("Sending network updates (frame: {})", time.server_frame);
 
     broadcast_start_game_messages(
         &mut network_params,
         &time,
-        level_params.level_info.as_deref(),
+        level_params
+            .fetched_level_info
+            .as_deref()
+            .map(|info| info.deref()),
         &level_params.level_state,
         &players,
         &player_entities,
@@ -979,7 +993,7 @@ fn broadcast_disconnected_players(network_params: &mut NetworkParams) {
 fn broadcast_delta_update_messages(
     net: &mut NetworkResource,
     time: &SimulationTime,
-    players: &HashMap<PlayerNetId, Player>,
+    players: &Players,
     player_entities: &Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
     players_registry: &EntityRegistry<PlayerNetId>,
     connection_handle: u32,
@@ -1021,7 +1035,7 @@ fn broadcast_delta_update_messages(
 fn send_new_player_messages(
     net: &mut NetworkResource,
     new_player_connections: &[(PlayerNetId, u32)],
-    players: &HashMap<PlayerNetId, Player>,
+    players: &Players,
     connection_handle: u32,
     connection_state: &ConnectionState,
 ) {
@@ -1029,7 +1043,7 @@ fn send_new_player_messages(
         log::trace!(
             "Sending new players to {}: {:?}",
             connection_handle,
-            players
+            **players
         );
     }
     // Broadcasting updates about new connected players.
@@ -1048,13 +1062,13 @@ fn broadcast_start_game_messages(
     time: &SimulationTime,
     level_info: Option<&GetLevelResponse>,
     level_state: &LevelState,
-    players: &HashMap<PlayerNetId, Player>,
+    players: &Players,
     player_entities: &Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
     players_registry: &EntityRegistry<PlayerNetId>,
 ) {
     // Broadcasting updates about new connected players.
     for (connected_player_net_id, connected_player_connection_handle) in
-        &*network_params.new_player_connections
+        &**network_params.new_player_connections
     {
         let connection_state = network_params
             .connection_states
@@ -1272,9 +1286,9 @@ fn public_id_addr(
         return ip_addr;
     }
 
-    if let Some(addr) = bevy_networking_turbulence::find_my_ip_address() {
+    if let Ok(addr) = local_ip_address::local_ip() {
         log::info!(
-            "Using an automatically detected public IP address: {}",
+            "Using a local IP as a public IP address: {}",
             addr.to_string()
         );
         return Some(addr);

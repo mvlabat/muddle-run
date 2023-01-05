@@ -34,11 +34,8 @@ This application can be run in either UPD, or WebRTC mode.
 The workspace contains the following binary projects:
 
 - `mr_dekstop_client`
-  - works in UDP mode, can only connect to `mr_server` that is built with `use-udp` feature
 - `mr_web_client`
-  - works in WebRTC mode, can only connect to `mr_server` that is built with `use-webrtc` feature
 - `mr_server` 
-  - can be built with either `use-udp`, or `use-webrtc` feature to serve different clients (unfortunately, it can't work with both)
 
 ### Running the desktop client and the server
 
@@ -46,7 +43,7 @@ The workspace contains the following binary projects:
 # Running the server
 # (Note that 127.0.0.1 might not work for Windows, you can use your local network ip instead, like 192.168.x.x)
 # (See https://github.com/naia-rs/naia-socket/issues/24)
-MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server --features use-udp
+MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server
 
 # Running the client
 cargo run -p mr_desktop_client
@@ -57,7 +54,7 @@ cargo run -p mr_desktop_client
 ```bash
 # Running the server
 # (Note that 127.0.0.1 might not work for Firefox, you can use your local network ip instead, like 192.168.x.x)
-MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server --features use-webrtc
+MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server
 
 # Running the client
 cd bins/web_client

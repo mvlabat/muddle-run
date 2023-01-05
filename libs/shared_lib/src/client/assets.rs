@@ -1,7 +1,7 @@
 use crate::PLAYER_SENSOR_RADIUS;
 use bevy::{
     asset::{Assets, Handle},
-    ecs::system::{Commands, Res, ResMut, SystemParam},
+    ecs::system::{Commands, Res, ResMut, Resource, SystemParam},
     pbr::AlphaMode,
     prelude::StandardMaterial,
     render::{
@@ -19,6 +19,7 @@ pub struct MuddleAssets<'w, 's> {
     marker: PhantomData<&'s ()>,
 }
 
+#[derive(Resource)]
 pub struct MuddleMaterials {
     pub player: Handle<StandardMaterial>,
     pub player_sensor_death: Handle<StandardMaterial>,
@@ -29,6 +30,7 @@ pub struct MuddleMaterials {
     pub control_point_hovered: Handle<StandardMaterial>,
 }
 
+#[derive(Resource)]
 pub struct MuddleMeshes {
     pub player_sensor: Handle<Mesh>,
     pub control_point: Handle<Mesh>,

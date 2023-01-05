@@ -136,7 +136,7 @@ impl CloseCode {
 impl std::fmt::Display for CloseCode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let code: u16 = self.into();
-        write!(f, "{}", code)
+        write!(f, "{code}")
     }
 }
 
