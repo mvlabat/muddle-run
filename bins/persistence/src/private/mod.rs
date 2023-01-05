@@ -35,7 +35,7 @@ WHERE o.subject = $1 AND o.issuer = $2
     .await;
 
     match user {
-        Ok(Some(user)) => HttpResponse::Ok().json(&user),
+        Ok(Some(user)) => HttpResponse::Ok().json(user),
         Ok(None) => HttpResponse::NotFound().json(ErrorResponse::<()> {
             message: "User doesn't exist".to_owned(),
             error_kind: ErrorKind::NotFound,
@@ -158,7 +158,7 @@ WHERE id NOT IN (
     };
 
     match inserted_level {
-        Ok(inserted_level) => HttpResponse::Ok().json(&inserted_level),
+        Ok(inserted_level) => HttpResponse::Ok().json(inserted_level),
         Err(err) => {
             log::error!("Failed to insert a level: ${:?}", err);
             HttpResponse::InternalServerError().finish()
@@ -241,7 +241,7 @@ pub async fn patch_level(
     };
 
     match result {
-        Ok(()) => HttpResponse::Ok().json(&()),
+        Ok(()) => HttpResponse::Ok().json(()),
         Err(sqlx::Error::RowNotFound) => HttpResponse::NotFound().json(ErrorResponse::<()> {
             message: "Level doesn't exist".to_owned(),
             error_kind: ErrorKind::NotFound,
@@ -271,7 +271,7 @@ pub async fn delete_level(data: web::Data<Data>, id: web::Path<i64>) -> HttpResp
     match result {
         Ok(result) => {
             if result.rows_affected() > 0 {
-                HttpResponse::Ok().json(&())
+                HttpResponse::Ok().json(())
             } else {
                 HttpResponse::NotFound().json(ErrorResponse::<()> {
                     message: "Level doesn't exist".to_owned(),

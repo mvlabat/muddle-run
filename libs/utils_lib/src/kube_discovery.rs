@@ -21,8 +21,8 @@ pub async fn discover_persistence(client: Client) -> Option<(Url, Url)> {
         .ok()?;
 
     let pod_ip = pods_list.items.first()?.status.as_ref()?.pod_ip.as_ref()?;
-    let public_persistence_url = format!("http://{}:8082", pod_ip).parse().unwrap();
-    let private_persistence_url = format!("http://{}:8083", pod_ip).parse().unwrap();
+    let public_persistence_url = format!("http://{pod_ip}:8082").parse().unwrap();
+    let private_persistence_url = format!("http://{pod_ip}:8083").parse().unwrap();
     log::info!(
         "Using \"{}\" as MUDDLE_PUBLIC_PERSISTENCE_URL",
         public_persistence_url

@@ -10,22 +10,22 @@ edition = "2021"
 mr_messages_lib = { path = "../../libs/messages_lib", features = ["schemars"] }
 mr_utils_lib = { path = "../../libs/utils_lib", features = ["kube_discovery", "jwks"] }
 
-anyhow = "1.0.57"
-env_logger = "0.9.0"
-futures = "0.3.19"
+anyhow = "1.0"
+env_logger = "0.9"
+futures = "0.3"
 hyper = { version = "0.14.19", features = ["server"] }
-kube = { version = "0.71.0", features = ["derive"] }
-log = "0.4.17"
-k8s-openapi = { version = "0.14.0", default-features = false, features = ["v1_20"] }
-reqwest = "0.11.11"
-sentry = "0.26.0"
-serde = "1.0.133"
-serde_derive = "1.0.133"
-serde_json = "1.0.81"
-schemars = "0.8.10"
-tokio = { version = "1.19.2", features = ["macros", "rt-multi-thread", "sync"] }
-tokio-tungstenite = "0.17.1"
-uuid = "0.8.2"
+kube = { version = "0.77.0", features = ["derive"] }
+log = "0.4"
+k8s-openapi = { version = "0.16.0", default-features = false, features = ["v1_23"] }
+reqwest = "0.11"
+sentry = "0.29"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+schemars = "0.8"
+tokio = { version = "1.21", features = ["macros", "rt-multi-thread", "sync"] }
+tokio-tungstenite = "0.17"
+uuid = "1.2"
 
 [build-dependencies]
 mr_build_dotenv = { path = "../../libs/build_dotenv" }

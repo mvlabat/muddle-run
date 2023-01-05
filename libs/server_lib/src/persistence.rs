@@ -1,7 +1,11 @@
-use crate::TOKIO;
+use crate::{
+    net::FetchedLevelInfo, PersistenceMessageSender, PersistenceRequestReceiver,
+    PersistenceRequestSender, TOKIO,
+};
 use bevy::{
-    ecs::system::{Local, Res, ResMut},
+    ecs::system::{Local, Res, ResMut, Resource},
     log,
+    prelude::{Deref, DerefMut},
     utils::{HashMap, Instant},
 };
 use mr_messages_lib::{
@@ -14,14 +18,14 @@ use mr_shared_lib::{
     net::MessageId,
     registry::IncrementId,
 };
-use mr_utils_lib::jwks::{poll_jwks, Jwks};
+use mr_utils_lib::jwks::poll_jwks;
 use reqwest::{Client, Url};
-use std::time::Duration;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use std::{ops::Deref, time::Duration};
+use tokio::sync::mpsc::UnboundedSender;
 
 const LEVEL_AUTOSAVE_PERIOD_SECS: u64 = 60;
 
-#[derive(Clone)]
+#[derive(Resource, Clone)]
 pub struct PersistenceConfig {
     pub public_url: Url,
     pub private_url: Url,
@@ -29,6 +33,9 @@ pub struct PersistenceConfig {
     pub google_desktop_client_id: String,
     pub auth0_client_id: String,
 }
+
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct Jwks(pub mr_utils_lib::jwks::Jwks);
 
 #[derive(Debug)]
 pub enum PersistenceRequest {
@@ -49,7 +56,7 @@ pub async fn get_user(persistence_url: Url, user_id: i64) -> anyhow::Result<GetU
     let client = reqwest::Client::new();
 
     let result = client
-        .get(persistence_url.join(&format!("users/{}", user_id)).unwrap())
+        .get(persistence_url.join(&format!("users/{user_id}")).unwrap())
         .send()
         .await?;
 
@@ -71,6 +78,7 @@ pub async fn get_user(persistence_url: Url, user_id: i64) -> anyhow::Result<GetU
     Ok(response)
 }
 
+#[derive(Resource)]
 pub struct InitLevelObjects(pub Vec<LevelObject>);
 
 pub async fn load_level(
@@ -81,11 +89,7 @@ pub async fn load_level(
     let client = reqwest::Client::new();
 
     let result = client
-        .get(
-            persistence_url
-                .join(&format!("levels/{}", level_id))
-                .unwrap(),
-        )
+        .get(persistence_url.join(&format!("levels/{level_id}")).unwrap())
         .send()
         .await?;
 
@@ -196,11 +200,11 @@ pub fn init_jwks_polling(config: Option<Res<PersistenceConfig>>, jwks: Res<Jwks>
 
 pub fn save_level(
     mut last_sent: Local<Option<Instant>>,
-    request_tx: Option<Res<UnboundedSender<PersistenceRequest>>>,
-    get_level_response: Option<Res<GetLevelResponse>>,
+    request_tx: Res<PersistenceRequestSender>,
+    fetched_level_info: Option<Res<FetchedLevelInfo>>,
     level_state: Res<LevelState>,
 ) {
-    let request_tx = match request_tx {
+    let request_tx = match &**request_tx {
         Some(request_tx) => request_tx,
         None => return,
     };
@@ -220,12 +224,12 @@ pub fn save_level(
     *last_sent = Some(Instant::now());
 
     let level_objects = remap_net_ids(&level_state.objects);
-    let get_level_response = get_level_response.unwrap().into_inner();
+    let fetched_level_info = fetched_level_info.unwrap().into_inner();
     let request = PostLevelRequest {
-        title: get_level_response.level.title.clone(),
-        user_id: get_level_response.level.user_id,
+        title: fetched_level_info.level.title.clone(),
+        user_id: fetched_level_info.level.user_id,
         data: LevelData::Autosaved {
-            autosaved_level_id: get_level_response.level.id,
+            autosaved_level_id: fetched_level_info.level.id,
             data: serde_json::to_value(level_objects).unwrap(),
         },
     };
@@ -305,8 +309,8 @@ fn remap_net_ids(level_objects_map: &HashMap<EntityNetId, LevelObject>) -> Vec<L
 pub fn handle_persistence_requests(
     config: Option<Res<PersistenceConfig>>,
     jwks: Res<Jwks>,
-    mut request_rx: ResMut<Option<UnboundedReceiver<PersistenceRequest>>>,
-    response_tx: Option<Res<UnboundedSender<PersistenceMessage>>>,
+    mut request_rx: ResMut<PersistenceRequestReceiver>,
+    response_tx: Res<PersistenceMessageSender>,
 ) {
     let Some(config) = config.map(|config| config.clone()) else {
         return;
@@ -314,6 +318,8 @@ pub fn handle_persistence_requests(
     let jwks = jwks.clone();
     let mut request_rx = request_rx.take().unwrap();
     let response_tx = response_tx
+        .deref()
+        .as_ref()
         .expect("Expected PersistenceMessage sender when persistence config is available")
         .clone();
 

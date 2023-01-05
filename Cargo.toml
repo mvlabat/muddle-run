@@ -23,11 +23,11 @@ opt-level = 1
 
 [patch.crates-io]
 dotenv = { git = "https://github.com/mvlabat/dotenv.git" }
-bevy = { git = "https://github.com/mvlabat/bevy.git", branch = "muddle-run" }
-bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "reorder-updates" }
+bevy = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.9.1/muddle-run" }
+#bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "reorder-updates" }
 #parry2d = { git = "https://github.com/dimforge/parry", rev = "5c957b9" }
 #rapier2d = { git = "https://github.com/dimforge/rapier.git", rev = "3a2f5f7cf5e21cfa5a3cc687caa8f4fbc3c04984" }
-puffin = { git = "https://github.com/EmbarkStudios/puffin.git", rev = "4616fee7fb8a143afdf0821587ba531e4f3671e9" }
+#puffin = { git = "https://github.com/EmbarkStudios/puffin.git", rev = "4616fee7fb8a143afdf0821587ba531e4f3671e9" }
 #puffin_egui = { git = "https://github.com/EmbarkStudios/puffin.git", rev = "4616fee7fb8a143afdf0821587ba531e4f3671e9" }
 #bevy_rapier2d = { path = "../bevy_rapier/bevy_rapier2d" }
 #bevy_puffin = { path = "../bevy_puffin" }
@@ -35,18 +35,22 @@ puffin = { git = "https://github.com/EmbarkStudios/puffin.git", rev = "4616fee7f
 #bevy_egui = { path = "../bevy_egui" }
 #egui = { path = "../egui/egui" }
 
-bevy_networking_turbulence = { git = "https://github.com/starwolfy/bevy_networking_turbulence_star.git" }
-naia-client-socket = { git = "https://github.com/mvlabat/naia-socket.git", branch = "muddle-run" }
-naia-server-socket = { git = "https://github.com/mvlabat/naia-socket.git", branch = "muddle-run" }
-#bevy_networking_turbulence = { path = "../bevy_networking_turbulence" }
-#naia-client-socket = { path = "../naia-socket/client" }
-#naia-server-socket = { path = "../naia-socket/server" }
+naia-client-socket = { git = "https://github.com/mvlabat/naia.git", branch = "muddle-run" }
+naia-server-socket = { git = "https://github.com/mvlabat/naia.git", branch = "muddle-run" }
+naia-socket-shared = { git = "https://github.com/mvlabat/naia.git", branch = "muddle-run" }
+webrtc-unreliable-client = { git = "https://github.com/mvlabat/webrtc-unreliable-client.git", branch = "muddle-run" }
+#bevy_disturbulence = { path = "../bevy_disturbulence" }
+#naia-client-socket = { path = "../naia/socket/client" }
+#naia-server-socket = { path = "../naia/socket/server" }
+#naia-socket-shared = { path = "../naia/socket/shared" }
+#webrtc-unreliable-client = { path = "../webrtc-unreliable-client/client" }
 
-bevy-inspector-egui = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "update-bevy-rapier" }
+#bevy-inspector-egui = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "update-bevy-rapier" }
 #bevy-inspector-egui = { path = "../bevy-inspector-egui" }
-bevy-inspector-egui-rapier = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "update-bevy-rapier" }
+#bevy-inspector-egui-rapier = { git = "https://github.com/mvlabat/bevy-inspector-egui.git", branch = "update-bevy-rapier" }
 
 tracing = { git = "https://github.com/mvlabat/tracing.git", branch = "muddle-run" }
+tracing-log = { git = "https://github.com/mvlabat/tracing.git", branch = "muddle-run" }
 tracing-subscriber = { git = "https://github.com/mvlabat/tracing.git", branch = "muddle-run" }
 
 #[patch.'https://github.com/bevyengine/bevy']

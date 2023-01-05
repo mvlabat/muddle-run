@@ -8,27 +8,26 @@ edition = "2021"
 
 [features]
 default = []
-use-udp = ["bevy_networking_turbulence/use-udp"]
-use-webrtc = ["bevy_networking_turbulence/use-webrtc"]
 profiler = ["puffin", "mr_shared_lib/profiler"]
 
 [dependencies]
-anyhow = { version = "1.0.57" }
-bevy = { version = "0.7", default-features = false }
-bevy_networking_turbulence = { version = "0.4", default-features = false }
-bevy_rapier2d = "0.14"
-jwt-compact = { version = "0.5.0", features = ["std", "clock", "with_rsa"], default-features = false }
-kube = "0.71.0"
-k8s-openapi = { version = "0.14.0", default-features = false, features = ["v1_20"] }
+anyhow = "1.0"
+bevy = { version = "0.9.1", default-features = false }
+bevy_disturbulence = { git = "https://github.com/mvlabat/bevy_disturbulence.git", branch = "wip", features = ["server"] }
+bevy_rapier2d = "0.19"
+jwt-compact = { version = "0.6", features = ["std", "clock", "with_rsa"], default-features = false }
+kube = "0.77.0"
+local-ip-address = "0.5"
+k8s-openapi = { version = "0.16.0", default-features = false, features = ["v1_23"] }
 puffin = { version = "0.13", optional = true }
 rand = "0.8.4"
-rapier2d = "0.13.0"
-reqwest = "0.11.11"
-rymder = "0.5.0"
-serde = "1.0.133"
-serde_json = "1.0.81"
-tokio = "1.19.2"
-uuid = "0.8.2"
+rapier2d = "0.16"
+reqwest = "0.11"
+rymder = "0.6.0"
+serde = "1.0"
+serde_json = "1.0"
+tokio = "1.21"
+uuid = "1.2"
 
 [dependencies.mr_messages_lib]
 version = "*"

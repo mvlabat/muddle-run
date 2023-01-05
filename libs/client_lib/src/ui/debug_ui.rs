@@ -6,7 +6,6 @@ use bevy::{
     diagnostic::{DiagnosticMeasurement, Diagnostics, FrameTimeDiagnosticsPlugin},
     ecs::system::SystemParam,
     prelude::*,
-    utils::HashMap,
 };
 use bevy_egui::{egui, egui::epaint::RectShape, EguiContext};
 use mr_shared_lib::{
@@ -22,7 +21,7 @@ use mr_shared_lib::{
     },
     messages::{EntityNetId, PlayerNetId},
     net::ConnectionState,
-    player::Player,
+    player::Players,
     registry::EntityRegistry,
     GameState, SimulationTime,
 };
@@ -41,7 +40,7 @@ pub struct DebugData<'w, 's> {
     marker: PhantomData<&'s ()>,
 }
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct DebugUiState {
     pub show: bool,
     pub fps_history: VecDeque<DiagnosticMeasurement>,
@@ -205,7 +204,7 @@ pub fn debug_ui(
 
 #[derive(SystemParam)]
 pub struct InspectObjectQueries<'w, 's> {
-    players: Res<'w, HashMap<PlayerNetId, Player>>,
+    players: Res<'w, Players>,
     player_registry: Res<'w, EntityRegistry<PlayerNetId>>,
     objects_registry: Res<'w, EntityRegistry<EntityNetId>>,
     level_state: Res<'w, LevelState>,
@@ -248,9 +247,9 @@ pub fn inspect_object(
                 .and_then(|player_net_id| queries.players.get(&player_net_id))
                 .map(|player| player.nickname.clone())
             {
-                ui.label(format!("Player name: {}", player_name));
+                ui.label(format!("Player name: {player_name}"));
             }
-            ui.label(format!("Entity: {:?}", entity));
+            ui.label(format!("Entity: {entity:?}"));
             if let Ok(LevelObjectStaticGhostParent(parent_entity)) =
                 queries.static_ghosts.get(entity)
             {
@@ -262,7 +261,7 @@ pub fn inspect_object(
                 .and_then(|object_net_id| queries.level_state.objects.get(&object_net_id))
                 .map(|level_object| level_object.label.clone())
             {
-                ui.label(&level_object_label);
+                ui.label(level_object_label);
             }
             if let Ok((level_object_movement, level_object_server_ghost)) =
                 queries.level_objects.get(entity)
@@ -270,7 +269,7 @@ pub fn inspect_object(
                 if let Some(LevelObjectServerGhostChild(server_ghost_entity)) =
                     level_object_server_ghost
                 {
-                    ui.label(format!("Server ghost: {:?}", server_ghost_entity));
+                    ui.label(format!("Server ghost: {server_ghost_entity:?}"));
                 }
                 ui.collapsing("Route", |ui| {
                     ui.label(format!(
@@ -324,7 +323,7 @@ fn graph(
                 line_stroke,
             ));
             let value = remap(y, rect.bottom_up_range(), 0.0..=graph_top_value);
-            let text = format!("{:.1}", value);
+            let text = format!("{value:.1}");
             shapes.push(Shape::text(
                 &ui.fonts(),
                 pos2(rect.left(), y),

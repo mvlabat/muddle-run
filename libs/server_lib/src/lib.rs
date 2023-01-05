@@ -1,16 +1,19 @@
 #![feature(hash_drain_filter)]
-#![feature(let_else)]
 #![feature(once_cell)]
 
 pub use crate::net::watch_agones_updates;
-pub use mr_shared_lib::player::PlayerEvent;
+pub use mr_shared_lib::{game::PlayerEventSender, player::PlayerEvent};
 
 use crate::{
     game_events::{process_player_events, process_scheduled_spawns},
-    net::{process_network_events, send_network_updates, startup, PlayerConnections},
+    net::{
+        process_network_events, send_network_updates, startup, ConnectionStates, FetchedLevelInfo,
+        NewPlayerConnections, PlayerConnections,
+    },
     persistence::{
         create_level, get_user, handle_persistence_requests, init_jwks_polling, load_level,
-        save_level, InitLevelObjects, PersistenceConfig, PersistenceMessage, PersistenceRequest,
+        save_level, InitLevelObjects, Jwks, PersistenceConfig, PersistenceMessage,
+        PersistenceRequest,
     },
     player_updates::{
         process_despawn_level_object_requests, process_player_input_updates,
@@ -18,7 +21,11 @@ use crate::{
         process_update_level_object_requests,
     },
 };
-use bevy::{core::FixedTimestep, log, prelude::*, utils::HashMap};
+use bevy::{
+    log,
+    prelude::*,
+    time::{FixedTimestep, TimePlugin},
+};
 use kube::Client;
 use mr_messages_lib::{InitLevel, LevelData};
 use mr_shared_lib::{
@@ -29,23 +36,22 @@ use mr_shared_lib::{
         level_objects::{PlaneDesc, PlaneFormDesc},
     },
     messages::{
-        self, DeferredMessagesQueue, EntityNetId, PlayerNetId, RespawnPlayer, RunnerInput,
-        SpawnLevelObject, SpawnLevelObjectRequest,
+        self, DeferredMessagesQueue, EntityNetId, EntityNetIdCounter, PlayerNetIdCounter,
+        RespawnPlayer, RunnerInput, SpawnLevelObject, SpawnLevelObjectRequest,
     },
-    net::ConnectionState,
-    player::{Player, PlayerRole},
+    player::{PlayerRole, Players},
     registry::IncrementId,
     MuddleSharedPlugin, SIMULATIONS_PER_SECOND,
 };
-use mr_utils_lib::{jwks::Jwks, kube_discovery};
+use mr_utils_lib::kube_discovery;
 use reqwest::Url;
 use rymder::GameServer;
 use std::{
-    lazy::SyncLazy,
     net::IpAddr,
+    sync::LazyLock,
     time::{Duration, Instant},
 };
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 mod game_events;
 mod net;
@@ -54,16 +60,19 @@ mod player_updates;
 
 pub const DEFAULT_IDLE_TIMEOUT: u64 = 300_000;
 
+#[derive(Resource)]
 pub struct Agones {
     pub sdk: rymder::Sdk,
-    pub game_server: rymder::GameServer,
+    pub game_server: GameServer,
 }
 
+#[derive(Resource)]
 pub struct LastPlayerDisconnectedAt(pub Instant);
 
+#[derive(Resource)]
 pub struct IdleTimeout(pub Duration);
 
-pub static TOKIO: SyncLazy<tokio::runtime::Runtime> = SyncLazy::new(|| {
+pub static TOKIO: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
     std::thread::Builder::new()
         .name("tokio".to_string())
         .spawn(move || TOKIO.block_on(std::future::pending::<()>()))
@@ -74,7 +83,7 @@ pub static TOKIO: SyncLazy<tokio::runtime::Runtime> = SyncLazy::new(|| {
         .expect("Cannot start tokio runtime")
 });
 
-#[derive(Clone, Debug)]
+#[derive(Resource, Clone, Debug)]
 pub struct MuddleServerConfig {
     pub public_persistence_url: Option<Url>,
     pub private_persistence_url: Option<Url>,
@@ -84,13 +93,23 @@ pub struct MuddleServerConfig {
     pub public_ip_addr: Option<IpAddr>,
 }
 
+#[derive(Resource, DerefMut, Deref)]
+pub struct PersistenceRequestSender(pub Option<UnboundedSender<PersistenceRequest>>);
+#[derive(Resource, DerefMut, Deref)]
+pub struct PersistenceRequestReceiver(pub Option<UnboundedReceiver<PersistenceRequest>>);
+#[derive(Resource, DerefMut, Deref)]
+pub struct PersistenceMessageSender(pub Option<UnboundedSender<PersistenceMessage>>);
+#[derive(Resource, DerefMut, Deref)]
+pub struct PersistenceMessageReceiver(pub Option<UnboundedReceiver<PersistenceMessage>>);
+
 pub struct MuddleServerPlugin;
 
 impl Plugin for MuddleServerPlugin {
     fn build(&self, app: &mut App) {
         // The minimal set of Bevy plugins needed for the game logic.
-        app.add_plugin(bevy::core::CorePlugin::default());
-        app.add_plugin(bevy::transform::TransformPlugin::default());
+        app.add_plugin(CorePlugin::default());
+        app.add_plugin(TimePlugin::default());
+        app.add_plugin(TransformPlugin::default());
         app.add_plugin(bevy::diagnostic::DiagnosticsPlugin::default());
         app.add_plugin(bevy::app::ScheduleRunnerPlugin::default());
 
@@ -121,13 +140,16 @@ impl Plugin for MuddleServerPlugin {
                 tokio::sync::mpsc::unbounded_channel::<PersistenceRequest>();
             let (persistence_msg_tx, persistence_msg_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PersistenceMessage>();
-            app.insert_resource(persistence_req_tx);
-            app.insert_resource(Some(persistence_req_rx));
-            app.insert_resource(persistence_msg_tx);
-            app.insert_resource(persistence_msg_rx);
+            app.insert_resource(PersistenceRequestSender(Some(persistence_req_tx)));
+            app.insert_resource(PersistenceRequestReceiver(Some(persistence_req_rx)));
+            app.insert_resource(PersistenceMessageSender(Some(persistence_msg_tx)));
+            app.insert_resource(PersistenceMessageReceiver(Some(persistence_msg_rx)));
         } else {
             log::info!("Persistence service isn't available");
-            app.insert_resource::<Option<UnboundedReceiver<PersistenceRequest>>>(None);
+            app.insert_resource(PersistenceRequestSender(None));
+            app.insert_resource(PersistenceRequestReceiver(None));
+            app.insert_resource(PersistenceMessageSender(None));
+            app.insert_resource(PersistenceMessageReceiver(None));
         }
         app.add_startup_system(init_jwks_polling);
         app.add_startup_system(handle_persistence_requests);
@@ -161,11 +183,11 @@ impl Plugin for MuddleServerPlugin {
         ));
 
         let world = &mut app.world;
-        world.get_resource_or_insert_with(EntityNetId::default);
-        world.get_resource_or_insert_with(PlayerNetId::default);
+        world.get_resource_or_insert_with(EntityNetIdCounter::default);
+        world.get_resource_or_insert_with(PlayerNetIdCounter::default);
         world.get_resource_or_insert_with(PlayerConnections::default);
-        world.get_resource_or_insert_with(Vec::<(PlayerNetId, u32)>::default);
-        world.get_resource_or_insert_with(HashMap::<u32, ConnectionState>::default);
+        world.get_resource_or_insert_with(NewPlayerConnections::default);
+        world.get_resource_or_insert_with(ConnectionStates::default);
         world.get_resource_or_insert_with(DeferredPlayerQueues::<RunnerInput>::default);
         world.get_resource_or_insert_with(DeferredPlayerQueues::<PlayerRole>::default);
         world.get_resource_or_insert_with(
@@ -279,7 +301,8 @@ pub async fn init_level_data(app: &mut App, game_server: Option<GameServer>) {
         }
     };
     app.world.insert_resource(init_level_objects);
-    app.world.insert_resource(get_level_response);
+    app.world
+        .insert_resource(FetchedLevelInfo(get_level_response));
 }
 
 fn read_env_level_data(
@@ -329,7 +352,7 @@ fn default_level_objects() -> Vec<LevelObject> {
 
 pub fn init_level(
     mut init_level_objects: ResMut<InitLevelObjects>,
-    mut entity_net_id_counter: ResMut<EntityNetId>,
+    mut entity_net_id_counter: ResMut<EntityNetIdCounter>,
     mut spawn_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
 ) {
     for level_object in std::mem::take(&mut init_level_objects.0) {
@@ -345,7 +368,7 @@ pub fn process_idle_timeout(
     mut is_shutting_down: Local<bool>,
     idle_timeout: Res<IdleTimeout>,
     last_player_disconnected_at: Res<LastPlayerDisconnectedAt>,
-    players: Res<HashMap<PlayerNetId, Player>>,
+    players: Res<Players>,
     agones: Option<Res<Agones>>,
 ) {
     if players.is_empty()

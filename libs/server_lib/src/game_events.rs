@@ -1,9 +1,6 @@
-use bevy::{
-    ecs::{
-        event::EventReader,
-        system::{Res, ResMut},
-    },
-    utils::HashMap,
+use bevy::ecs::{
+    event::EventReader,
+    system::{Res, ResMut},
 };
 use mr_shared_lib::{
     framebuffer::FrameNumber,
@@ -12,8 +9,8 @@ use mr_shared_lib::{
         commands::{DeferredQueue, DespawnPlayer, DespawnReason},
         events::{PlayerDeath, PlayerFinish},
     },
-    messages::{DeferredMessagesQueue, PlayerNetId, RespawnPlayer, RespawnPlayerReason},
-    player::{Player, PlayerSystemParamsMut},
+    messages::{DeferredMessagesQueue, RespawnPlayer, RespawnPlayerReason},
+    player::{PlayerSystemParamsMut, Players},
     server::level_spawn_location_service::LevelSpawnLocationService,
     util::PLAYER_RESPAWN_TIME,
     SimulationTime,
@@ -78,7 +75,7 @@ pub fn process_scheduled_spawns(
     time: Res<SimulationTime>,
     level_spawn_location_service: LevelSpawnLocationService,
     mut spawn_players_commands: ResMut<DeferredQueue<commands::SpawnPlayer>>,
-    mut players: ResMut<HashMap<PlayerNetId, Player>>,
+    mut players: ResMut<Players>,
 ) {
     for (player_net_id, player) in players.iter_mut() {
         if let Some((spawn_at, _)) = player.respawning_at {

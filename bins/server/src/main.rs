@@ -1,14 +1,14 @@
 use bevy::{app::App, log};
 use mr_server_lib::{
     init_level_data, watch_agones_updates, Agones, MuddleServerConfig, MuddleServerPlugin,
-    PlayerEvent, TOKIO,
+    PlayerEvent, PlayerEventSender, TOKIO,
 };
 use mr_utils_lib::try_parse_from_env;
 use std::{ops::Deref, time::Duration};
 
 fn main() {
     let mut app = App::new();
-    app.add_plugin(bevy::log::LogPlugin::default());
+    app.add_plugin(log::LogPlugin::default());
 
     mr_utils_lib::env::load_env();
 
@@ -33,7 +33,7 @@ fn main() {
 
         // A kludge to let sentry send events first and then shutdown.
         std::thread::spawn(|| {
-            std::thread::sleep(std::time::Duration::new(1, 0));
+            std::thread::sleep(Duration::new(1, 0));
             std::process::exit(1);
         });
     }));
@@ -99,7 +99,7 @@ fn main() {
 
                     log::info!("Starting to watch GameServer updates...");
                     match watch_client.watch_gameserver().await {
-                        Err(e) => eprintln!("Failed to watch for GameServer updates: {}", e),
+                        Err(e) => eprintln!("Failed to watch for GameServer updates: {e}"),
                         Ok(mut stream) => loop {
                             // We've received a new update, or the stream is shutting down
                             match stream.next().await {
@@ -126,18 +126,21 @@ fn main() {
             .unwrap()
     });
 
-    let game_server = agones.map(|agones| {
+    let game_server = if let Some(agones) = agones {
         let allocated_game_server_rx = watch_agones_updates(agones.sdk.clone());
         app.insert_resource(agones);
-        app.insert_resource(player_tracking_tx);
+        app.insert_resource(PlayerEventSender(Some(player_tracking_tx)));
         match allocated_game_server_rx.blocking_recv() {
-            Ok(game_server) => game_server,
+            Ok(game_server) => Some(game_server),
             Err(err) => {
                 log::error!("Failed to receive Agones allocation status: {err:?}");
                 std::process::exit(1);
             }
         }
-    });
+    } else {
+        app.insert_resource(PlayerEventSender(None));
+        None
+    };
     app.insert_resource(MuddleServerConfig {
         public_persistence_url: try_parse_from_env!("MUDDLE_PUBLIC_PERSISTENCE_URL"),
         private_persistence_url: try_parse_from_env!("MUDDLE_PRIVATE_PERSISTENCE_URL"),

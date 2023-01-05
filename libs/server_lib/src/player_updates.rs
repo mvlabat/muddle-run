@@ -1,8 +1,7 @@
-use crate::net::PlayerConnections;
+use crate::net::{ConnectionStates, PlayerConnections};
 use bevy::{
     ecs::system::{Res, ResMut},
     log,
-    utils::HashMap,
 };
 use mr_shared_lib::{
     framebuffer::FrameNumber,
@@ -13,9 +12,8 @@ use mr_shared_lib::{
         },
         level::{CollisionLogic, LevelObject, LevelState},
     },
-    messages::{self, DeferredMessagesQueue, EntityNetId, PlayerNetId, RunnerInput},
-    net::ConnectionState,
-    player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates},
+    messages::{self, DeferredMessagesQueue, EntityNetId, EntityNetIdCounter, RunnerInput},
+    player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates, Players},
     registry::IncrementId,
     util::dedup_by_key_unsorted,
     GameTime, SimulationTime, LAG_COMPENSATED_FRAMES,
@@ -26,7 +24,7 @@ pub const SERVER_UPDATES_LIMIT: u16 = 64;
 pub fn process_player_input_updates(
     time: Res<GameTime>,
     player_connections: Res<PlayerConnections>,
-    connection_states: Res<HashMap<u32, ConnectionState>>,
+    connection_states: Res<ConnectionStates>,
     mut simulation_time: ResMut<SimulationTime>,
     mut updates: ResMut<PlayerUpdates>,
     mut deferred_updates: ResMut<DeferredPlayerQueues<RunnerInput>>,
@@ -140,12 +138,12 @@ pub fn process_switch_role_requests(
 
 pub fn process_spawn_level_object_requests(
     time: Res<GameTime>,
-    players: Res<HashMap<PlayerNetId, Player>>,
+    players: Res<Players>,
     level_state: Res<LevelState>,
     mut spawn_level_object_requests: ResMut<
         DeferredPlayerQueues<messages::SpawnLevelObjectRequest>,
     >,
-    mut entity_net_id_counter: ResMut<EntityNetId>,
+    mut entity_net_id_counter: ResMut<EntityNetIdCounter>,
     mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut spawn_level_object_messages: ResMut<DeferredMessagesQueue<messages::SpawnLevelObject>>,
 ) {
@@ -213,7 +211,7 @@ pub fn process_spawn_level_object_requests(
 
 pub fn process_update_level_object_requests(
     time: Res<GameTime>,
-    players: Res<HashMap<PlayerNetId, Player>>,
+    players: Res<Players>,
     level_state: Res<LevelState>,
     mut update_level_object_requests: ResMut<DeferredPlayerQueues<LevelObject>>,
     mut spawn_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
@@ -269,7 +267,7 @@ pub fn process_update_level_object_requests(
 
 pub fn process_despawn_level_object_requests(
     time: Res<GameTime>,
-    players: Res<HashMap<PlayerNetId, Player>>,
+    players: Res<Players>,
     level_state: Res<LevelState>,
     mut despawn_level_object_requests: ResMut<DeferredPlayerQueues<EntityNetId>>,
     mut despawn_level_object_commands: ResMut<DeferredQueue<DespawnLevelObject>>,

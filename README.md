@@ -34,11 +34,10 @@ This application can be run in either UPD, or WebRTC mode.
 The workspace contains the following binary projects:
 
 - `mr_dekstop_client`
-  - works in UDP mode, can only connect to `mr_server` that is built with `use-udp` feature
 - `mr_web_client`
-  - works in WebRTC mode, can only connect to `mr_server` that is built with `use-webrtc` feature
 - `mr_server` 
-  - can be built with either `use-udp`, or `use-webrtc` feature to serve different clients (unfortunately, it can't work with both)
+- `mr_matchmaker`
+- `mr_persistence`
 
 ### Running the desktop client and the server
 
@@ -46,7 +45,7 @@ The workspace contains the following binary projects:
 # Running the server
 # (Note that 127.0.0.1 might not work for Windows, you can use your local network ip instead, like 192.168.x.x)
 # (See https://github.com/naia-rs/naia-socket/issues/24)
-MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server --features use-udp
+MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server
 
 # Running the client
 cargo run -p mr_desktop_client
@@ -57,12 +56,26 @@ cargo run -p mr_desktop_client
 ```bash
 # Running the server
 # (Note that 127.0.0.1 might not work for Firefox, you can use your local network ip instead, like 192.168.x.x)
-MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server --features use-webrtc
+MUDDLE_PUBLIC_IP_ADDR=127.0.0.1 MUDDLE_LISTEN_PORT=3455 cargo run -p mr_server
 
 # Running the client
 cd bins/web_client
 wasm-pack build --target web
 basic-http-server . # or any other tool that can serve static files
+```
+
+### Running the persistence service
+
+#### Prerequisites:
+
+- PostgreSQL database
+- sqlx-cli
+- Auth0 and Google OAuth 2.0 client credentials (see the environment variables section)
+
+#### Creating a database
+
+```
+DATABASE_URL=postgres://postgres@localhost/mr_persistence_development sqlx database setup
 ```
 
 ### Environment variables
@@ -156,10 +169,10 @@ docker build -t mvlabat/mr_server -f mr_server.dockerfile . --platform linux/amd
 
 ### Prerequisites
 
-- [aws-cli](https://aws.amazon.com/cli/) (tested with 2.3.2)
+- [aws-cli](https://aws.amazon.com/cli/) (tested with 2.9.12)
   - Make sure to [configure AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html): `aws configure` 
-- [kubectl](https://kubernetes.io/docs/tasks/tools/) (v1.21.0)
-- [helm](https://helm.sh/docs/intro/install/) (tested with v3.7.1)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/) (v1.23.0)
+- [helm](https://helm.sh/docs/intro/install/) (tested with v3.10.3)
 
 ### Applying
 

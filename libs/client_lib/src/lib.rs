@@ -1,6 +1,4 @@
 #![feature(assert_matches)]
-#![feature(let_else)]
-#![feature(mixed_integer_ops)]
 #![feature(slice_pattern)]
 #![allow(clippy::only_used_in_recursion)]
 
@@ -28,18 +26,18 @@ use crate::{
 };
 use bevy::{
     app::{App, Plugin},
-    core::Time,
     diagnostic::FrameTimeDiagnosticsPlugin,
     ecs::{
         entity::Entity,
-        schedule::{ParallelSystemDescriptorCoercion, ShouldRun, State, StateError, SystemStage},
-        system::{Commands, IntoSystem, Local, Res, ResMut, SystemParam},
+        schedule::{IntoSystemDescriptor, ShouldRun, State, StateError, SystemStage},
+        system::{Commands, IntoSystem, Local, Res, ResMut, Resource, SystemParam},
     },
     hierarchy::BuildChildren,
     log,
     math::{Vec2, Vec3},
     pbr::{PointLight, PointLightBundle},
-    render::camera::PerspectiveCameraBundle,
+    prelude::Camera3dBundle,
+    time::Time,
     transform::components::{GlobalTransform, Transform},
     utils::{HashMap, Instant},
 };
@@ -105,7 +103,6 @@ impl Plugin for MuddleClientPlugin {
             .add_event::<EditedObjectUpdate>()
             // Startup systems.
             .add_startup_system(init_matchmaker_connection)
-            .add_startup_system(init_state)
             .add_startup_system(basic_scene)
             .add_startup_system(read_offline_auth_config)
             // Game.
@@ -154,12 +151,14 @@ impl Plugin for MuddleClientPlugin {
         world.get_resource_or_insert_with(MouseRay::default);
         world.get_resource_or_insert_with(MouseWorldPosition::default);
         world.get_resource_or_insert_with(VisibilitySettings::default);
-        world.get_resource_or_insert_with(Option::<ServerToConnect>::default);
+        world.get_resource_or_insert_with(ServerToConnect::default);
         world.get_resource_or_insert_with(OfflineAuthConfig::default);
     }
 }
 
 // Resources.
+
+#[derive(Resource)]
 pub struct MuddleClientConfig {
     pub persistence_url: Option<Url>,
     pub google_client_id: Option<String>,
@@ -169,18 +168,18 @@ pub struct MuddleClientConfig {
     pub server_addr: Option<SocketAddr>,
 }
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct WindowInnerSize {
     pub width: usize,
     pub height: usize,
 }
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct ExpectedFramesAhead {
     pub frames: FrameNumber,
 }
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct InitialRtt {
     pub sent_at: Option<Instant>,
     pub received_at: Option<Instant>,
@@ -195,14 +194,14 @@ impl InitialRtt {
 
     pub fn frames(&self) -> Option<FrameNumber> {
         self.duration_secs()
-            .map(|duration| FrameNumber::new((SIMULATIONS_PER_SECOND as f32 * duration) as u16))
+            .map(|duration| FrameNumber::new((SIMULATIONS_PER_SECOND * duration) as u16))
     }
 }
 
 /// We update this only when a client receives a fresh delta update.
 /// If we see that a client is too far ahead of the server, we may pause the
 /// game. See the `pause_simulation` system.
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct EstimatedServerTime {
     pub updated_at: FrameNumber,
     pub frame_number: FrameNumber,
@@ -212,13 +211,14 @@ pub struct EstimatedServerTime {
 /// the `SimulationTime` resource), we update this value to let the clocks sync
 /// so that a clien receives updates in time before the simulation.
 /// See the `sync_clock` function.
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct DelayServerTime {
     pub frame_count: i16,
 }
 
 /// If rtt between a client and a server changes, we need to change how much a
 /// client is ahead of a server. See the `sync_clock` function.
+#[derive(Resource)]
 pub struct TargetFramesAhead {
     /// Stores the results of `SimulationTime::player_frames_ahead`.
     pub actual_frames_ahead: Framebuffer<u16>,
@@ -237,6 +237,7 @@ impl Default for TargetFramesAhead {
     }
 }
 
+#[derive(Resource)]
 pub struct GameTicksPerSecond {
     pub value: f32,
 }
@@ -249,10 +250,10 @@ impl Default for GameTicksPerSecond {
     }
 }
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct CurrentPlayerNetId(pub Option<PlayerNetId>);
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct LevelObjectCorrelations {
     correlations: HashMap<MessageId, EntityNetId>,
     last_correlation_id: MessageId,
@@ -276,14 +277,11 @@ impl LevelObjectCorrelations {
     }
 }
 
+#[derive(Resource)]
 pub struct MainCameraPivotEntity(pub Entity);
 
+#[derive(Resource)]
 pub struct MainCameraEntity(pub Entity);
-
-fn init_state(mut game_state: ResMut<State<GameState>>) {
-    log::info!("Pausing the game");
-    game_state.push(GameState::Paused).unwrap();
-}
 
 fn pause_simulation(
     mut game_state: ResMut<State<GameState>>,
@@ -337,7 +335,7 @@ fn pause_simulation(
 
 fn basic_scene(mut commands: Commands) {
     // Add entities to the scene.
-    commands.spawn_bundle(PointLightBundle {
+    commands.spawn(PointLightBundle {
         point_light: PointLight {
             range: 256.0,
             intensity: 1280000.0,
@@ -348,19 +346,19 @@ fn basic_scene(mut commands: Commands) {
     });
     // Camera.
     let main_camera_entity = commands
-        .spawn_bundle(PerspectiveCameraBundle {
+        .spawn(Camera3dBundle {
             transform: Transform::from_translation(Vec3::new(-3.0, -14.0, 14.0))
                 .looking_at(Vec3::default(), Vec3::Z),
             ..Default::default()
         })
-        .insert_bundle(bevy_mod_picking::PickingCameraBundle::default())
+        .insert(bevy_mod_picking::PickingCameraBundle::default())
         .id();
     let main_camera_pivot_entity = commands
-        .spawn()
+        .spawn_empty()
         .insert(CameraPivotTag)
         .insert(CameraPivotDirection(Vec2::ZERO))
-        .insert(Transform::identity())
-        .insert(GlobalTransform::identity())
+        .insert(Transform::IDENTITY)
+        .insert(GlobalTransform::IDENTITY)
         .add_child(main_camera_entity)
         .id();
     commands.insert_resource(MainCameraPivotEntity(main_camera_pivot_entity));
@@ -469,12 +467,12 @@ fn control_ticking_speed(
 
 #[allow(clippy::assertions_on_constants)]
 fn ticks_per_second_faster() -> f32 {
-    SIMULATIONS_PER_SECOND as f32 + SIMULATIONS_PER_SECOND as f32 / TICKING_SPEED_FACTOR as f32
+    SIMULATIONS_PER_SECOND + SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR as f32
 }
 
 #[allow(clippy::assertions_on_constants)]
 fn ticks_per_second_slower() -> f32 {
-    SIMULATIONS_PER_SECOND as f32 - SIMULATIONS_PER_SECOND as f32 / TICKING_SPEED_FACTOR as f32
+    SIMULATIONS_PER_SECOND - SIMULATIONS_PER_SECOND / TICKING_SPEED_FACTOR as f32
 }
 
 #[derive(Default, Clone)]

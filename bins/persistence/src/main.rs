@@ -1,4 +1,3 @@
-#![feature(let_else)]
 #![feature(try_blocks)]
 
 mod private;
@@ -50,35 +49,35 @@ async fn decode_token_helper(
             InvalidTokenError::Malformed(err) => {
                 log::warn!("Failed to parse JWT (kind: {}): {:?}", kind, err);
                 HttpResponse::BadRequest().json(ErrorResponse::<()> {
-                    message: format!("Failed to parse JWT (kind: {})", kind),
+                    message: format!("Failed to parse JWT (kind: {kind})"),
                     error_kind: ErrorKind::Unauthorized,
                 })
             }
             InvalidTokenError::KeyIdMissing => {
-                log::warn!("Token doesn't have a `kid` header field (kind: {})", kind);
+                log::warn!("Token doesn't have a `kid` header field (kind: {kind})");
                 HttpResponse::BadRequest().json(ErrorResponse::<()> {
-                    message: format!("Token doesn't have a `kid` header field (kind: {})", kind),
+                    message: format!("Token doesn't have a `kid` header field (kind: {kind})"),
                     error_kind: ErrorKind::Unauthorized,
                 })
             }
             InvalidTokenError::Invalid(err) => {
-                log::warn!("Invalid or expired JWT (kind: {}): {:?}", kind, err);
+                log::warn!("Invalid or expired JWT (kind: {kind}): {err:?}");
                 HttpResponse::BadRequest().json(ErrorResponse::<()> {
-                    message: format!("Invalid or expired JWT (kind: {})", kind),
+                    message: format!("Invalid or expired JWT (kind: {kind})"),
                     error_kind: ErrorKind::BadRequest,
                 })
             }
             InvalidTokenError::InvalidAudience => {
                 log::warn!("Invalid audience (kind: {})", kind);
                 HttpResponse::BadRequest().json(ErrorResponse::<()> {
-                    message: format!("Invalid audience (kind: {})", kind),
+                    message: format!("Invalid audience (kind: {kind})"),
                     error_kind: ErrorKind::BadRequest,
                 })
             }
             InvalidTokenError::UnknownSigner => {
-                log::warn!("Unknown signer (kind: {})", kind);
+                log::warn!("Unknown signer (kind: {kind})");
                 HttpResponse::BadRequest().json(ErrorResponse::<()> {
-                    message: format!("Unknown signer (kind: {})", kind),
+                    message: format!("Unknown signer (kind: {kind})"),
                     error_kind: ErrorKind::BadRequest,
                 })
             }

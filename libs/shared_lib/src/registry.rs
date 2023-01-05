@@ -1,7 +1,7 @@
 use bevy::{prelude::*, utils::HashMap};
 use std::hash::Hash;
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct Registry<K: Copy + Hash + IncrementId + Eq, V: Copy + Hash> {
     counter: K,
     value_by_id: HashMap<K, V>,
@@ -50,7 +50,7 @@ pub trait IncrementId {
     fn increment(&mut self) -> Self;
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Resource, Clone, Default, Debug)]
 pub struct EntityRegistry<K: Copy + Hash + Eq> {
     entity_by_id: HashMap<K, Entity>,
     id_by_entity: HashMap<Entity, K>,

@@ -8,17 +8,15 @@ edition = "2021"
 
 [features]
 default = []
-use-udp = ["mr_server_lib/use-udp"]
-use-webrtc = ["mr_server_lib/use-webrtc"]
 
 [dependencies]
 mr_server_lib = { path = "../../libs/server_lib" }
 mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 
-bevy = { version = "0.7", default-features = false }
-rymder = { version = "0.5.0", features = ["player-tracking"] }
+bevy = { version = "0.9.1", default-features = false }
+rymder = { version = "0.6.0", features = ["player-tracking"] }
 sentry = "0.26.0"
-tokio = { version = "1.19.2", features = ["sync"] }
+tokio = { version = "1.21", features = ["sync"] }
 
 [build-dependencies]
 mr_build_dotenv = { path = "../../libs/build_dotenv" }

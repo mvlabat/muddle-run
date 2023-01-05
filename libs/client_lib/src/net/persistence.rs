@@ -174,7 +174,7 @@ impl PersistenceRequestsHandler {
         while let Some(request) = request_rx.recv().await {
             let client = client.clone();
             let message_tx = message_tx.clone();
-            let _ = match request {
+            match request {
                 PersistenceRequest::GetLevels { request_id, body } => {
                     tokio::task::spawn_local(async move {
                         match client.get_levels(&body).await {

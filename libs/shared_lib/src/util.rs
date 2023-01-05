@@ -5,7 +5,7 @@ use crate::{
 use bevy::{
     ecs::{
         entity::Entity,
-        query::{Fetch, FilterFetch, QueryEntityError, WorldQuery},
+        query::{QueryEntityError, QueryItem, ROQueryItem, ReadOnlyWorldQuery, WorldQuery},
         system::Query,
     },
     math::Vec2,
@@ -64,13 +64,10 @@ where
 }
 
 #[track_caller]
-pub fn get_item<'a, 'w, 's, Q: WorldQuery, F: WorldQuery>(
-    query: &'a Query<'w, 's, Q, F>,
+pub fn get_item<'a, Q: WorldQuery, F: ReadOnlyWorldQuery>(
+    query: &'a Query<Q, F>,
     entity: Entity,
-) -> Option<<Q::ReadOnlyFetch as Fetch<'a, 's>>::Item>
-where
-    F::Fetch: FilterFetch,
-{
+) -> Option<ROQueryItem<'a, Q>> {
     match query.get(entity) {
         Ok(item) => Some(item),
         err @ Err(QueryEntityError::AliasedMutability(_)) => {
@@ -82,13 +79,10 @@ where
 }
 
 #[track_caller]
-pub fn get_item_mut<'a, Q: WorldQuery, F: WorldQuery>(
+pub fn get_item_mut<'a, Q: WorldQuery, F: ReadOnlyWorldQuery>(
     query: &'a mut Query<Q, F>,
     entity: Entity,
-) -> Option<<Q::Fetch as Fetch<'a, 'a>>::Item>
-where
-    F::Fetch: FilterFetch,
-{
+) -> Option<QueryItem<'a, Q>> {
     match query.get_mut(entity) {
         Ok(item) => Some(item),
         err @ Err(QueryEntityError::AliasedMutability(_)) => {

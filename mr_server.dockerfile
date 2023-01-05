@@ -32,7 +32,7 @@ COPY libs/docker_dummy/src/lib.rs bins/matchmaker/src/main.rs
 COPY libs/docker_dummy/src/lib.rs bins/persistence/src/main.rs
 
 WORKDIR /usr/src/muddle-run/bins/server
-RUN RUSTFLAGS=-g cargo build --release --features "use-webrtc"
+RUN RUSTFLAGS=-g cargo build --release
 
 FROM rustlang/rust:nightly AS builder
 # Actually build the binary we are interested in.
@@ -48,7 +48,7 @@ COPY --from=deps-builder /usr/src/muddle-run/target/ target
 RUN find /usr/src/muddle-run/bins -type f -exec touch {} +
 RUN find /usr/src/muddle-run/libs -type f -exec touch {} +
 WORKDIR /usr/src/muddle-run/bins/server
-RUN RUSTFLAGS=-g cargo build --release --features "use-webrtc"
+RUN RUSTFLAGS=-g cargo build --release
 
 FROM debian:stable-slim
 

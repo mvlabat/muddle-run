@@ -181,7 +181,7 @@ impl InputField {
                     .color = ERROR_COLOR;
                 ui.style_mut().override_text_style = Some(egui::TextStyle::Button);
                 for error in &self.errors {
-                    ui.label(format!(" • {}", error));
+                    ui.label(format!(" • {error}"));
                 }
             });
         }
@@ -319,7 +319,7 @@ pub fn main_menu_ui(
     matchmaker_state: Option<ResMut<MatchmakerState>>,
     configs: Configs,
     main_menu_ui_channels: Option<ResMut<MainMenuUiChannels>>,
-    mut server_to_connect: ResMut<Option<ServerToConnect>>,
+    mut server_to_connect: ResMut<ServerToConnect>,
     connection_state: Res<ConnectionState>,
 ) {
     #[cfg(feature = "profiler")]
@@ -553,7 +553,7 @@ fn process_matchmaker_messages(
     main_menu_ui_state: &mut MainMenuUiState,
     configs: &Configs,
     main_menu_ui_channels: &mut MainMenuUiChannels,
-    server_to_connect: &mut Option<ServerToConnect>,
+    server_to_connect: &mut Option<Server>,
 ) {
     loop {
         if let Some(request) = main_menu_ui_state
@@ -586,7 +586,7 @@ fn process_matchmaker_messages(
                     .cloned();
                 if let Some(requested_server) = requested_server {
                     main_menu_ui_state.matchmaker.pending_create_server_request = None;
-                    *server_to_connect = Some(ServerToConnect(requested_server));
+                    *server_to_connect = Some(requested_server);
                 }
             }
         }
@@ -952,7 +952,7 @@ fn authentication_screen(
                 ui.with_layout(
                     egui::Layout::top_down_justified(egui::Align::Center),
                     |ui| {
-                        ui.label(format!("Logged in as {}", logged_in_as));
+                        ui.label(format!("Logged in as {logged_in_as}"));
                         confirm_auth = ui.button("Continue").clicked();
                     },
                 );
@@ -979,7 +979,7 @@ fn matchmaker_screen(
     ui: &mut egui::Ui,
     matchmaker_state: &MatchmakerState,
     matchmaker_ui_state: &mut MatchmakerUiState,
-    server_to_connect: &mut Option<ServerToConnect>,
+    server_to_connect: &mut Option<Server>,
     main_menu_ui_channels: &mut MainMenuUiChannels,
 ) {
     match matchmaker_ui_state.screen {
@@ -1005,7 +1005,7 @@ fn matchmaker_screen(
 
 fn matchmaker_servers_list_screen(
     ui: &mut egui::Ui,
-    server_to_connect: &mut Option<ServerToConnect>,
+    server_to_connect: &mut Option<Server>,
     matchmaker_ui_state: &mut MatchmakerUiState,
     persistence_requests_tx: UnboundedSender<PersistenceRequest>,
 ) {
@@ -1069,10 +1069,10 @@ fn matchmaker_servers_list_screen(
             .on_disabled_hover_text("Select a server from the list or Create a new one")],
     );
     if play_response.clicked() {
-        *server_to_connect = Some(ServerToConnect(
+        *server_to_connect = Some(
             matchmaker_ui_state.servers[matchmaker_ui_state.selected_server.as_ref().unwrap()]
                 .clone(),
-        ));
+        );
     }
 }
 
@@ -1091,7 +1091,7 @@ fn matchmaker_create_server_screen(
             ui.min_rect().left_bottom() + padding,
             egui::Vec2::new(ui.available_width(), panel_height) - padding,
         ),
-        egui::Layout::left_to_right(),
+        egui::Layout::left_to_right(egui::Align::Min),
     );
     if panel_ui
         .selectable_value(

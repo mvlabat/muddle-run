@@ -10,7 +10,7 @@ use bevy::{
 };
 use bevy_rapier2d::{
     dynamics::{LockedAxes, RigidBody},
-    geometry::{Collider, CollisionGroups, Sensor},
+    geometry::{Collider, CollisionGroups},
 };
 use std::collections::VecDeque;
 
@@ -21,7 +21,6 @@ use std::collections::VecDeque;
 pub struct PhysicsBundle {
     pub rigid_body: RigidBody,
     pub collider: Collider,
-    pub sensor: Sensor,
     pub collision_groups: CollisionGroups,
     pub locked_axes: LockedAxes,
 }
@@ -209,12 +208,8 @@ impl Spawned {
         if let SpawnCommand::Despawn(DespawnReason::Disconnect | DespawnReason::SwitchRole) =
             command
         {
-            self.commands = self
-                .commands
-                .iter()
-                .filter(|(_command, command_frame_number)| *command_frame_number < frame_number)
-                .cloned()
-                .collect();
+            self.commands
+                .retain(|(_command, command_frame_number)| *command_frame_number < frame_number);
             self.commands.push_back((command, frame_number));
             return;
         }

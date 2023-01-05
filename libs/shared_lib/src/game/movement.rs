@@ -27,17 +27,18 @@ use bevy::{
 };
 use bevy_rapier2d::{
     dynamics::{RigidBody, Velocity},
+    geometry::Group,
     prelude::CollisionGroups,
 };
 
 /// Positions should align in 0.25 seconds.
 fn lerp_factor() -> f32 {
-    1.0 / SIMULATIONS_PER_SECOND as f32 * 4.0
+    1.0 / SIMULATIONS_PER_SECOND * 4.0
 }
 
 /// The scaling factor for the player's linear velocity.
 fn player_movement_speed() -> f32 {
-    360.0 / SIMULATIONS_PER_SECOND as f32
+    360.0 / SIMULATIONS_PER_SECOND
 }
 
 pub fn read_movement_updates(
@@ -234,8 +235,8 @@ pub fn isolate_client_mispredicted_world(
                 *rigid_body = RigidBody::Fixed;
             }
             *item.collision_groups = CollisionGroups {
-                memberships: 0,
-                filters: 0,
+                memberships: Group::NONE,
+                filters: Group::NONE,
             };
             item.lock_physics.0 = true;
         }

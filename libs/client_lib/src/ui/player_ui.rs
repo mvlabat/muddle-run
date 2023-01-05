@@ -35,9 +35,9 @@ pub fn help_ui(
                         .value()
                         .saturating_sub(time.frame_number.value())
                         as f32
-                        / SIMULATIONS_PER_SECOND as f32)
+                        / SIMULATIONS_PER_SECOND)
                         .ceil() as u16;
-                    ui.label(format!("Respawning in {}...", respawning_in_secs));
+                    ui.label(format!("Respawning in {respawning_in_secs}..."));
                 } else {
                     ui.label("Press ESC to toggle Builder mode");
                 }

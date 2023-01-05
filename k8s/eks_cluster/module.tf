@@ -123,7 +123,7 @@ module "eks" {
   cluster_name     = var.cluster_name
   subnets          = module.vpc.public_subnets
   vpc_id           = module.vpc.vpc_id
-  cluster_version  = "1.21"
+  cluster_version  = "1.23"
   write_kubeconfig = false
   enable_irsa      = true
 
@@ -136,7 +136,7 @@ module "eks" {
       asg_max_size                  = 3
       additional_security_group_ids = [aws_security_group.worker_group_mgmt_one.id]
       public_ip                     = true
-      root_volume_size              = 5
+      root_volume_size              = 10
 
       kubelet_extra_args = "--node-labels=node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle`"
     },
@@ -148,7 +148,7 @@ module "eks" {
       asg_max_size                  = 3
       additional_security_group_ids = [aws_security_group.game_server_worker_group.id]
       public_ip                     = true
-      root_volume_size              = 5
+      root_volume_size              = 10
 
       tags = [
         {
@@ -176,7 +176,7 @@ module "eks" {
       instance_type        = "t3a.micro"
       asg_desired_capacity = 1
       public_ip            = true
-      root_volume_size     = 5
+      root_volume_size     = 10
 
       kubelet_extra_args = "--node-labels=agones.dev/agones-system=true,node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle` --register-with-taints=agones.dev/agones-system=true:NoExecute"
     },
@@ -185,7 +185,7 @@ module "eks" {
       instance_type        = "t3a.micro"
       asg_desired_capacity = 1
       public_ip            = true
-      root_volume_size     = 5
+      root_volume_size     = 10
 
       kubelet_extra_args = "--node-labels=agones.dev/agones-metrics=true,node.kubernetes.io/lifecycle=`curl -s http://169.254.169.254/latest/meta-data/instance-life-cycle` --register-with-taints=agones.dev/agones-metrics=true:NoExecute"
     }

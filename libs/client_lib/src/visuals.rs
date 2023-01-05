@@ -14,7 +14,7 @@ use bevy::{
         query::{Or, With, Without},
         system::{Commands, Local, Query, Res, ResMut, SystemParam},
     },
-    hierarchy::{BuildChildren, Children},
+    hierarchy::BuildChildren,
     input::mouse::MouseButton,
     math::{Quat, Vec2, Vec3, Vec3Swizzles},
     pbr::{PbrBundle, StandardMaterial},
@@ -133,16 +133,16 @@ pub fn spawn_control_points(
                 let control_points = edited_level_object.desc.control_points();
                 for point in &control_points {
                     commands.entity(*ghost_entity).with_children(|parent| {
-                        let mut entity_commands = parent.spawn();
+                        let mut entity_commands = parent.spawn_empty();
                         entity_commands
-                            .insert_bundle(PbrBundle {
+                            .insert(PbrBundle {
                                 mesh: muddle_assets.meshes.control_point.clone(),
                                 material: muddle_assets.materials.control_point_normal.clone(),
                                 transform: Transform::from_translation(point.extend(0.0)),
                                 ..Default::default()
                             })
                             .insert(LevelObjectControlPoint)
-                            .insert_bundle(bevy_mod_picking::PickableBundle::default());
+                            .insert(bevy_mod_picking::PickableBundle::default());
                         points.push(entity_commands.id());
                     });
                 }
@@ -159,9 +159,9 @@ pub fn spawn_control_points(
                             return None;
                         }
 
-                        let mut entity_commands = commands.spawn();
+                        let mut entity_commands = commands.spawn_empty();
                         entity_commands
-                            .insert_bundle(PbrBundle {
+                            .insert(PbrBundle {
                                 mesh: meshes.add(Mesh::from(XyPlane {
                                     size: Vec2::new(length, 0.04),
                                 })),
@@ -178,7 +178,7 @@ pub fn spawn_control_points(
                                 ..Default::default()
                             })
                             .insert(LevelObjectControlBorder)
-                            .insert_bundle(bevy_mod_picking::PickableBundle::default());
+                            .insert(bevy_mod_picking::PickableBundle::default());
                         let spawned_entity = entity_commands.id();
                         entity_commands
                             .commands()
@@ -190,7 +190,7 @@ pub fn spawn_control_points(
                 if !points.is_empty() {
                     commands
                         .entity(*edited_level_object_entity)
-                        .insert(Children::with(&points))
+                        .push_children(&points)
                         .insert(LevelObjectControlPoints { points })
                         .insert(LevelObjectControlBorders { lines });
                 }
@@ -216,30 +216,33 @@ pub type ControlEntitiesQueryMutFilter = Or<(
     With<LevelObjectControlBorder>,
 )>;
 
+pub type ControlPointParentQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static LevelObjectStaticGhostChild,
+        &'static LevelObjectControlPoints,
+        &'static LevelObjectControlBorders,
+    ),
+>;
 pub type ControlEntitiesQueryMut<'w, 's> =
     Query<'w, 's, ControlEntitiesQueryMutComponents, ControlEntitiesQueryMutFilter>;
+pub type ControlPointParentGhostQuery<'w, 's> = Query<
+    'w,
+    's,
+    &'static Transform,
+    (
+        With<LevelObjectStaticGhostParent>,
+        Without<LevelObjectControlPoint>,
+        Without<LevelObjectControlBorder>,
+    ),
+>;
 
 #[derive(SystemParam)]
 pub struct ControlPointsQueries<'w, 's> {
-    control_point_parent_query: Query<
-        'w,
-        's,
-        (
-            &'static LevelObjectStaticGhostChild,
-            &'static LevelObjectControlPoints,
-            &'static LevelObjectControlBorders,
-        ),
-    >,
+    control_point_parent_query: ControlPointParentQuery<'w, 's>,
     control_entities_query: ControlEntitiesQueryMut<'w, 's>,
-    control_point_parent_ghost_query: Query<
-        'w,
-        's,
-        &'static Transform,
-        (
-            With<LevelObjectStaticGhostParent>,
-            Without<LevelObjectControlPoint>,
-        ),
-    >,
+    control_point_parent_ghost_query: ControlPointParentGhostQuery<'w, 's>,
 }
 
 pub fn process_control_points_input(
