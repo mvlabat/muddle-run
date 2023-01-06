@@ -15,7 +15,7 @@ mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 
 bevy = { version = "0.9.1", default-features = false }
 rymder = { version = "0.6.0", features = ["player-tracking"] }
-sentry = "0.26.0"
+sentry = "0.29.1"
 tokio = { version = "1.21", features = ["sync"] }
 
 [build-dependencies]
