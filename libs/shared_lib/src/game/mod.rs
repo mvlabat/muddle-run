@@ -11,7 +11,7 @@ use crate::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
             SwitchPlayerRole, UpdateLevelObject,
         },
-        components::{LevelObjectStaticGhostParent, PlayerSensor},
+        components::{LevelObjectServerGhostParent, LevelObjectStaticGhostParent, PlayerSensor},
     },
     messages::{EntityNetId, PlayerNetId},
     player::{PlayerEvent, PlayerUpdates, Players},
@@ -72,6 +72,13 @@ pub fn restart_game(world: &mut World) {
     }
     player_registry.clear();
 
+    for player_sensor_entity in world
+        .query_filtered::<Entity, With<PlayerSensor>>()
+        .iter(world)
+    {
+        entities_to_despawn.push(player_sensor_entity);
+    }
+
     for (net_id, object_entity) in world
         .get_resource::<EntityRegistry<EntityNetId>>()
         .unwrap()
@@ -102,18 +109,18 @@ pub fn restart_game(world: &mut World) {
         .unwrap()
         .clear();
 
-    for ghost_entity in world
+    for static_ghost_entity in world
         .query_filtered::<Entity, With<LevelObjectStaticGhostParent>>()
         .iter(world)
     {
-        entities_to_despawn.push(ghost_entity);
+        entities_to_despawn.push(static_ghost_entity);
     }
 
-    for player_sensor_entity in world
-        .query_filtered::<Entity, With<PlayerSensor>>()
+    for server_ghost_entity in world
+        .query_filtered::<Entity, With<LevelObjectServerGhostParent>>()
         .iter(world)
     {
-        entities_to_despawn.push(player_sensor_entity);
+        entities_to_despawn.push(server_ghost_entity);
     }
 
     for entity in entities_to_despawn {
