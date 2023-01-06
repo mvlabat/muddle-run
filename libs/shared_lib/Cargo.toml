@@ -22,7 +22,7 @@ chrono = "0.4.19"
 crossbeam-channel = "0.5.5"
 futures-lite = "1.12.0"
 konst = "0.2.13"
-names = { version = "0.13.0", default-features = false }
+names = { version = "0.14.0", default-features = false }
 num = "0.4.0"
 puffin = { version = "0.13", optional = true }
 rand = "0.8.4"
