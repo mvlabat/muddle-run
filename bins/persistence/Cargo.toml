@@ -13,7 +13,7 @@ mr_utils_lib = { path = "../../libs/utils_lib", features = ["jwks"] }
 actix-web = "4.1.0"
 actix-cors = "0.6.1"
 anyhow = "1.0"
-env_logger = "0.9.0"
+env_logger = "0.10.0"
 futures = "0.3.19"
 headers = "0.3.5"
 jwt-compact = { version = "0.6", features = ["std", "clock", "with_rsa"], default-features = false }
