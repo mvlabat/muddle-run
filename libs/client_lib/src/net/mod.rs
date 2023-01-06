@@ -114,6 +114,14 @@ pub struct MainMenuUiChannels {
     pub persistence_message_rx: UnboundedReceiver<PersistenceMessage>,
 }
 
+pub fn has_server_to_connect(
+    connection_state: Res<ConnectionState>,
+    server_to_connect: Res<ServerToConnect>,
+) -> bool {
+    !matches!(connection_state.status(), ConnectionStatus::Uninitialized)
+        || server_to_connect.is_some()
+}
+
 #[derive(Resource, DerefMut, Deref, Default)]
 pub struct ServerToConnect(pub Option<Server>);
 

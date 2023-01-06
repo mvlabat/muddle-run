@@ -23,6 +23,7 @@ bevy_disturbulence = { git = "https://github.com/mvlabat/bevy_disturbulence.git"
 bevy_rapier2d = { version = "0.19", features = ["wasm-bindgen"] }
 chrono = "0.4.23"
 futures = "0.3.25"
+iyes_loopless = "0.9"
 jwt-compact = { version = "0.6", features = ["std", "clock", "with_rsa"], default-features = false }
 puffin = { version = "0.14", optional = true }
 puffin_egui = { version = "0.19", optional = true }

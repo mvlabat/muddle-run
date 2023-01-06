@@ -11,18 +11,22 @@ use crate::{
     MuddleClientConfig, OfflineAuthConfig,
 };
 use bevy::{
-    ecs::system::{Local, Res, ResMut, SystemParam},
+    ecs::{
+        schedule::SystemSet,
+        system::{Res, ResMut, Resource, SystemParam},
+    },
     log,
     utils::{HashMap, Instant, Uuid},
     window::Windows,
 };
 use bevy_egui::{egui, egui::Widget, EguiContext};
+use iyes_loopless::prelude::*;
 use mr_messages_lib::{
     GameServerState, GetLevelResponse, GetLevelsRequest, GetLevelsUserFilter, InitLevel,
     LevelsListItem, LinkAccountLoginMethod, MatchmakerMessage, MatchmakerRequest, PaginationParams,
     Server,
 };
-use mr_shared_lib::net::{ConnectionState, ConnectionStatus, MessageId};
+use mr_shared_lib::net::MessageId;
 use std::{
     collections::BTreeMap,
     marker::PhantomData,
@@ -278,9 +282,8 @@ impl Default for LevelsListFilter {
     }
 }
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct MainMenuUiState {
-    initialized: bool,
     screen: MainMenuUiScreen,
     auth: AuthUiState,
     matchmaker: MatchmakerUiState,
@@ -313,59 +316,49 @@ pub struct UiContext<'w, 's> {
     _marker: PhantomData<&'s ()>,
 }
 
-pub fn main_menu_ui_system(
-    mut main_menu_ui_state: Local<MainMenuUiState>,
-    mut ui_context: UiContext,
+pub fn process_io_messages_system_set() -> SystemSet {
+    ConditionSet::new()
+        .run_if(matchmaker_is_initialised)
+        .with_system(process_auth_messages_system)
+        .with_system(process_matchmaker_messages_system)
+        .with_system(process_persistence_messages_system)
+        .into()
+}
+
+pub fn matchmaker_is_initialised(
     matchmaker_state: Option<ResMut<MatchmakerState>>,
-    configs: Configs,
     main_menu_ui_channels: Option<ResMut<MainMenuUiChannels>>,
+) -> bool {
+    // If matchmaker address is not configured (which means that the state and the
+    // channels aren't initialized either), we don't want to render the main menu.
+    matchmaker_state.is_some() && main_menu_ui_channels.is_some()
+}
+
+pub fn init_menu_auth_state_system(
+    mut main_menu_ui_state: ResMut<MainMenuUiState>,
+    configs: Configs,
+) {
+    if configs.offline_auth_config.exists() {
+        main_menu_ui_state.auth.screen = AuthUiScreen::RefreshAuth;
+        main_menu_ui_state.auth.logged_in_as = Some(configs.offline_auth_config.username.clone());
+    } else {
+        main_menu_ui_state.auth.screen = AuthUiScreen::SignIn;
+    }
+}
+
+pub fn main_menu_ui_system(
+    mut ui_context: UiContext,
+    configs: Configs,
+    mut main_menu_ui_state: ResMut<MainMenuUiState>,
+    matchmaker_state: Res<MatchmakerState>,
+    mut main_menu_ui_channels: ResMut<MainMenuUiChannels>,
     mut server_to_connect: ResMut<ServerToConnect>,
-    connection_state: Res<ConnectionState>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
 
-    // If matchmaker address is not configured (which means that the state and the
-    // channels aren't initialized either), we don't want to render this menu.
-    let (mut matchmaker_state, mut main_menu_ui_channels) =
-        match matchmaker_state.zip(main_menu_ui_channels) {
-            Some(resources) => resources,
-            None => return,
-        };
-
-    if !main_menu_ui_state.initialized {
-        if configs.offline_auth_config.exists() {
-            main_menu_ui_state.auth.screen = AuthUiScreen::RefreshAuth;
-            main_menu_ui_state.auth.logged_in_as =
-                Some(configs.offline_auth_config.username.clone());
-        } else {
-            main_menu_ui_state.auth.screen = AuthUiScreen::SignIn;
-        }
-        main_menu_ui_state.initialized = true;
-    }
-
-    process_auth_messages(
-        &mut main_menu_ui_state,
-        &mut matchmaker_state,
-        &mut main_menu_ui_channels,
-    );
-    process_matchmaker_messages(
-        &mut matchmaker_state,
-        &mut main_menu_ui_state,
-        &configs,
-        &mut main_menu_ui_channels,
-        &mut server_to_connect,
-    );
-    process_persistence_messages(&mut main_menu_ui_state, &mut main_menu_ui_channels);
-
     if !matches!(matchmaker_state.status, TcpConnectionStatus::Connected) {
         main_menu_ui_state.matchmaker.servers.clear();
-    }
-
-    if !matches!(connection_state.status(), ConnectionStatus::Uninitialized)
-        || server_to_connect.is_some()
-    {
-        return;
     }
 
     if !main_menu_ui_state.matchmaker.has_ready_server()
@@ -399,7 +392,6 @@ pub fn main_menu_ui_system(
                 .fixed_size(egui::Vec2::new(window_width, window_height))
                 .show(ui.ctx(), |ui| {
                     let MainMenuUiState {
-                        initialized: _,
                         screen: ref mut main_menu_ui_screen,
                         auth: auth_ui_state,
                         matchmaker: matchmaker_ui_state,
@@ -461,10 +453,10 @@ pub fn main_menu_ui_system(
         });
 }
 
-fn process_auth_messages(
-    main_menu_ui_state: &mut MainMenuUiState,
-    matchmaker_state: &mut MatchmakerState,
-    main_menu_ui_channels: &mut MainMenuUiChannels,
+pub fn process_auth_messages_system(
+    mut main_menu_ui_state: ResMut<MainMenuUiState>,
+    mut matchmaker_state: ResMut<MatchmakerState>,
+    mut main_menu_ui_channels: ResMut<MainMenuUiChannels>,
 ) {
     loop {
         match main_menu_ui_channels.auth_message_rx.try_recv() {
@@ -548,12 +540,12 @@ fn process_auth_messages(
     }
 }
 
-fn process_matchmaker_messages(
-    matchmaker_state: &mut MatchmakerState,
-    main_menu_ui_state: &mut MainMenuUiState,
-    configs: &Configs,
-    main_menu_ui_channels: &mut MainMenuUiChannels,
-    server_to_connect: &mut Option<Server>,
+pub fn process_matchmaker_messages_system(
+    mut matchmaker_state: ResMut<MatchmakerState>,
+    mut main_menu_ui_state: ResMut<MainMenuUiState>,
+    configs: Configs,
+    mut main_menu_ui_channels: ResMut<MainMenuUiChannels>,
+    mut server_to_connect: ResMut<ServerToConnect>,
 ) {
     loop {
         if let Some(request) = main_menu_ui_state
@@ -586,7 +578,7 @@ fn process_matchmaker_messages(
                     .cloned();
                 if let Some(requested_server) = requested_server {
                     main_menu_ui_state.matchmaker.pending_create_server_request = None;
-                    *server_to_connect = Some(requested_server);
+                    **server_to_connect = Some(requested_server);
                 }
             }
         }
@@ -640,9 +632,9 @@ fn process_matchmaker_messages(
     }
 }
 
-fn process_persistence_messages(
-    main_menu_ui_state: &mut MainMenuUiState,
-    main_menu_ui_channels: &mut MainMenuUiChannels,
+pub fn process_persistence_messages_system(
+    mut main_menu_ui_state: ResMut<MainMenuUiState>,
+    mut main_menu_ui_channels: ResMut<MainMenuUiChannels>,
 ) {
     loop {
         let payload = match main_menu_ui_channels.persistence_message_rx.try_recv() {

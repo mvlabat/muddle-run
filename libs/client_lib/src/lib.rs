@@ -12,13 +12,14 @@ use crate::{
     input::{LevelObjectRequestsQueue, MouseRay, MouseWorldPosition, PlayerRequestsQueue},
     net::{
         auth::read_offline_auth_config_system, fill_actual_frames_ahead_system,
-        init_matchmaker_connection_system, maintain_connection_system,
+        has_server_to_connect, init_matchmaker_connection_system, maintain_connection_system,
         process_network_events_system, send_network_updates_system, send_requests_system,
         ServerToConnect,
     },
     ui::{
         builder_ui::{EditedLevelObject, EditedObjectUpdate},
         debug_ui::update_debug_ui_state_system,
+        main_menu_ui::matchmaker_is_initialised,
     },
     visuals::{
         control_builder_visibility_system, process_control_points_input_system,
@@ -45,6 +46,7 @@ use bevy::{
 use bevy_egui::EguiPlugin;
 use bevy_inspector_egui::{WorldInspectorParams, WorldInspectorPlugin};
 use bevy_inspector_egui_rapier::InspectableRapierPlugin;
+use iyes_loopless::prelude::*;
 use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
     game::client_factories::VisibilitySettings,
@@ -101,6 +103,7 @@ impl Plugin for MuddleClientPlugin {
             .add_plugin(WorldInspectorPlugin::new())
             .init_resource::<WindowInnerSize>()
             .init_resource::<input::MouseScreenPosition>()
+            .init_resource::<ui::main_menu_ui::MainMenuUiState>()
             .add_event::<EditedObjectUpdate>()
             // Startup systems.
             .add_startup_system(init_matchmaker_connection_system)
@@ -125,7 +128,16 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::inspect_object_system)
             .add_system(ui::player_ui::leaderboard_ui_system)
             .add_system(ui::player_ui::help_ui_system)
-            .add_system(ui::main_menu_ui::main_menu_ui_system)
+            .add_startup_system(ui::main_menu_ui::init_menu_auth_state_system)
+            .add_system_set(
+                ui::main_menu_ui::process_io_messages_system_set().label("process_io_messages"),
+            )
+            .add_system(
+                ui::main_menu_ui::main_menu_ui_system
+                    .run_if(matchmaker_is_initialised)
+                    .run_if_not(has_server_to_connect)
+                    .after("process_io_messages"),
+            )
             // Not only Egui for builder mode.
             .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))
             // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.
