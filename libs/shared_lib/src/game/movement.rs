@@ -41,7 +41,7 @@ fn player_movement_speed() -> f32 {
     360.0 / SIMULATIONS_PER_SECOND
 }
 
-pub fn read_movement_updates(
+pub fn read_movement_updates_system(
     time: Res<GameTime>,
     simulation_time: Res<SimulationTime>,
     mut player_updates: ResMut<PlayerUpdates>,
@@ -141,7 +141,10 @@ pub struct PlayerQuery<'w> {
     position: &'w Position,
 }
 
-pub fn player_movement(time: Res<SimulationTime>, mut players: Query<SpawnedQuery<PlayerQuery>>) {
+pub fn player_movement_system(
+    time: Res<SimulationTime>,
+    mut players: Query<SpawnedQuery<PlayerQuery>>,
+) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
     log::trace!(
@@ -221,7 +224,7 @@ pub struct SimulatedObjectQuery<'w> {
 
 /// Exclude objects that won't affect a local player by simulations if a client
 /// is correcting mispredictions.
-pub fn isolate_client_mispredicted_world(
+pub fn isolate_client_mispredicted_world_system(
     time: Res<SimulationTime>,
     mut objects: Query<SimulatedObjectQuery, Without<PlayerFrameSimulated>>,
 ) {
@@ -257,7 +260,7 @@ pub fn isolate_client_mispredicted_world(
     }
 }
 
-pub fn load_object_positions(
+pub fn load_object_positions_system(
     time: Res<SimulationTime>,
     mut level_objects: Query<SpawnedQuery<LevelObjectQuery>>,
     #[cfg_attr(not(feature = "client"), allow(unused_variables, unused_mut))]
@@ -324,7 +327,7 @@ pub struct SimulatedEntityQuery<'w> {
     predicted_position: Option<&'w mut PredictedPosition>,
 }
 
-pub fn sync_position(
+pub fn sync_position_system(
     game_time: Res<GameTime>,
     time: Res<SimulationTime>,
     mut simulated_entities: Query<SpawnedQuery<SimulatedEntityQuery>>,

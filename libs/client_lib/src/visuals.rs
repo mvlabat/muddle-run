@@ -38,7 +38,7 @@ use mr_shared_lib::{
     GameTime,
 };
 
-pub fn control_builder_visibility(
+pub fn control_builder_visibility_system(
     mut prev_role: Local<Option<PlayerRole>>,
     player_params: PlayerParams,
     level_params: LevelParams,
@@ -102,7 +102,7 @@ pub type ControlEntitiesQuery<'w, 's> = Query<
     )>,
 >;
 
-pub fn spawn_control_points(
+pub fn spawn_control_points_system(
     mut commands: Commands,
     muddle_assets: MuddleAssets,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -245,7 +245,7 @@ pub struct ControlPointsQueries<'w, 's> {
     control_point_parent_ghost_query: ControlPointParentGhostQuery<'w, 's>,
 }
 
-pub fn process_control_points_input(
+pub fn process_control_points_input_system(
     mut mouse_input: MouseInput<ControlEntitiesQueryMutComponents, ControlEntitiesQueryMutFilter>,
     mut edited_level_object: ResMut<EditedLevelObject>,
     muddle_assets: MuddleAssets,
@@ -439,7 +439,7 @@ pub fn process_control_points_input(
     }
 }
 
-pub fn update_player_sensor_materials(
+pub fn update_player_sensor_materials_system(
     time: Res<GameTime>,
     players: Query<(&PlayerSensors, &Spawned)>,
     mut player_sensor_materials: Query<&mut Handle<StandardMaterial>, With<PlayerSensor>>,

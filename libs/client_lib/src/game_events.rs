@@ -4,7 +4,7 @@ use mr_shared_lib::{
     util::PLAYER_RESPAWN_TIME, SimulationTime, SIMULATIONS_PER_SECOND,
 };
 
-pub fn process_scheduled_spawns(
+pub fn process_scheduled_spawns_system(
     time: Res<SimulationTime>,
     players: PlayerSystemParamsMut,
     players_query: Query<&Spawned>,

@@ -3,7 +3,7 @@ use bevy::ecs::system::{Res, ResMut};
 use bevy_egui::{egui, EguiContext};
 use mr_shared_lib::net::{ConnectionState, ConnectionStatus};
 
-pub fn connection_status_overlay(
+pub fn connection_status_overlay_system(
     mut egui_context: ResMut<EguiContext>,
     connection_state: Res<ConnectionState>,
     server_to_connect: Res<ServerToConnect>,

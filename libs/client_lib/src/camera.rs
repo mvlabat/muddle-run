@@ -36,7 +36,7 @@ pub struct ReattachCameraQueries<'w, 's> {
     all_entities: Query<'w, 's, Entity>,
 }
 
-pub fn reattach_camera(
+pub fn reattach_camera_system(
     mut commands: Commands,
     time: Res<GameTime>,
     main_camera_pivot: Res<MainCameraPivotEntity>,
@@ -119,7 +119,7 @@ pub fn reattach_camera(
     }
 }
 
-pub fn move_free_camera_pivot(
+pub fn move_free_camera_pivot_system(
     time: Res<Time>,
     main_camera_pivot: Res<MainCameraPivotEntity>,
     mut camera_pivot_query: Query<(&CameraPivotDirection, &mut Transform)>,

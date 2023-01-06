@@ -8,7 +8,7 @@ use mr_shared_lib::{
     messages::RespawnPlayerReason, player::PlayerRole, GameTime, SIMULATIONS_PER_SECOND,
 };
 
-pub fn help_ui(
+pub fn help_ui_system(
     time: Res<GameTime>,
     mut egui_context: ResMut<EguiContext>,
     player_params: PlayerParams,
@@ -55,7 +55,7 @@ impl Default for LeaderboardState {
     }
 }
 
-pub fn leaderboard_ui(
+pub fn leaderboard_ui_system(
     mut state: Local<LeaderboardState>,
     keyboard_input: Res<Input<KeyCode>>,
     mut egui_context: ResMut<EguiContext>,

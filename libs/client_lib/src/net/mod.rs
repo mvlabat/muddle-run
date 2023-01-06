@@ -117,7 +117,10 @@ pub struct MainMenuUiChannels {
 #[derive(Resource, DerefMut, Deref, Default)]
 pub struct ServerToConnect(pub Option<Server>);
 
-pub fn init_matchmaker_connection(mut commands: Commands, client_config: Res<MuddleClientConfig>) {
+pub fn init_matchmaker_connection_system(
+    mut commands: Commands,
+    client_config: Res<MuddleClientConfig>,
+) {
     let matchmaker_url = match &client_config.matchmaker_url {
         Some(url) => url.clone(),
         None => {
@@ -275,7 +278,7 @@ pub struct MatchmakerParams<'w, 's> {
     marker: PhantomData<&'s ()>,
 }
 
-pub fn process_network_events(
+pub fn process_network_events_system(
     mut network_params: NetworkParams,
     mut network_events: EventReader<NetworkEvent>,
     mut current_player_net_id: ResMut<CurrentPlayerNetId>,
@@ -687,7 +690,7 @@ pub fn process_network_events(
     }
 }
 
-pub fn maintain_connection(
+pub fn maintain_connection_system(
     time: Res<GameTime>,
     client_config: Res<MuddleClientConfig>,
     matchmaker_state: Option<ResMut<MatchmakerState>>,
@@ -816,7 +819,7 @@ pub struct PlayerUpdateParams<'w, 's> {
     player_directions: Query<'w, 's, &'static PlayerDirection>,
 }
 
-pub fn send_network_updates(
+pub fn send_network_updates_system(
     time: Res<GameTime>,
     mut network_params: NetworkParams,
     current_player_net_id: Res<CurrentPlayerNetId>,
@@ -912,7 +915,7 @@ pub fn send_network_updates(
     }
 }
 
-pub fn send_requests(
+pub fn send_requests_system(
     mut network_params: NetworkParams,
     mut player_requests: ResMut<PlayerRequestsQueue>,
     mut level_object_requests: ResMut<LevelObjectRequestsQueue>,
@@ -988,7 +991,7 @@ fn can_process_delta_update_message(time: &GameTime, delta_update: &DeltaUpdate)
 
 /// We need to access an actual value on each (fresh) delta update message, so
 /// we write it for every frame, as we can't predict when we'll receive those.
-pub fn fill_actual_frames_ahead(
+pub fn fill_actual_frames_ahead_system(
     time: Res<GameTime>,
     simulation_time: Res<SimulationTime>,
     mut target_frames_ahead: ResMut<TargetFramesAhead>,

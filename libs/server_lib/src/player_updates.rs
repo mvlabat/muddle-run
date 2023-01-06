@@ -21,7 +21,7 @@ use mr_shared_lib::{
 
 pub const SERVER_UPDATES_LIMIT: u16 = 64;
 
-pub fn process_player_input_updates(
+pub fn process_player_input_updates_system(
     time: Res<GameTime>,
     player_connections: Res<PlayerConnections>,
     connection_states: Res<ConnectionStates>,
@@ -117,7 +117,7 @@ pub fn process_player_input_updates(
     }
 }
 
-pub fn process_switch_role_requests(
+pub fn process_switch_role_requests_system(
     time: Res<GameTime>,
     mut switch_role_requests: ResMut<DeferredPlayerQueues<PlayerRole>>,
     mut switch_role_commands: ResMut<DeferredQueue<SwitchPlayerRole>>,
@@ -136,7 +136,7 @@ pub fn process_switch_role_requests(
     }
 }
 
-pub fn process_spawn_level_object_requests(
+pub fn process_spawn_level_object_requests_system(
     time: Res<GameTime>,
     players: Res<Players>,
     level_state: Res<LevelState>,
@@ -209,7 +209,7 @@ pub fn process_spawn_level_object_requests(
     }
 }
 
-pub fn process_update_level_object_requests(
+pub fn process_update_level_object_requests_system(
     time: Res<GameTime>,
     players: Res<Players>,
     level_state: Res<LevelState>,
@@ -265,7 +265,7 @@ pub fn process_update_level_object_requests(
     }
 }
 
-pub fn process_despawn_level_object_requests(
+pub fn process_despawn_level_object_requests_system(
     time: Res<GameTime>,
     players: Res<Players>,
     level_state: Res<LevelState>,

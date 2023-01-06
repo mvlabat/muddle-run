@@ -44,7 +44,7 @@ pub mod spawn;
 pub struct PlayerEventSender(pub Option<tokio::sync::mpsc::UnboundedSender<PlayerEvent>>);
 
 // TODO: track https://github.com/bevyengine/rfcs/pull/16.
-pub fn restart_game(world: &mut World) {
+pub fn restart_game_system(world: &mut World) {
     let mut restart_game_commands = world
         .get_resource_mut::<DeferredQueue<RestartGame>>()
         .unwrap();
@@ -148,7 +148,7 @@ pub fn restart_game(world: &mut World) {
     *world.get_resource_mut::<PlayerUpdates>().unwrap() = PlayerUpdates::default();
 }
 
-pub fn switch_player_role(
+pub fn switch_player_role_system(
     mut switch_role_commands: ResMut<DeferredQueue<SwitchPlayerRole>>,
     mut players: ResMut<Players>,
     time: Res<SimulationTime>,
@@ -231,7 +231,7 @@ pub fn switch_player_role(
     }
 }
 
-pub fn remove_disconnected_players(
+pub fn remove_disconnected_players_system(
     player_entities: Res<EntityRegistry<PlayerNetId>>,
     mut players: ResMut<Players>,
     #[cfg(not(feature = "client"))] mut players_tracking_channel: ResMut<PlayerEventSender>,

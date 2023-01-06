@@ -9,29 +9,31 @@
 use crate::{
     framebuffer::FrameNumber,
     game::{
-        collisions::{process_collision_events, process_players_with_new_collisions},
+        collisions::{process_collision_events_system, process_players_with_new_collisions_system},
         commands::{
             DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
             SwitchPlayerRole, UpdateLevelObject,
         },
         components::PlayerFrameSimulated,
         events::{CollisionLogicChanged, PlayerDeath, PlayerFinish},
-        level::{maintain_available_spawn_areas, LevelState},
-        level_objects::{process_objects_route_graph, update_level_object_movement_route_settings},
-        movement::{
-            isolate_client_mispredicted_world, load_object_positions, player_movement,
-            read_movement_updates, sync_position,
+        level::{maintain_available_spawn_areas_system, LevelState},
+        level_objects::{
+            process_objects_route_graph_system, update_level_object_movement_route_settings_system,
         },
-        remove_disconnected_players, restart_game,
+        movement::{
+            isolate_client_mispredicted_world_system, load_object_positions_system,
+            player_movement_system, read_movement_updates_system, sync_position_system,
+        },
+        remove_disconnected_players_system, restart_game_system,
         spawn::{
-            despawn_level_objects, despawn_players, poll_calculating_shapes,
-            process_spawned_entities, spawn_players, update_level_objects,
+            despawn_level_objects_system, despawn_players_system, poll_calculating_shapes_system,
+            process_spawned_entities_system, spawn_players_system, update_level_objects_system,
             ColliderShapePromiseResult, ColliderShapeReceiver, ColliderShapeSender,
         },
-        switch_player_role,
+        switch_player_role_system,
     },
     messages::{DeferredMessagesQueue, SwitchRole},
-    net::network_setup,
+    net::network_setup_system,
     player::{PlayerUpdates, Players},
     registry::EntityRegistry,
 };
@@ -191,41 +193,41 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                     .with_system(Events::<CollisionEvent>::update_system)
                     .with_system(Events::<PlayerFinish>::update_system)
                     .with_system(Events::<PlayerDeath>::update_system)
-                    .with_system(switch_player_role.label("player_role"))
-                    .with_system(
-                        despawn_players
-                            .label("despawn_players")
-                            .after("player_role"),
-                    )
-                    .with_system(despawn_level_objects)
+                    .with_system(switch_player_role_system)
+                    .with_system(despawn_players_system.after(switch_player_role_system))
+                    .with_system(despawn_level_objects_system)
                     // Updating level objects might despawn entities completely if they are
                     // updated with replacement. Running it before `despawn_level_objects` might
                     // result into an edge-case where changes to the `Spawned` component are not
                     // propagated.
-                    .with_system(update_level_objects.after(despawn_level_objects))
+                    .with_system(update_level_objects_system.after(despawn_level_objects_system))
                     // Adding components to an entity if there's a command to remove it the queue
                     // will lead to crash. Executing this system before `update_level_objects` helps
                     // to avoid this scenario.
-                    .with_system(poll_calculating_shapes.before(update_level_objects))
-                    .with_system(maintain_available_spawn_areas.after(update_level_objects))
+                    .with_system(poll_calculating_shapes_system.before(update_level_objects_system))
                     .with_system(
-                        spawn_players
-                            .after(despawn_players)
-                            .after(maintain_available_spawn_areas),
+                        maintain_available_spawn_areas_system.after(update_level_objects_system),
+                    )
+                    .with_system(
+                        spawn_players_system
+                            .after(despawn_players_system)
+                            .after(maintain_available_spawn_areas_system),
                     ),
             )
             .with_stage(
                 stage::PRE_GAME,
                 SystemStage::single_threaded()
-                    .with_system(update_level_object_movement_route_settings),
+                    .with_system(update_level_object_movement_route_settings_system),
             )
             .with_stage(
                 stage::GAME,
                 SystemStage::single_threaded()
-                    .with_system(isolate_client_mispredicted_world)
-                    .with_system(player_movement)
-                    .with_system(process_objects_route_graph)
-                    .with_system(load_object_positions.after(process_objects_route_graph)),
+                    .with_system(isolate_client_mispredicted_world_system)
+                    .with_system(player_movement_system)
+                    .with_system(process_objects_route_graph_system)
+                    .with_system(
+                        load_object_positions_system.after(process_objects_route_graph_system),
+                    ),
             )
             .with_stage(
                 stage::PHYSICS,
@@ -248,8 +250,11 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::POST_PHYSICS,
                 SystemStage::single_threaded()
-                    .with_system(process_collision_events.pipe(process_players_with_new_collisions))
-                    .with_system(sync_position)
+                    .with_system(
+                        process_collision_events_system
+                            .pipe(process_players_with_new_collisions_system),
+                    )
+                    .with_system(sync_position_system)
                     .with_system_set(RapierPhysicsPlugin::<()>::get_systems(
                         PhysicsStages::DetectDespawn,
                     )),
@@ -262,7 +267,7 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             )
             .with_stage(
                 stage::SIMULATION_FINAL,
-                SystemStage::single_threaded().with_system(tick_simulation_frame),
+                SystemStage::single_threaded().with_system(tick_simulation_frame_system),
             );
 
         let main_schedule = Schedule::default()
@@ -282,10 +287,11 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::POST_SIMULATIONS,
                 SystemStage::single_threaded()
-                    .with_system(tick_game_frame)
-                    .with_system(process_spawned_entities.after(tick_game_frame))
-                    // Remove disconnected players doesn't depend on ticks, so it's fine.
-                    .with_system(remove_disconnected_players),
+                    .with_system(tick_game_frame_system)
+                    .with_system(process_spawned_entities_system.after(tick_game_frame_system))
+                    // Removing disconnected players doesn't depend on ticks, so it's fine to have
+                    // in unordered.
+                    .with_system(remove_disconnected_players_system),
             )
             .with_stage(
                 stage::POST_TICK,
@@ -297,20 +303,15 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                     )),
             );
 
-        app.add_stage_before(
-            bevy::app::CoreStage::Update,
-            stage::MAIN_SCHEDULE,
-            main_schedule,
-        );
+        app.add_stage_before(CoreStage::Update, stage::MAIN_SCHEDULE, main_schedule);
         app.add_stage_before(
             stage::MAIN_SCHEDULE,
             stage::READ_INPUT_UPDATES,
             SystemStage::single_threaded()
-                .with_system(restart_game.label("restart_game"))
-                .with_system_set(
-                    SystemSet::on_update(GameState::Playing)
-                        .after("restart_game")
-                        .with_system(read_movement_updates),
+                .with_system(restart_game_system.at_start())
+                .with_system(
+                    read_movement_updates_system
+                        .with_run_criteria(State::on_update(GameState::Playing)),
                 ),
         );
         app.add_stage_before(
@@ -325,10 +326,10 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         app.add_state(GameState::Playing);
         app.add_state_to_stage(stage::READ_INPUT_UPDATES, GameState::Playing);
 
-        app.add_startup_system(network_setup);
+        app.add_startup_system(network_setup_system);
 
         #[cfg(feature = "client")]
-        app.add_startup_system(client::assets::init_muddle_assets);
+        app.add_startup_system(client::assets::init_muddle_assets_system);
 
         let world = &mut app.world;
         world.get_resource_or_insert_with(GameTime::default);
@@ -592,7 +593,7 @@ fn simulation_tick_run_criteria(
     }
 }
 
-pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
+pub fn tick_simulation_frame_system(mut time: ResMut<SimulationTime>) {
     // Tick server frame (only if we aren't still correcting client mispredictions).
     if time.player_frames_to_rerun.is_none() {
         if time.server_frame.value() == u16::MAX {
@@ -626,7 +627,7 @@ pub fn tick_simulation_frame(mut time: ResMut<SimulationTime>) {
     }
 }
 
-pub fn tick_game_frame(mut time: ResMut<GameTime>) {
+pub fn tick_game_frame_system(mut time: ResMut<GameTime>) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
     log::trace!("Concluding game frame tick: {}", time.frame_number.value());

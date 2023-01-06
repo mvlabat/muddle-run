@@ -115,8 +115,8 @@ pub struct EditedObjectUpdate {
 pub fn builder_system_set() -> SystemSet {
     SystemSet::new()
         .with_run_criteria(builder_run_criteria)
-        .with_system(builder_ui)
-        .with_system(process_builder_mouse_input.after(builder_ui))
+        .with_system(builder_ui_system)
+        .with_system(process_builder_mouse_input_system.after(builder_ui_system))
 }
 
 pub fn builder_run_criteria(
@@ -139,7 +139,7 @@ pub fn builder_run_criteria(
     ShouldRun::Yes
 }
 
-pub fn builder_ui(
+pub fn builder_ui_system(
     mut egui_context: ResMut<EguiContext>,
     mut builder_ui_state: Local<BuilderUiState>,
     mouse_input: MouseInput<(), ()>,
@@ -343,7 +343,7 @@ pub fn builder_ui(
     });
 }
 
-pub fn process_builder_mouse_input(
+pub fn process_builder_mouse_input_system(
     mut egui_context: ResMut<EguiContext>,
     mut mouse_input: MouseInput<(), ()>,
     mut level_objects: LevelObjects,

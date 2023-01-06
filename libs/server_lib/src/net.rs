@@ -144,7 +144,7 @@ pub struct NetworkParams<'w, 's> {
     persistence_msg_rx: ResMut<'w, PersistenceMessageReceiver>,
 }
 
-pub fn process_network_events(
+pub fn process_network_events_system(
     mut despawned_players_for_handles: Local<HashSet<u32>>,
     time: Res<GameTime>,
     mut players: ResMut<Players>,
@@ -821,7 +821,7 @@ pub struct LevelParams<'w, 's> {
     marker: PhantomData<&'s ()>,
 }
 
-pub fn send_network_updates(
+pub fn send_network_updates_system(
     mut network_params: NetworkParams,
     time: Res<SimulationTime>,
     level_params: LevelParams,

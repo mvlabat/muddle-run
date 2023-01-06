@@ -16,7 +16,7 @@ pub mod player_ui;
 
 mod widgets;
 
-pub fn set_ui_scale_factor(mut egui_settings: ResMut<EguiSettings>, windows: Res<Windows>) {
+pub fn set_ui_scale_factor_system(mut egui_settings: ResMut<EguiSettings>, windows: Res<Windows>) {
     if let Some(window) = windows.get_primary() {
         if window.scale_factor() % 2.0 > 0.0 {
             egui_settings.scale_factor = 1.0 / window.scale_factor();

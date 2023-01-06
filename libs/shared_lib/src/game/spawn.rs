@@ -94,7 +94,7 @@ pub struct PlayerQuery<'w> {
     _tag: Without<PlayerSensor>,
 }
 
-pub fn spawn_players(
+pub fn spawn_players_system(
     mut commands: Commands,
     time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
@@ -258,7 +258,7 @@ pub fn spawn_players(
     }
 }
 
-pub fn despawn_players(
+pub fn despawn_players_system(
     mut commands: Commands,
     time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
@@ -348,7 +348,7 @@ pub struct LevelObjectsParams<'w, 's> {
     level_object_query: Query<'w, 's, UpdateLevelObjectQuery<'static>>,
 }
 
-pub fn update_level_objects(
+pub fn update_level_objects_system(
     mut commands: Commands,
     time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
@@ -533,7 +533,7 @@ type GhostEntites = Option<(
     &'static LevelObjectServerGhostChild,
 )>;
 
-pub fn poll_calculating_shapes(
+pub fn poll_calculating_shapes_system(
     mut commands: Commands,
     time: Res<GameTime>,
     level_state: Res<LevelState>,
@@ -654,7 +654,7 @@ fn insert_client_components(
     };
 }
 
-pub fn despawn_level_objects(
+pub fn despawn_level_objects_system(
     mut commands: Commands,
     time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
@@ -757,7 +757,7 @@ pub fn despawn_level_objects(
     }
 }
 
-pub fn process_spawned_entities(
+pub fn process_spawned_entities_system(
     mut commands: Commands,
     game_time: Res<GameTime>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,

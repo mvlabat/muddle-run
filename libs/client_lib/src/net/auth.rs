@@ -219,7 +219,7 @@ pub struct PendingOAuthRequest {
     redirect_uri: String,
 }
 
-pub fn read_offline_auth_config(mut offline_auth_config: ResMut<OfflineAuthConfig>) {
+pub fn read_offline_auth_config_system(mut offline_auth_config: ResMut<OfflineAuthConfig>) {
     let config: OfflineAuthConfig = match config_storage::read(AUTH_CONFIG_KEY) {
         Ok(config) => config,
         Err(err) => {

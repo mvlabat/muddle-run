@@ -198,7 +198,7 @@ pub fn init_jwks_polling(config: Option<Res<PersistenceConfig>>, jwks: Res<Jwks>
     TOKIO.spawn(poll_jwks(client, auth0_certs_url, jwks));
 }
 
-pub fn save_level(
+pub fn save_level_system(
     mut last_sent: Local<Option<Instant>>,
     request_tx: Res<PersistenceRequestSender>,
     fetched_level_info: Option<Res<FetchedLevelInfo>>,

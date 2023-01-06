@@ -39,7 +39,7 @@ pub struct CollisionQueries<'w, 's> {
 }
 
 /// The system returns player entities whose intersections were changed.
-pub fn process_collision_events(
+pub fn process_collision_events_system(
     time: Res<SimulationTime>,
     mut collision_events: EventReader<CollisionEvent>,
     mut collision_logic_changed_events: EventReader<CollisionLogicChanged>,
@@ -183,7 +183,7 @@ pub fn process_collision_events(
     changed_players.into_iter().collect()
 }
 
-pub fn process_players_with_new_collisions(
+pub fn process_players_with_new_collisions_system(
     In(players_with_new_collisions): In<Vec<Entity>>,
     time: Res<SimulationTime>,
     players: Query<(&Position, Option<&PlayerFrameSimulated>, &PlayerSensors)>,

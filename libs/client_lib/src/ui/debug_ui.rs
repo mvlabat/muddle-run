@@ -63,7 +63,7 @@ pub struct DebugUiState {
     pub jitter_millis: usize,
 }
 
-pub fn update_debug_visibility(
+pub fn update_debug_visibility_system(
     mut debug_ui_was_shown: Local<bool>,
     debug_ui_state: Res<DebugUiState>,
     mut visibility_settings: ResMut<VisibilitySettings>,
@@ -78,7 +78,10 @@ pub fn update_debug_visibility(
     *debug_ui_was_shown = debug_ui_state.show;
 }
 
-pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_data: DebugData) {
+pub fn update_debug_ui_state_system(
+    mut debug_ui_state: ResMut<DebugUiState>,
+    debug_data: DebugData,
+) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
     if debug_ui_state.pause {
@@ -99,7 +102,7 @@ pub fn update_debug_ui_state(mut debug_ui_state: ResMut<DebugUiState>, debug_dat
     debug_ui_state.jitter_millis = debug_data.connection_state.jitter_millis() as usize;
 }
 
-pub fn profiler_ui(
+pub fn profiler_ui_system(
     // ResMut is intentional, to avoid fighting over the Mutex from different systems.
     mut egui_context: ResMut<EguiContext>,
     debug_ui_state: Res<DebugUiState>,
@@ -120,7 +123,7 @@ pub fn profiler_ui(
         });
 }
 
-pub fn debug_ui(
+pub fn debug_ui_system(
     // ResMut is intentional, to avoid fighting over the Mutex from different systems.
     mut egui_context: ResMut<EguiContext>,
     mut debug_ui_state: ResMut<DebugUiState>,
@@ -221,7 +224,7 @@ pub struct InspectObjectQueries<'w, 's> {
     static_ghosts: Query<'w, 's, &'static LevelObjectStaticGhostParent>,
 }
 
-pub fn inspect_object(
+pub fn inspect_object_system(
     // ResMut is intentional, to avoid fighting over the Mutex from different systems.
     debug_ui_state: Res<DebugUiState>,
     mut egui_context: ResMut<EguiContext>,

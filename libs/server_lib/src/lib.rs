@@ -5,20 +5,20 @@ pub use crate::net::watch_agones_updates;
 pub use mr_shared_lib::{game::PlayerEventSender, player::PlayerEvent};
 
 use crate::{
-    game_events::{process_player_events, process_scheduled_spawns},
+    game_events::{process_player_events_system, process_scheduled_spawns_system},
     net::{
-        process_network_events, send_network_updates, startup, ConnectionStates, FetchedLevelInfo,
-        NewPlayerConnections, PlayerConnections,
+        process_network_events_system, send_network_updates_system, startup, ConnectionStates,
+        FetchedLevelInfo, NewPlayerConnections, PlayerConnections,
     },
     persistence::{
         create_level, get_user, handle_persistence_requests, init_jwks_polling, load_level,
-        save_level, InitLevelObjects, Jwks, PersistenceConfig, PersistenceMessage,
+        save_level_system, InitLevelObjects, Jwks, PersistenceConfig, PersistenceMessage,
         PersistenceRequest,
     },
     player_updates::{
-        process_despawn_level_object_requests, process_player_input_updates,
-        process_spawn_level_object_requests, process_switch_role_requests,
-        process_update_level_object_requests,
+        process_despawn_level_object_requests_system, process_player_input_updates_system,
+        process_spawn_level_object_requests_system, process_switch_role_requests_system,
+        process_update_level_object_requests_system,
     },
 };
 use bevy::{
@@ -157,20 +157,26 @@ impl Plugin for MuddleServerPlugin {
         app.add_system(process_idle_timeout);
 
         let input_stage = SystemStage::parallel()
-            .with_system(process_scheduled_spawns)
-            .with_system(process_network_events)
-            .with_system(process_player_input_updates.after(process_network_events))
-            .with_system(process_switch_role_requests.after(process_network_events))
+            .with_system(process_scheduled_spawns_system)
+            .with_system(process_network_events_system)
+            .with_system(process_player_input_updates_system.after(process_network_events_system))
+            .with_system(process_switch_role_requests_system.after(process_network_events_system))
             // It's ok to run the following in random order since object updates aren't possible
             // on the client before an authoritative confirmation that an object has been spawned.
-            .with_system(process_spawn_level_object_requests.after(process_network_events))
-            .with_system(process_update_level_object_requests.after(process_network_events))
-            .with_system(process_despawn_level_object_requests.after(process_network_events));
+            .with_system(
+                process_spawn_level_object_requests_system.after(process_network_events_system),
+            )
+            .with_system(
+                process_update_level_object_requests_system.after(process_network_events_system),
+            )
+            .with_system(
+                process_despawn_level_object_requests_system.after(process_network_events_system),
+            );
         let post_game_stage = SystemStage::single_threaded()
-            .with_system(process_player_events)
-            .with_system(save_level);
+            .with_system(process_player_events_system)
+            .with_system(save_level_system);
         let broadcast_updates_stage =
-            SystemStage::single_threaded().with_system(send_network_updates);
+            SystemStage::single_threaded().with_system(send_network_updates_system);
 
         // Game.
         app.add_plugin(MuddleSharedPlugin::new(

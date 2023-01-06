@@ -410,7 +410,7 @@ impl Acknowledgment {
     }
 }
 
-pub fn network_setup(mut net: NonSendMut<NetworkResource>) {
+pub fn network_setup_system(mut net: NonSendMut<NetworkResource>) {
     net.set_channels_builder(|builder: &mut ConnectionChannelsBuilder| {
         builder
             .register::<Message<UnreliableClientMessage>>(CLIENT_INPUT_MESSAGE_SETTINGS)

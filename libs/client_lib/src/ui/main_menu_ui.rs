@@ -313,7 +313,7 @@ pub struct UiContext<'w, 's> {
     _marker: PhantomData<&'s ()>,
 }
 
-pub fn main_menu_ui(
+pub fn main_menu_ui_system(
     mut main_menu_ui_state: Local<MainMenuUiState>,
     mut ui_context: UiContext,
     matchmaker_state: Option<ResMut<MatchmakerState>>,

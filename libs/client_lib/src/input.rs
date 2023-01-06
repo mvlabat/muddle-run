@@ -90,7 +90,7 @@ pub struct UiParams<'w, 's> {
     marker: PhantomData<&'s ()>,
 }
 
-pub fn track_input_events(
+pub fn track_input_events_system(
     mut input_events: InputEvents,
     time: Res<GameTime>,
     mut ui_params: UiParams,
@@ -181,7 +181,7 @@ pub fn track_input_events(
     }
 }
 
-pub fn cast_mouse_ray(
+pub fn cast_mouse_ray_system(
     windows: Res<Windows>,
     mouse_position: Res<MouseScreenPosition>,
     main_camera_entity: Res<MainCameraEntity>,

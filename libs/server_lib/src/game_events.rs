@@ -16,7 +16,7 @@ use mr_shared_lib::{
     SimulationTime,
 };
 
-pub fn process_player_events(
+pub fn process_player_events_system(
     time: Res<SimulationTime>,
     mut player_finish_events: EventReader<PlayerFinish>,
     mut player_death_events: EventReader<PlayerDeath>,
@@ -71,7 +71,7 @@ pub fn process_player_events(
     }
 }
 
-pub fn process_scheduled_spawns(
+pub fn process_scheduled_spawns_system(
     time: Res<SimulationTime>,
     level_spawn_location_service: LevelSpawnLocationService,
     mut spawn_players_commands: ResMut<DeferredQueue<commands::SpawnPlayer>>,
