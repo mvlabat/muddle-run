@@ -14,6 +14,7 @@ use bevy::{
     ecs::{
         entity::Entity,
         event::{EventReader, EventWriter},
+        query::QueryEntityError,
         system::{In, Query, RemovedComponents, Res, SystemParam},
     },
     log,
@@ -34,6 +35,7 @@ pub struct CollisionQueries<'w, 's> {
         ),
     >,
     player_sensors: Query<'w, 's, (Entity, &'static PlayerSensor)>,
+    all_entities: Query<'w, 's, Entity>,
 }
 
 /// The system returns player entities whose intersections were changed.
@@ -54,6 +56,13 @@ pub fn process_collision_events(
             CollisionEvent::Started(e1, e2, _flags) => (true, *e1, *e2),
             CollisionEvent::Stopped(e1, e2, _flags) => (false, *e1, *e2),
         };
+        if let Err(QueryEntityError::NoSuchEntity(e)) =
+            queries.all_entities.get_many([entity1, entity2])
+        {
+            // This is a valid case, happens when the game is restarted.
+            log::debug!("Entity {e:?} doesn't exists, skipping the collision event {event:?}");
+            continue;
+        }
 
         if let Some(LevelObjectServerGhostParent(level_object_entity)) =
             get_item(&level_object_server_ghost_parents, entity1)
@@ -73,11 +82,7 @@ pub fn process_collision_events(
             (Some(level_object), None) => (entity1, level_object, entity2),
             (None, Some(level_object)) => (entity2, level_object, entity1),
             _ => {
-                log::error!(
-                    "None of the intersected entities is a level object: {:?}, {:?}",
-                    entity1,
-                    entity2
-                );
+                log::error!("None of the intersected entities is a level object: {event:?}");
                 continue;
             }
         };
