@@ -58,7 +58,7 @@ mod net;
 mod persistence;
 mod player_updates;
 
-pub const DEFAULT_IDLE_TIMEOUT: u64 = 300_000;
+pub const DEFAULT_IDLE_TIMEOUT_MILLIS: u64 = 300_000;
 
 #[derive(Resource)]
 pub struct Agones {
@@ -209,9 +209,9 @@ impl Plugin for MuddleServerPlugin {
                     .unwrap_or_else(|| {
                         log::info!(
                             "Using the default value for MUDDLE_IDLE_TIMEOUT: {}",
-                            DEFAULT_IDLE_TIMEOUT
+                            DEFAULT_IDLE_TIMEOUT_MILLIS
                         );
-                        Duration::from_millis(DEFAULT_IDLE_TIMEOUT)
+                        Duration::from_millis(DEFAULT_IDLE_TIMEOUT_MILLIS)
                     }),
             )
         });

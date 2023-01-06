@@ -382,7 +382,7 @@ pub fn process_network_events(
                         if let Err(err) = connection_state
                             .apply_outgoing_acknowledgements(frame_number, ack_bit_set)
                         {
-                            log::debug!(
+                            log::trace!(
                                 "Failed to apply outgoing packet acknowledgments (player: {}, update frame: {}, current frame: {}): {:?}",
                                 player_net_id.0,
                                 update.frame_number,
@@ -717,7 +717,7 @@ fn disconnect_players(
                     .set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
             }
         } else if Instant::now().duration_since(connection_state.status_updated_at())
-            > Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
+            > Duration::from_millis(CONNECTION_TIMEOUT_MILLIS)
         {
             // Disconnect players that haven't sent any updates at all (they are likely
             // in the `Connecting` or `Handshaking` status) if they are staying in this
@@ -729,7 +729,7 @@ fn disconnect_players(
         // Disconnecting players that haven't sent any message for
         // `CONNECTION_TIMEOUT_MILLIS`.
         if Instant::now().duration_since(connection_state.last_valid_message_received_at)
-            > Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
+            > Duration::from_millis(CONNECTION_TIMEOUT_MILLIS)
         {
             log::warn!("Disconnecting {}: idle", handle);
             connection_state.set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
@@ -1169,7 +1169,7 @@ fn create_player_state(
         .get_with_extrapolation(updates_start_frame)
         .map(|(_frame_number, direction)| *direction)
         .unwrap_or_else(|| {
-            log::debug!(
+            log::trace!(
                 "Missing updates for Player {} (updates start frame: {}, last player direction frame: {:?})",
                 net_id.0,
                 updates_start_frame,

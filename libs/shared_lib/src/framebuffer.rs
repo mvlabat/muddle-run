@@ -261,7 +261,7 @@ impl<T> Framebuffer<Option<T>> {
                 )
             });
         if result.is_none() {
-            log::warn!(
+            log::trace!(
                 "No value found to extrapolate for frame {} (start_frame: {}, limit: {})",
                 frame_number.value(),
                 self.start_frame.value(),
