@@ -335,7 +335,10 @@ pub fn process_network_events(
             ) {
                 (Some(id), Some(connection_state)) => (id, connection_state),
                 _ => {
-                    log::error!("A player for handle {} is not registered", handle);
+                    log::debug!(
+                        "A player for handle {handle} is not registered, ignoring {:?}",
+                        &client_message.message
+                    );
                     break;
                 }
             };

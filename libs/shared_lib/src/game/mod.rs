@@ -59,6 +59,7 @@ pub fn restart_game(world: &mut World) {
 
     let mut entities_to_despawn = Vec::new();
 
+    // Drop players.
     let mut player_registry = world
         .get_resource_mut::<EntityRegistry<PlayerNetId>>()
         .unwrap();
@@ -72,6 +73,7 @@ pub fn restart_game(world: &mut World) {
     }
     player_registry.clear();
 
+    // Drop player sensors.
     for player_sensor_entity in world
         .query_filtered::<Entity, With<PlayerSensor>>()
         .iter(world)
@@ -79,6 +81,7 @@ pub fn restart_game(world: &mut World) {
         entities_to_despawn.push(player_sensor_entity);
     }
 
+    // Drop level objects.
     for (net_id, object_entity) in world
         .get_resource::<EntityRegistry<EntityNetId>>()
         .unwrap()
@@ -91,6 +94,7 @@ pub fn restart_game(world: &mut World) {
             net_id.0
         );
         entities_to_despawn.push(*object_entity);
+        // Clean up custom meshes.
         #[cfg(feature = "client")]
         {
             let handle = world
@@ -109,6 +113,7 @@ pub fn restart_game(world: &mut World) {
         .unwrap()
         .clear();
 
+    // Drop static ghosts of level objects.
     for static_ghost_entity in world
         .query_filtered::<Entity, With<LevelObjectStaticGhostParent>>()
         .iter(world)
@@ -116,6 +121,7 @@ pub fn restart_game(world: &mut World) {
         entities_to_despawn.push(static_ghost_entity);
     }
 
+    // Drop server ghosts of level objects.
     for server_ghost_entity in world
         .query_filtered::<Entity, With<LevelObjectServerGhostParent>>()
         .iter(world)
