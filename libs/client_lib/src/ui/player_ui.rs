@@ -101,14 +101,23 @@ pub fn leaderboard_ui(
                                 (_, _, Some((_, RespawnPlayerReason::Death))) => "💀",
                                 _ => "",
                             };
-                        ui.label(player_status_icon);
-                        if player_params.current_player_net_id.0 == Some(*net_id) {
-                            ui.add(egui::Label::new(egui::RichText::new(&player.nickname)));
-                        } else {
-                            ui.label(&player.nickname);
+
+                        let columns = [
+                            egui::RichText::new(player_status_icon),
+                            egui::RichText::new(&player.nickname),
+                            egui::RichText::new(format!("{}", player.finishes)),
+                            egui::RichText::new(format!("{}", player.deaths)),
+                        ];
+
+                        for column in columns {
+                            let label = if player_params.current_player_net_id.0 == Some(*net_id) {
+                                column.strong()
+                            } else {
+                                column
+                            };
+                            ui.add(egui::Label::new(label));
                         }
-                        ui.label(format!("{}", player.finishes));
-                        ui.label(format!("{}", player.deaths));
+
                         ui.label("");
                         ui.end_row();
                     }
