@@ -29,7 +29,7 @@ rand = "0.8.4"
 serde = "1.0"
 serde_json = "1.0"
 thiserror = "1.0.30"
-tokio = { version = "1.21", features = ["sync"] }
+tokio = { version = "1.24", features = ["sync"] }
 
 [dev-dependencies]
 bevy_disturbulence = { git = "https://github.com/mvlabat/bevy_disturbulence.git", branch = "wip", features = ["server"] } # for being able to run the tests
