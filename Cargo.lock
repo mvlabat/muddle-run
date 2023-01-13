@@ -729,11 +729,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd4c06a380d02588eac43f8a56d2d370614fe6b2e7467041e57b064e93ec7620"
 dependencies = [
  "bevy",
- "bevy-inspector-egui-derive",
+ "bevy-inspector-egui-derive 0.15.0",
  "bevy_egui",
  "image 0.24.5",
  "nalgebra",
  "pretty-type-name",
+]
+
+[[package]]
+name = "bevy-inspector-egui"
+version = "0.16.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d57e85cf3aed73e4f8e5d06aab17966f0f4adc61c325e4e15878c55c74ed3b5"
+dependencies = [
+ "bevy-inspector-egui-derive 0.16.1",
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_asset 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_core 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_core_pipeline 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_egui",
+ "bevy_hierarchy 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_log 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_math 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_pbr 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_render 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "egui",
+ "image 0.24.5",
+ "once_cell",
+ "pretty-type-name",
+ "smallvec",
 ]
 
 [[package]]
@@ -748,13 +775,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy-inspector-egui-derive"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8927db6cc2e377e3148ab6cc8404c4d4af45ed93bc30acfbcca2404edccde9fb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "bevy-inspector-egui-rapier"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61093d6ab0ae326c80ddc12c13a540f3bee247b2e214f2f39a8147124f5a09c0"
 dependencies = [
  "bevy",
- "bevy-inspector-egui",
+ "bevy-inspector-egui 0.15.0",
  "bevy_rapier2d",
 ]
 
@@ -763,16 +801,31 @@ name = "bevy_animation"
 version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_asset",
- "bevy_core",
- "bevy_ecs",
- "bevy_hierarchy",
- "bevy_math",
- "bevy_reflect",
- "bevy_time",
- "bevy_transform",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_core 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_hierarchy 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_time 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_transform 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+]
+
+[[package]]
+name = "bevy_app"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "536e4d0018347478545ed8b6cb6e57b9279ee984868e81b7c0e78e0fb3222e42"
+dependencies = [
+ "bevy_derive 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "downcast-rs",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -780,12 +833,39 @@ name = "bevy_app"
 version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_derive",
- "bevy_ecs",
- "bevy_reflect",
- "bevy_utils",
+ "bevy_derive 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "downcast-rs",
  "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "bevy_asset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6db1bb550168304df69c867c09125e1aae7ff51cf21575396e1598bf293442c4"
+dependencies = [
+ "anyhow",
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_diagnostic 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_log 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_tasks 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "crossbeam-channel",
+ "downcast-rs",
+ "fastrand",
+ "js-sys",
+ "ndk-glue",
+ "parking_lot 0.12.1",
+ "serde",
+ "thiserror",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 
@@ -795,13 +875,13 @@ version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
  "anyhow",
- "bevy_app",
- "bevy_diagnostic",
- "bevy_ecs",
- "bevy_log",
- "bevy_reflect",
- "bevy_tasks",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_diagnostic 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_log 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_tasks 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "crossbeam-channel",
  "downcast-rs",
  "fastrand",
@@ -822,11 +902,11 @@ version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
  "anyhow",
- "bevy_app",
- "bevy_asset",
- "bevy_ecs",
- "bevy_reflect",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "parking_lot 0.12.1",
  "rodio",
 ]
@@ -834,15 +914,50 @@ dependencies = [
 [[package]]
 name = "bevy_core"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96299aceb3c8362cb4aa39ff81c7ef758a5f4e768d16b5046a91628eff114ac0"
+dependencies = [
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_math 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_tasks 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bytemuck",
+]
+
+[[package]]
+name = "bevy_core"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_ecs",
- "bevy_math",
- "bevy_reflect",
- "bevy_tasks",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_tasks 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bytemuck",
+]
+
+[[package]]
+name = "bevy_core_pipeline"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc128a9860aadf16fb343ae427f2768986fd91dce64d945455acda9759c48014"
+dependencies = [
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_asset 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_derive 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_math 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_render 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_transform 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bitflags",
+ "radsort",
+ "serde",
 ]
 
 [[package]]
@@ -850,15 +965,15 @@ name = "bevy_core_pipeline"
 version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_asset",
- "bevy_derive",
- "bevy_ecs",
- "bevy_math",
- "bevy_reflect",
- "bevy_render",
- "bevy_transform",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_derive 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_render 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_transform 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bitflags",
  "radsort",
  "serde",
@@ -867,9 +982,20 @@ dependencies = [
 [[package]]
 name = "bevy_derive"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7baf73c58d41c353c6fd08e6764a2e7420c9f19e8227b391c50981db6d0282a6"
+dependencies = [
+ "bevy_macro_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "bevy_derive"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "quote",
  "syn",
 ]
@@ -877,14 +1003,28 @@ dependencies = [
 [[package]]
 name = "bevy_diagnostic"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63bf96ec7980fa25b77ff6c72dfafada477936c0dab76c1edf6c028c0e5fe0e4"
+dependencies = [
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_core 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_log 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_time 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "bevy_diagnostic"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_core",
- "bevy_ecs",
- "bevy_log",
- "bevy_time",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_core 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_log 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_time 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
 ]
 
 [[package]]
@@ -908,14 +1048,34 @@ dependencies = [
 [[package]]
 name = "bevy_ecs"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4c071d7c6bc9801253485e05d0c257284150de755391902746837ba21c0cf74"
+dependencies = [
+ "async-channel",
+ "bevy_ecs_macros 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ptr 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_tasks 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "downcast-rs",
+ "event-listener",
+ "fixedbitset",
+ "fxhash",
+ "serde",
+ "thread_local",
+]
+
+[[package]]
+name = "bevy_ecs"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
  "async-channel",
- "bevy_ecs_macros",
- "bevy_ptr",
- "bevy_reflect",
- "bevy_tasks",
- "bevy_utils",
+ "bevy_ecs_macros 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ptr 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_tasks 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "downcast-rs",
  "event-listener",
  "fixedbitset",
@@ -928,9 +1088,21 @@ dependencies = [
 [[package]]
 name = "bevy_ecs_macros"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c15bd45438eeb681ad74f2d205bb07a5699f98f9524462a30ec764afab2742ce"
+dependencies = [
+ "bevy_macro_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "bevy_ecs_macros"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "proc-macro2",
  "quote",
  "syn",
@@ -952,9 +1124,19 @@ dependencies = [
 [[package]]
 name = "bevy_encase_derive"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "962b6bb0d30e92ec2e6c29837acce9e55b920733a634e7c3c5fd5a514bea7a24"
+dependencies = [
+ "bevy_macro_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "encase_derive_impl",
+]
+
+[[package]]
+name = "bevy_encase_derive"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "encase_derive_impl",
 ]
 
@@ -963,10 +1145,10 @@ name = "bevy_gilrs"
 version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_ecs",
- "bevy_input",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_input 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "gilrs",
 ]
 
@@ -978,21 +1160,21 @@ dependencies = [
  "anyhow",
  "base64 0.13.1",
  "bevy_animation",
- "bevy_app",
- "bevy_asset",
- "bevy_core",
- "bevy_core_pipeline",
- "bevy_ecs",
- "bevy_hierarchy",
- "bevy_log",
- "bevy_math",
- "bevy_pbr",
- "bevy_reflect",
- "bevy_render",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_core 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_core_pipeline 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_hierarchy 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_log 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_pbr 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_render 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bevy_scene",
- "bevy_tasks",
- "bevy_transform",
- "bevy_utils",
+ "bevy_tasks 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_transform 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "gltf",
  "percent-encoding",
  "thiserror",
@@ -1001,15 +1183,44 @@ dependencies = [
 [[package]]
 name = "bevy_hierarchy"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8dd6d50c48c6e1bcb5e08a768b765323292bb3bf3a439b992754c57ffb85b23a"
+dependencies = [
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_core 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_log 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "smallvec",
+]
+
+[[package]]
+name = "bevy_hierarchy"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_core",
- "bevy_ecs",
- "bevy_log",
- "bevy_reflect",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_core 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_log 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "smallvec",
+]
+
+[[package]]
+name = "bevy_input"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3378b5171284f4c4c0e8307081718a9fe458f846444616bd82d69110dcabca51"
+dependencies = [
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_math 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "thiserror",
 ]
 
 [[package]]
@@ -1017,11 +1228,11 @@ name = "bevy_input"
 version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_ecs",
- "bevy_math",
- "bevy_reflect",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "thiserror",
 ]
 
@@ -1031,35 +1242,51 @@ version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
  "bevy_animation",
- "bevy_app",
- "bevy_asset",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bevy_audio",
- "bevy_core",
- "bevy_core_pipeline",
- "bevy_derive",
- "bevy_diagnostic",
- "bevy_ecs",
+ "bevy_core 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_core_pipeline 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_derive 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_diagnostic 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bevy_gilrs",
  "bevy_gltf",
- "bevy_hierarchy",
- "bevy_input",
- "bevy_log",
- "bevy_math",
- "bevy_pbr",
- "bevy_ptr",
- "bevy_reflect",
- "bevy_render",
+ "bevy_hierarchy 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_input 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_log 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_pbr 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ptr 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_render 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bevy_scene",
  "bevy_sprite",
- "bevy_tasks",
+ "bevy_tasks 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bevy_text",
- "bevy_time",
- "bevy_transform",
+ "bevy_time 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_transform 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bevy_ui",
- "bevy_utils",
- "bevy_window",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_window 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bevy_winit",
  "ndk-glue",
+]
+
+[[package]]
+name = "bevy_log"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c480bac54cf4ae76edc3ae9ae3fa7c5e1b385e7f2111ef5ec3fd00cf3a7998b"
+dependencies = [
+ "android_log-sys",
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "console_error_panic_hook",
+ "tracing-log",
+ "tracing-subscriber",
+ "tracing-wasm",
 ]
 
 [[package]]
@@ -1068,14 +1295,25 @@ version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
  "android_log-sys",
- "bevy_app",
- "bevy_ecs",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "console_error_panic_hook",
  "tracing-error",
  "tracing-log",
  "tracing-subscriber",
  "tracing-wasm",
+]
+
+[[package]]
+name = "bevy_macro_utils"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "022bb69196deeea691b6997414af85bbd7f2b34a8914c4aa7a7ff4dfa44f7677"
+dependencies = [
+ "quote",
+ "syn",
+ "toml",
 ]
 
 [[package]]
@@ -1091,10 +1329,29 @@ dependencies = [
 [[package]]
 name = "bevy_math"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d434c77ab766c806ed9062ef8a7285b3b02b47df51f188d4496199c3ac062eaf"
+dependencies = [
+ "glam",
+ "serde",
+]
+
+[[package]]
+name = "bevy_math"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
  "glam",
  "serde",
+]
+
+[[package]]
+name = "bevy_mikktspace"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfb5908d33fd613069be516180b8f138aaaf6e41c36b1fd98c6c29c00c24a13"
+dependencies = [
+ "glam",
 ]
 
 [[package]]
@@ -1127,23 +1384,51 @@ dependencies = [
 [[package]]
 name = "bevy_pbr"
 version = "0.9.1"
-source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "310b1f260a475d81445623e138e1b7245759a42310bc1f84b550a3f4ff8763bf"
 dependencies = [
- "bevy_app",
- "bevy_asset",
- "bevy_core_pipeline",
- "bevy_derive",
- "bevy_ecs",
- "bevy_math",
- "bevy_reflect",
- "bevy_render",
- "bevy_transform",
- "bevy_utils",
- "bevy_window",
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_asset 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_core_pipeline 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_derive 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_math 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_render 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_transform 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_window 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitflags",
  "bytemuck",
  "radsort",
 ]
+
+[[package]]
+name = "bevy_pbr"
+version = "0.9.1"
+source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
+dependencies = [
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_core_pipeline 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_derive 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_render 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_transform 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_window 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bitflags",
+ "bytemuck",
+ "radsort",
+]
+
+[[package]]
+name = "bevy_ptr"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ec44f7655039546bc5d34d98de877083473f3e9b2b81d560c528d6d74d3eff4"
 
 [[package]]
 name = "bevy_ptr"
@@ -1182,12 +1467,32 @@ dependencies = [
 [[package]]
 name = "bevy_reflect"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6deae303a7f69dc243b2fa35b5e193cc920229f448942080c8eb2dbd9de6d37a"
+dependencies = [
+ "bevy_math 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ptr 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect_derive 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "downcast-rs",
+ "erased-serde",
+ "glam",
+ "once_cell",
+ "parking_lot 0.12.1",
+ "serde",
+ "smallvec",
+ "thiserror",
+]
+
+[[package]]
+name = "bevy_reflect"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_math",
- "bevy_ptr",
- "bevy_reflect_derive",
- "bevy_utils",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ptr 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect_derive 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "downcast-rs",
  "erased-serde",
  "glam",
@@ -1201,9 +1506,23 @@ dependencies = [
 [[package]]
 name = "bevy_reflect_derive"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bf4cb9cd5acb4193f890f36cb63679f1502e2de025e66a63b194b8b133d018"
+dependencies = [
+ "bevy_macro_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bit-set",
+ "proc-macro2",
+ "quote",
+ "syn",
+ "uuid 1.2.2",
+]
+
+[[package]]
+name = "bevy_reflect_derive"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bit-set",
  "proc-macro2",
  "quote",
@@ -1214,25 +1533,67 @@ dependencies = [
 [[package]]
 name = "bevy_render"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e3282a8f8779d2aced93207fbed73f740937c6c2bd27bd84f0799b081c7fca5"
+dependencies = [
+ "anyhow",
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_asset 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_core 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_derive 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_encase_derive 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_hierarchy 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_log 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_math 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_mikktspace 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_render_macros 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_time 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_transform 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_window 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bitflags",
+ "codespan-reporting",
+ "downcast-rs",
+ "encase",
+ "futures-lite",
+ "hex",
+ "hexasphere",
+ "image 0.24.5",
+ "naga",
+ "once_cell",
+ "parking_lot 0.12.1",
+ "regex",
+ "serde",
+ "smallvec",
+ "thiserror",
+ "thread_local",
+ "wgpu",
+]
+
+[[package]]
+name = "bevy_render"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
  "anyhow",
- "bevy_app",
- "bevy_asset",
- "bevy_core",
- "bevy_derive",
- "bevy_ecs",
- "bevy_encase_derive",
- "bevy_hierarchy",
- "bevy_log",
- "bevy_math",
- "bevy_mikktspace",
- "bevy_reflect",
- "bevy_render_macros",
- "bevy_time",
- "bevy_transform",
- "bevy_utils",
- "bevy_window",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_core 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_derive 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_encase_derive 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_hierarchy 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_log 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_mikktspace 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_render_macros 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_time 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_transform 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_window 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bitflags",
  "codespan-reporting",
  "downcast-rs",
@@ -1256,9 +1617,21 @@ dependencies = [
 [[package]]
 name = "bevy_render_macros"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7acae697776ac05bea523e1725cf2660c91c53abe72c66782ea1e1b9eedb572"
+dependencies = [
+ "bevy_macro_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "bevy_render_macros"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "proc-macro2",
  "quote",
  "syn",
@@ -1270,15 +1643,15 @@ version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
  "anyhow",
- "bevy_app",
- "bevy_asset",
- "bevy_derive",
- "bevy_ecs",
- "bevy_hierarchy",
- "bevy_reflect",
- "bevy_render",
- "bevy_transform",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_derive 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_hierarchy 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_render 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_transform 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "ron",
  "serde",
  "thiserror",
@@ -1290,23 +1663,38 @@ name = "bevy_sprite"
 version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_asset",
- "bevy_core_pipeline",
- "bevy_derive",
- "bevy_ecs",
- "bevy_log",
- "bevy_math",
- "bevy_reflect",
- "bevy_render",
- "bevy_transform",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_core_pipeline 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_derive 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_log 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_render 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_transform 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bitflags",
  "bytemuck",
  "fixedbitset",
  "guillotiere",
  "rectangle-pack",
  "thiserror",
+]
+
+[[package]]
+name = "bevy_tasks"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "680b16b53df9c9f24681dd95f4d772d83760bd19adf8bca00f358a3aad997853"
+dependencies = [
+ "async-channel",
+ "async-executor",
+ "async-task",
+ "concurrent-queue 1.2.4",
+ "futures-lite",
+ "once_cell",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -1330,16 +1718,16 @@ source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9be
 dependencies = [
  "ab_glyph",
  "anyhow",
- "bevy_app",
- "bevy_asset",
- "bevy_ecs",
- "bevy_math",
- "bevy_reflect",
- "bevy_render",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_render 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bevy_sprite",
- "bevy_transform",
- "bevy_utils",
- "bevy_window",
+ "bevy_transform 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_window 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "glyph_brush_layout",
  "serde",
  "thiserror",
@@ -1348,13 +1736,39 @@ dependencies = [
 [[package]]
 name = "bevy_time"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a5c38a6d3ea929c7f81e6adf5a6c62cf7e8c40f5106c2174d6057e9d8ea624d"
+dependencies = [
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "crossbeam-channel",
+]
+
+[[package]]
+name = "bevy_time"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_ecs",
- "bevy_reflect",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "crossbeam-channel",
+]
+
+[[package]]
+name = "bevy_transform"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba13c57a040b89767191a6f6d720a635b7792793628bfa41a9e38b7026484aec"
+dependencies = [
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_hierarchy 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_math 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1362,11 +1776,11 @@ name = "bevy_transform"
 version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_ecs",
- "bevy_hierarchy",
- "bevy_math",
- "bevy_reflect",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_hierarchy 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
 ]
 
 [[package]]
@@ -1374,27 +1788,41 @@ name = "bevy_ui"
 version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_asset",
- "bevy_core_pipeline",
- "bevy_derive",
- "bevy_ecs",
- "bevy_hierarchy",
- "bevy_input",
- "bevy_log",
- "bevy_math",
- "bevy_reflect",
- "bevy_render",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_asset 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_core_pipeline 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_derive 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_hierarchy 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_input 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_log 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_render 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bevy_sprite",
  "bevy_text",
- "bevy_transform",
- "bevy_utils",
- "bevy_window",
+ "bevy_transform 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_window 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "bytemuck",
  "serde",
  "smallvec",
  "taffy",
  "thiserror",
+]
+
+[[package]]
+name = "bevy_utils"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16750aae52cd35bd7b60eb61cee883420b250e11b4a290b8d44b2b2941795739"
+dependencies = [
+ "ahash 0.7.6",
+ "getrandom 0.2.8",
+ "hashbrown",
+ "instant",
+ "tracing",
+ "uuid 1.2.2",
 ]
 
 [[package]]
@@ -1413,14 +1841,29 @@ dependencies = [
 [[package]]
 name = "bevy_window"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a44d3f3bd54a2261f4f57f614bf7bccc8d2832761493c0cd7dab81d98cc151e"
+dependencies = [
+ "bevy_app 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_input 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_math 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_reflect 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_utils 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "raw-window-handle 0.5.0",
+]
+
+[[package]]
+name = "bevy_window"
+version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
- "bevy_app",
- "bevy_ecs",
- "bevy_input",
- "bevy_math",
- "bevy_reflect",
- "bevy_utils",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_input 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_reflect 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "raw-window-handle 0.5.0",
 ]
 
@@ -1430,12 +1873,12 @@ version = "0.9.1"
 source = "git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run#2f9bec3b26b7f14c8f3ce1023238c2b77841f56a"
 dependencies = [
  "approx",
- "bevy_app",
- "bevy_ecs",
- "bevy_input",
- "bevy_math",
- "bevy_utils",
- "bevy_window",
+ "bevy_app 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_ecs 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_input 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_math 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_utils 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
+ "bevy_window 0.9.1 (git+https://github.com/mvlabat/bevy.git?branch=v0.9.1/muddle-run)",
  "crossbeam-channel",
  "raw-window-handle 0.5.0",
  "wasm-bindgen",
@@ -4220,7 +4663,7 @@ dependencies = [
  "anyhow",
  "base64 0.20.0",
  "bevy",
- "bevy-inspector-egui",
+ "bevy-inspector-egui 0.16.6",
  "bevy-inspector-egui-rapier",
  "bevy_disturbulence",
  "bevy_egui",
