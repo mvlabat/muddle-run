@@ -16,7 +16,7 @@ anyhow = "1.0"
 base64 = "0.20.0-alpha.1"
 bevy = "0.9.1"
 bevy_egui = "0.18"
-bevy-inspector-egui = "0.15.0"
+bevy-inspector-egui = "0.17.0"
 bevy-inspector-egui-rapier = { version = "0.9", features = ["rapier2d"] }
 bevy_mod_picking = "0.11"
 bevy_disturbulence = { git = "https://github.com/mvlabat/bevy_disturbulence.git", branch = "wip", features = ["client"] }
