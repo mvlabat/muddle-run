@@ -821,19 +821,34 @@ pub struct LevelParams<'w, 's> {
     marker: PhantomData<&'s ()>,
 }
 
+#[derive(SystemParam)]
+pub struct PlayerParams<'w, 's> {
+    players: Res<'w, Players>,
+    player_entities: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Position,
+            &'static PlayerDirection,
+            &'static Spawned,
+        ),
+    >,
+    players_registry: Res<'w, EntityRegistry<PlayerNetId>>,
+}
+
 pub fn send_network_updates_system(
     mut network_params: NetworkParams,
     time: Res<SimulationTime>,
     level_params: LevelParams,
-    players: Res<Players>,
-    player_entities: Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
-    players_registry: Res<EntityRegistry<PlayerNetId>>,
+    player_params: PlayerParams,
     mut deferred_message_queues: DeferredMessageQueues,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    // We run this system after we've concluded the simulation. As we don't have
-    // updates for the next frame yet, we decrement the frame number.
+    // We run this system after we've concluded the simulation and incremented the
+    // frame number. As we don't have updates for the next frame yet, we
+    // use the previous frame number just for this system run.
     let time = time.prev_frame();
 
     broadcast_start_game_messages(
@@ -844,12 +859,10 @@ pub fn send_network_updates_system(
             .as_deref()
             .map(|info| info.deref()),
         &level_params.level_state,
-        &players,
-        &player_entities,
-        &players_registry,
+        &player_params.players,
+        &player_params.player_entities,
+        &player_params.players_registry,
     );
-
-    broadcast_disconnected_players(&mut network_params);
 
     for (&_connection_player_net_id, &connection_handle) in network_params.player_connections.iter()
     {
@@ -865,9 +878,9 @@ pub fn send_network_updates_system(
         broadcast_delta_update_messages(
             &mut network_params.net,
             &time,
-            &players,
-            &player_entities,
-            &players_registry,
+            &player_params.players,
+            &player_params.player_entities,
+            &player_params.players_registry,
             connection_handle,
             connection_state,
         );
@@ -875,7 +888,7 @@ pub fn send_network_updates_system(
         send_new_player_messages(
             &mut network_params.net,
             &network_params.new_player_connections,
-            &players,
+            &player_params.players,
             connection_handle,
             connection_state,
         )
@@ -940,7 +953,7 @@ pub fn send_network_updates_system(
     network_params.new_player_connections.clear();
 }
 
-fn broadcast_disconnected_players(network_params: &mut NetworkParams) {
+pub fn broadcast_disconnected_players_system(mut network_params: NetworkParams) {
     let mut disconnected_players = Vec::new();
     for (&connection_handle, connection_state) in network_params.connection_states.iter_mut() {
         let ConnectionStatus::Disconnecting(reason) = connection_state.status() else {

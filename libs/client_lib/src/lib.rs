@@ -31,7 +31,7 @@ use bevy::{
     diagnostic::FrameTimeDiagnosticsPlugin,
     ecs::{
         entity::Entity,
-        schedule::{IntoSystemDescriptor, ShouldRun, State, StateError, SystemStage},
+        schedule::{IntoSystemDescriptor, ShouldRun, SystemStage},
         system::{Commands, IntoSystem, Local, Res, ResMut, Resource, SystemParam},
     },
     hierarchy::BuildChildren,
@@ -52,8 +52,8 @@ use mr_shared_lib::{
     game::client_factories::VisibilitySettings,
     messages::{EntityNetId, PlayerNetId},
     net::{ConnectionState, ConnectionStatus, MessageId},
-    GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
-    SIMULATIONS_PER_SECOND, TICKS_PER_NETWORK_BROADCAST,
+    AppState, GameSessionState, GameTime, MuddleSharedPlugin, SimulationTime,
+    COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND, TICKS_PER_NETWORK_BROADCAST,
 };
 use std::{marker::PhantomData, net::SocketAddr};
 use url::Url;
@@ -77,9 +77,9 @@ pub struct MuddleClientPlugin;
 impl Plugin for MuddleClientPlugin {
     fn build(&self, app: &mut App) {
         let input_stage = SystemStage::single_threaded()
-            // Processing network events should happen before tracking input
-            // because we reset current's player inputs on each delta update.
             .with_system(maintain_connection_system)
+            // Processing network events should happen before tracking input:
+            // we rely on resetting current's player inputs on each delta update message (event).
             .with_system(process_network_events_system.after(maintain_connection_system))
             .with_system(input::track_input_events_system.after(process_network_events_system))
             .with_system(input::cast_mouse_ray_system.after(input::track_input_events_system));
@@ -144,28 +144,30 @@ impl Plugin for MuddleClientPlugin {
             .add_system(process_control_points_input_system.after("builder_system_set"))
             .add_system(spawn_control_points_system.after("builder_system_set"));
 
-        let world = &mut app.world;
-        world
+        // There's also `GameSessionState`, which is added by `MuddleSharedPlugin`.
+        app.add_state(AppState::Loading);
+
+        app.world
             .get_resource_mut::<WorldInspectorParams>()
             .unwrap()
             .enabled = false;
-        world.get_resource_or_insert_with(InitialRtt::default);
-        world.get_resource_or_insert_with(EstimatedServerTime::default);
-        world.get_resource_or_insert_with(GameTicksPerSecond::default);
-        world.get_resource_or_insert_with(TargetFramesAhead::default);
-        world.get_resource_or_insert_with(DelayServerTime::default);
-        world.get_resource_or_insert_with(ui::debug_ui::DebugUiState::default);
-        world.get_resource_or_insert_with(CurrentPlayerNetId::default);
-        world.get_resource_or_insert_with(ConnectionState::default);
-        world.get_resource_or_insert_with(PlayerRequestsQueue::default);
-        world.get_resource_or_insert_with(EditedLevelObject::default);
-        world.get_resource_or_insert_with(LevelObjectRequestsQueue::default);
-        world.get_resource_or_insert_with(LevelObjectCorrelations::default);
-        world.get_resource_or_insert_with(MouseRay::default);
-        world.get_resource_or_insert_with(MouseWorldPosition::default);
-        world.get_resource_or_insert_with(VisibilitySettings::default);
-        world.get_resource_or_insert_with(ServerToConnect::default);
-        world.get_resource_or_insert_with(OfflineAuthConfig::default);
+        app.init_resource::<InitialRtt>();
+        app.init_resource::<EstimatedServerTime>();
+        app.init_resource::<GameTicksPerSecond>();
+        app.init_resource::<TargetFramesAhead>();
+        app.init_resource::<DelayServerTime>();
+        app.init_resource::<ui::debug_ui::DebugUiState>();
+        app.init_resource::<CurrentPlayerNetId>();
+        app.init_resource::<ConnectionState>();
+        app.init_resource::<PlayerRequestsQueue>();
+        app.init_resource::<EditedLevelObject>();
+        app.init_resource::<LevelObjectRequestsQueue>();
+        app.init_resource::<LevelObjectCorrelations>();
+        app.init_resource::<MouseRay>();
+        app.init_resource::<MouseWorldPosition>();
+        app.init_resource::<VisibilitySettings>();
+        app.init_resource::<ServerToConnect>();
+        app.init_resource::<OfflineAuthConfig>();
     }
 }
 
@@ -297,7 +299,8 @@ pub struct MainCameraPivotEntity(pub Entity);
 pub struct MainCameraEntity(pub Entity);
 
 fn pause_simulation_system(
-    mut game_state: ResMut<State<GameState>>,
+    mut commands: Commands,
+    game_state: Res<CurrentState<GameSessionState>>,
     connection_state: Res<ConnectionState>,
     game_time: Res<GameTime>,
     estimated_server_time: Res<EstimatedServerTime>,
@@ -312,37 +315,24 @@ fn pause_simulation_system(
         .saturating_sub(estimated_server_time.frame_number.value())
         < COMPONENT_FRAMEBUFFER_LIMIT / 2;
 
-    // We always assume that `GameState::Playing` is the initial state and
-    // `GameState::Paused` is pushed to the top of the stack.
-    if let GameState::Paused = game_state.current() {
+    if let GameSessionState::Paused = game_state.0 {
         if is_connected && has_server_updates {
-            let result = game_state.pop();
-            match result {
-                Ok(()) => {
-                    log::info!("Unpausing the game");
-                }
-                Err(StateError::StateAlreadyQueued) => {
-                    // TODO: investigate why this runs more than once before
-                    // changing the state sometimes.
-                }
-                Err(StateError::StackEmpty | StateError::AlreadyInState) => unreachable!(),
-            }
+            log::info!(
+                "Changing the game session state to {:?}",
+                GameSessionState::Playing
+            );
+            commands.insert_resource(NextState(GameSessionState::Playing));
             return;
         }
     }
 
-    if !is_connected || !has_server_updates {
-        let result = game_state.push(GameState::Paused);
-        match result {
-            Ok(()) => {
-                log::info!("Pausing the game");
-            }
-            Err(StateError::AlreadyInState) | Err(StateError::StateAlreadyQueued) => {
-                // It's ok. Bevy won't let us push duplicate values - that's
-                // what we rely on.
-            }
-            Err(StateError::StackEmpty) => unreachable!(),
-        }
+    // We can pause the game only when we are actually playing (not loading).
+    if matches!(game_state.0, GameSessionState::Playing) && (!is_connected || !has_server_updates) {
+        log::info!(
+            "Changing the game session state to {:?}",
+            GameSessionState::Paused
+        );
+        commands.insert_resource(NextState(GameSessionState::Paused));
     }
 }
 
@@ -498,7 +488,7 @@ fn net_adaptive_run_criteria(
     mut state: Local<NetAdaptiveRunCriteriaState>,
     time: Res<Time>,
     game_ticks_per_second: Res<GameTicksPerSecond>,
-    game_state: Res<State<GameState>>,
+    game_state: Res<CurrentState<GameSessionState>>,
 ) -> ShouldRun {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -515,7 +505,7 @@ fn net_adaptive_run_criteria(
 
     // In the scenario when a client was frozen (minimized, for example) and it got
     // disconnected, we don't want to replay all the accumulated frames.
-    if game_state.current() != &GameState::Playing {
+    if game_state.0 != GameSessionState::Playing {
         state.accumulator = state.accumulator.min(1.0);
     }
 

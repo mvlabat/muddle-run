@@ -11,8 +11,8 @@ use crate::{
     game::{
         collisions::{process_collision_events_system, process_players_with_new_collisions_system},
         commands::{
-            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
-            SwitchPlayerRole, UpdateLevelObject,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, SwitchPlayerRole,
+            UpdateLevelObject,
         },
         components::PlayerFrameSimulated,
         events::{CollisionLogicChanged, PlayerDeath, PlayerFinish},
@@ -24,7 +24,7 @@ use crate::{
             isolate_client_mispredicted_world_system, load_object_positions_system,
             player_movement_system, read_movement_updates_system, sync_position_system,
         },
-        remove_disconnected_players_system, restart_game_system,
+        remove_disconnected_players_system, reset_game_world_system,
         spawn::{
             despawn_level_objects_system, despawn_players_system, poll_calculating_shapes_system,
             process_spawned_entities_system, spawn_players_system, update_level_objects_system,
@@ -47,6 +47,7 @@ use bevy_rapier2d::{
     pipeline::CollisionEvent,
     plugin::{PhysicsStages, RapierConfiguration, RapierPhysicsPlugin, TimestepMode},
 };
+use iyes_loopless::prelude::*;
 use messages::{EntityNetId, PlayerNetId};
 use std::sync::Mutex;
 
@@ -67,15 +68,21 @@ pub mod wrapped_counter;
 // Constants.
 pub mod stage {
     pub const WRITE_INPUT_UPDATES: &str = "mr_shared_write_input_updates";
-
-    pub const MAIN_SCHEDULE: &str = "mr_shared_main_schedule";
-    pub const STATE_DRIVER: &str = "mr_shared_state_driver";
+    pub const APP_STATE_TRANSITION: &str = "mr_shared_app_state_transition";
+    pub const GAME_SESSION_STATE_TRANSITION: &str = "mr_shared_game_session_state_transition";
     pub const READ_INPUT_UPDATES: &str = "mr_shared_read_input_updates";
+    // Here, between `WRITE_INPUT_UPDATES` and `BROADCAST_UPDATES` runs the main
+    // schedule, which also includes the `SIMULATION_SCHEDULE` (running the game
+    // logic and physics).
+    // ...
+    pub const MAIN_SCHEDULE: &str = "mr_shared_main_schedule";
+    pub const SIMULATION_SCHEDULE: &str = "mr_shared_simulation_schedule";
+    // ...
     pub const BROADCAST_UPDATES: &str = "mr_shared_broadcast_updates";
     pub const POST_SIMULATIONS: &str = "mr_shared_post_simulations";
     pub const POST_TICK: &str = "mr_shared_post_tick";
 
-    pub const SIMULATION_SCHEDULE: &str = "mr_shared_simulation_schedule";
+    // Stages of the `SIMULATION_SCHEDULE`:
     pub const SPAWN: &str = "mr_shared_spawn";
     pub const PRE_GAME: &str = "mr_shared_pre_game";
     pub const FINALIZE_PHYSICS: &str = "mr_shared_finalize_physics";
@@ -287,7 +294,24 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             .with_stage(
                 stage::POST_SIMULATIONS,
                 SystemStage::single_threaded()
-                    .with_system(tick_game_frame_system)
+                    // If the game is loading, these systems won't run (as the simulation schedule
+                    // isn't run), but we still need as spawning level objects is part of loading.
+                    .with_system(
+                        poll_calculating_shapes_system
+                            .run_in_state(GameSessionState::Loading)
+                            .label("poll_shapes"),
+                    )
+                    .with_system(
+                        update_level_objects_system
+                            .run_in_state(GameSessionState::Loading)
+                            .label("update_level_objects")
+                            .after("poll_shapes"),
+                    )
+                    .with_system(
+                        tick_game_frame_system
+                            .run_not_in_state(GameSessionState::Paused)
+                            .after("update_level_objects"),
+                    )
                     .with_system(process_spawned_entities_system.after(tick_game_frame_system))
                     // Removing disconnected players doesn't depend on ticks, so it's fine to have
                     // in unordered.
@@ -308,11 +332,35 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
             stage::MAIN_SCHEDULE,
             stage::READ_INPUT_UPDATES,
             SystemStage::single_threaded()
-                .with_system(restart_game_system.at_start())
-                .with_system(
-                    read_movement_updates_system
-                        .with_run_criteria(State::on_update(GameState::Playing)),
-                ),
+                .with_system(read_movement_updates_system.run_in_state(GameSessionState::Playing)),
+        );
+        // We predefine every enter/exit stage to mark them as single-threaded.
+        // Atm, Bevy suffers from from the scheduler overhead to plan running systems in
+        // parallel, which negates the parallelisation.
+        app.add_stage_before(
+            stage::READ_INPUT_UPDATES,
+            stage::GAME_SESSION_STATE_TRANSITION,
+            StateTransitionStage::new(GameSessionState::Loading)
+                .with_enter_stage(
+                    GameSessionState::Loading,
+                    SystemStage::single_threaded().with_system(reset_game_world_system.at_start()),
+                )
+                .with_exit_stage(GameSessionState::Loading, SystemStage::single_threaded())
+                .with_enter_stage(GameSessionState::Playing, SystemStage::single_threaded())
+                .with_exit_stage(GameSessionState::Playing, SystemStage::single_threaded())
+                .with_enter_stage(GameSessionState::Paused, SystemStage::single_threaded())
+                .with_exit_stage(GameSessionState::Paused, SystemStage::single_threaded()),
+        );
+        app.add_stage_before(
+            stage::GAME_SESSION_STATE_TRANSITION,
+            stage::APP_STATE_TRANSITION,
+            StateTransitionStage::new(AppState::Loading)
+                .with_enter_stage(AppState::Loading, SystemStage::single_threaded())
+                .with_exit_stage(AppState::Loading, SystemStage::single_threaded())
+                .with_enter_stage(AppState::MainMenu, SystemStage::single_threaded())
+                .with_exit_stage(AppState::MainMenu, SystemStage::single_threaded())
+                .with_enter_stage(AppState::Playing, SystemStage::single_threaded())
+                .with_exit_stage(AppState::Playing, SystemStage::single_threaded()),
         );
         app.add_stage_before(
             stage::READ_INPUT_UPDATES,
@@ -321,10 +369,6 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
                 .take()
                 .expect("Can't initialize the plugin more than once"),
         );
-
-        // Is `GameState::Paused` for client (see `init_state`).
-        app.add_state(GameState::Playing);
-        app.add_state_to_stage(stage::READ_INPUT_UPDATES, GameState::Playing);
 
         app.add_startup_system(network_setup_system);
 
@@ -336,7 +380,6 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
         world.get_resource_or_insert_with(SimulationTime::default);
         world.get_resource_or_insert_with(LevelState::default);
         world.get_resource_or_insert_with(PlayerUpdates::default);
-        world.get_resource_or_insert_with(DeferredQueue::<RestartGame>::default);
         world.get_resource_or_insert_with(DeferredQueue::<SpawnPlayer>::default);
         world.get_resource_or_insert_with(DeferredQueue::<DespawnPlayer>::default);
         world.get_resource_or_insert_with(DeferredQueue::<UpdateLevelObject>::default);
@@ -359,16 +402,46 @@ impl<S: System<In = (), Out = ShouldRun>> Plugin for MuddleSharedPlugin<S> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum GameState {
-    Paused,
+pub enum AppState {
+    /// Currently, this state is used only for clients.
+    /// We use this state to spawn dummy PBR entities to trigger shaders
+    /// loading. This is useful for browsers in the first place, as loading
+    /// shaders is blocking there and freezes the app (so a loading screen
+    /// should be shown).
+    Loading,
+    /// This state is used when a client is launched in the mode when going
+    /// through the authentication and matchmaking menus is required before
+    /// connecting to a server.
+    MainMenu,
+    /// A level is being loaded or played.
     Playing,
 }
 
-impl Default for GameState {
+impl Default for AppState {
     fn default() -> Self {
-        Self::Paused
+        Self::Loading
     }
 }
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum GameSessionState {
+    Loading,
+    Playing,
+    Paused,
+}
+
+impl Default for GameSessionState {
+    fn default() -> Self {
+        Self::Loading
+    }
+}
+
+/// The resource is added when a client/server starts spawning level objects on
+/// loading the level. When every level object is spawned, the counter reaches
+/// zero. After that, we remove the resource and switch `GameSessionState` to
+/// `Playing`.
+#[derive(Resource, Deref, DerefMut)]
+pub struct LevelObjectsToSpawnToLoad(pub usize);
 
 #[derive(Resource, Default, Clone, Debug, PartialEq, Eq)]
 pub struct GameTime {
@@ -550,7 +623,7 @@ pub struct SimulationTickRunCriteriaState {
 
 fn simulation_tick_run_criteria(
     mut state: Local<SimulationTickRunCriteriaState>,
-    game_state: Res<State<GameState>>,
+    game_state: Res<CurrentState<GameSessionState>>,
     game_time: Res<GameTime>,
     simulation_time: Res<SimulationTime>,
 ) -> ShouldRun {
@@ -562,7 +635,7 @@ fn simulation_tick_run_criteria(
         state.last_game_frame = Some(game_time.frame_number);
     } else if state.last_player_frame == simulation_time.player_frame
         && state.last_server_frame == simulation_time.server_frame
-        && game_state.current() == &GameState::Playing
+        && game_state.0 == GameSessionState::Playing
     {
         panic!(
             "Simulation frame hasn't advanced: {}, {}",
@@ -573,7 +646,7 @@ fn simulation_tick_run_criteria(
     state.last_server_frame = simulation_time.server_frame;
 
     if state.last_player_frame <= game_time.frame_number
-        && game_state.current() == &GameState::Playing
+        && game_state.0 == GameSessionState::Playing
     {
         trace!(
             "Run and loop a simulation schedule (simulation: {}, game: {}, state: {:?})",

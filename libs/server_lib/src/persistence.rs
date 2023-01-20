@@ -78,7 +78,7 @@ pub async fn get_user(persistence_url: Url, user_id: i64) -> anyhow::Result<GetU
     Ok(response)
 }
 
-#[derive(Resource)]
+#[derive(Resource, Deref, DerefMut)]
 pub struct InitLevelObjects(pub Vec<LevelObject>);
 
 pub async fn load_level(

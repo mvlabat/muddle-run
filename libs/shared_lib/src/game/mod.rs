@@ -8,8 +8,8 @@ use crate::{
 use crate::{
     game::{
         commands::{
-            DeferredQueue, DespawnLevelObject, DespawnPlayer, RestartGame, SpawnPlayer,
-            SwitchPlayerRole, UpdateLevelObject,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, SpawnPlayer, SwitchPlayerRole,
+            UpdateLevelObject,
         },
         components::{LevelObjectServerGhostParent, LevelObjectStaticGhostParent, PlayerSensor},
     },
@@ -28,6 +28,7 @@ use bevy::{
     },
     log,
     prelude::{Deref, DerefMut},
+    time::Time,
 };
 
 pub mod client_factories;
@@ -44,15 +45,15 @@ pub mod spawn;
 pub struct PlayerEventSender(pub Option<tokio::sync::mpsc::UnboundedSender<PlayerEvent>>);
 
 // TODO: track https://github.com/bevyengine/rfcs/pull/16.
-pub fn restart_game_system(world: &mut World) {
-    let mut restart_game_commands = world
-        .get_resource_mut::<DeferredQueue<RestartGame>>()
-        .unwrap();
-    if restart_game_commands.drain(&Default::default()).is_empty() {
+pub fn reset_game_world_system(world: &mut World) {
+    let time = world.get_resource_mut::<Time>().unwrap();
+    if time.first_update() == time.last_update() {
+        // It's an initial app start, we don't need to reset the world. Resetting it
+        // will prevent server to spawn starting level objects.
         return;
     }
 
-    log::info!("Restarting the game");
+    log::info!("Resetting the game world");
 
     let mut players = world.get_resource_mut::<Players>().unwrap();
     players.clear();
@@ -145,7 +146,10 @@ pub fn restart_game_system(world: &mut World) {
     *world
         .get_resource_mut::<DeferredQueue<DespawnLevelObject>>()
         .unwrap() = Default::default();
-    *world.get_resource_mut::<PlayerUpdates>().unwrap() = PlayerUpdates::default();
+    *world
+        .get_resource_mut::<DeferredQueue<SwitchPlayerRole>>()
+        .unwrap() = Default::default();
+    *world.get_resource_mut().unwrap() = PlayerUpdates::default();
 }
 
 pub fn switch_player_role_system(

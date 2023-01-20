@@ -14,13 +14,14 @@ use auth::{AuthMessage, AuthRequest};
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::Instant};
 use bevy_disturbulence::{NetworkEvent, NetworkResource};
 use futures::{select, FutureExt};
+use iyes_loopless::state::NextState;
 use mr_messages_lib::{MatchmakerMessage, MatchmakerRequest, Server};
 use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
     game::{
         commands::{
-            DeferredQueue, DespawnLevelObject, DespawnPlayer, DespawnReason, RestartGame,
-            SpawnPlayer, SwitchPlayerRole, UpdateLevelObject,
+            DeferredQueue, DespawnLevelObject, DespawnPlayer, DespawnReason, SpawnPlayer,
+            SwitchPlayerRole, UpdateLevelObject,
         },
         components::{PlayerDirection, Spawned},
     },
@@ -35,7 +36,8 @@ use mr_shared_lib::{
     },
     player::{Player, PlayerDirectionUpdate, PlayerRole, PlayerUpdates, Players},
     registry::EntityRegistry,
-    GameTime, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
+    AppState, GameSessionState, GameTime, LevelObjectsToSpawnToLoad, SimulationTime,
+    COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND,
 };
 use std::{
     future::Future,
@@ -69,7 +71,6 @@ pub struct UpdateParams<'w, 's> {
     delay_server_time: ResMut<'w, DelayServerTime>,
     initial_rtt: ResMut<'w, InitialRtt>,
     player_updates: ResMut<'w, PlayerUpdates>,
-    restart_game_commands: ResMut<'w, DeferredQueue<RestartGame>>,
     level_object_correlations: ResMut<'w, LevelObjectCorrelations>,
     spawn_level_object_commands: ResMut<'w, DeferredQueue<UpdateLevelObject>>,
     despawn_level_object_commands: ResMut<'w, DeferredQueue<DespawnLevelObject>>,
@@ -281,12 +282,13 @@ where
 pub struct MatchmakerParams<'w, 's> {
     matchmaker_state: Option<ResMut<'w, MatchmakerState>>,
     server_to_connect: ResMut<'w, ServerToConnect>,
-    main_menu_ui_channels: Option<Res<'w, MainMenuUiChannels>>,
+    main_menu_ui_channels: Option<ResMut<'w, MainMenuUiChannels>>,
     #[system_param(ignore)]
     marker: PhantomData<&'s ()>,
 }
 
 pub fn process_network_events_system(
+    mut commands: Commands,
     mut network_params: NetworkParams,
     mut network_events: EventReader<NetworkEvent>,
     mut current_player_net_id: ResMut<CurrentPlayerNetId>,
@@ -399,14 +401,26 @@ pub fn process_network_events_system(
                         },
                     ));
 
-                    // This seems to be the most reliable place to do this. `StartGame` might come
-                    // after the first `DeltaUpdate`, so it's not super reliable to restart a game
-                    // there. `Handshake`, on the contrary, always comes before both `DeltaUpdate`
-                    // and `StartGame`. Restarting on disconnect might work just fine too, but I
+                    current_player_net_id.0 = None;
+                    // This seems to be the most reliable place to switch the sate. `StartGame`
+                    // might come after the first `DeltaUpdate`, so it's not
+                    // super reliable to reset the game world there (which is implied by entering
+                    // the `GameSessionState::Loading` state. `Handshake`, on
+                    // the contrary, always comes before both `DeltaUpdate`
+                    // and `StartGame`. Resetting on disconnect might work just fine too, but I
                     // thought that `Handshake` probably comes with less edge-cases, since we
                     // always get it before starting the game.
-                    current_player_net_id.0 = None;
-                    update_params.restart_game_commands.push(RestartGame);
+                    log::info!("Changing the app state to {:?}", AppState::Playing);
+                    commands.insert_resource(NextState(AppState::Playing));
+                    // On game start, `GameSessionState::Loading` is likely current state as
+                    // well, we rely on `iyes_loopless` behaviour to run the
+                    // enter stage regardless of whether current state
+                    // equals next one.
+                    log::info!(
+                        "Changing the game session state to {:?}",
+                        GameSessionState::Loading
+                    );
+                    commands.insert_resource(NextState(GameSessionState::Loading));
                 }
                 UnreliableServerMessage::DeltaUpdate(update) => {
                     let mut skip_update = false;
@@ -548,6 +562,10 @@ pub fn process_network_events_system(
                         .connection_state
                         .set_status(ConnectionStatus::Connecting);
                 }
+                ReliableServerMessage::Loading => {
+                    // TODO: reflect this message in the UI.
+                    log::info!("The server is loading...");
+                }
                 ReliableServerMessage::StartGame(start_game) => {
                     let expected_handshake_id =
                         network_params.connection_state.handshake_id - MessageId::new(1);
@@ -569,6 +587,7 @@ pub fn process_network_events_system(
                         start_game.game_state.frame_number
                     );
                     process_start_game_message(
+                        &mut commands,
                         start_game,
                         &mut network_params.connection_state,
                         &mut current_player_net_id,
@@ -701,9 +720,7 @@ pub fn process_network_events_system(
 pub fn maintain_connection_system(
     time: Res<GameTime>,
     client_config: Res<MuddleClientConfig>,
-    matchmaker_state: Option<ResMut<MatchmakerState>>,
-    matchmaker_channels: Option<ResMut<MainMenuUiChannels>>,
-    mut server_to_connect: ResMut<ServerToConnect>,
+    mut matchmaker_params: MatchmakerParams,
     mut network_params: NetworkParams,
     mut initial_rtt: ResMut<InitialRtt>,
 ) {
@@ -713,10 +730,10 @@ pub fn maintain_connection_system(
     if matches!(
         network_params.connection_state.status(),
         ConnectionStatus::Connected
-    ) && server_to_connect.is_some()
+    ) && matchmaker_params.server_to_connect.is_some()
     {
-        **server_to_connect = None;
-        if let Some(matchmaker_channels) = matchmaker_channels.as_ref() {
+        **matchmaker_params.server_to_connect = None;
+        if let Some(matchmaker_channels) = matchmaker_params.main_menu_ui_channels.as_ref() {
             matchmaker_channels
                 .connection_request_tx
                 .send(false)
@@ -724,7 +741,9 @@ pub fn maintain_connection_system(
         }
     }
 
-    let mut matchmaker = matchmaker_state.zip(matchmaker_channels);
+    let mut matchmaker = matchmaker_params
+        .matchmaker_state
+        .zip(matchmaker_params.main_menu_ui_channels);
     if let Some((matchmaker_state, matchmaker_channels)) = matchmaker.as_mut() {
         loop {
             match matchmaker_channels.status_rx.try_recv() {
@@ -746,15 +765,15 @@ pub fn maintain_connection_system(
     );
 
     // TODO: if a client isn't getting any updates, we may also want to pause the
-    // game and wait for  some time for a server to respond.
+    // game and wait for some time for a server to respond.
 
-    let connection_timeout = Instant::now().duration_since(
+    let connection_has_timed_out = Instant::now().duration_since(
         network_params
             .connection_state
             .last_valid_message_received_at,
     ) > Duration::from_millis(CONNECTION_TIMEOUT_MILLIS);
 
-    if connection_timeout && !connection_is_uninitialized {
+    if connection_has_timed_out && !connection_is_uninitialized {
         log::warn!("Connection timeout, resetting");
     }
 
@@ -779,7 +798,7 @@ pub fn maintain_connection_system(
         );
     }
 
-    if !connection_is_uninitialized && connection_timeout
+    if !connection_is_uninitialized && connection_has_timed_out
         || is_falling_behind
         || matches!(
             network_params.connection_state.status(),
@@ -793,6 +812,9 @@ pub fn maintain_connection_system(
             .set_status(ConnectionStatus::Uninitialized);
     }
 
+    // TODO! so I left off after just finishing with the loading states, need to
+    //  sort out the menu app state and running conditions
+
     if network_params.net.connections.is_empty() {
         let addr = if let Some((matchmaker_state, matchmaker_channels)) = matchmaker.as_mut() {
             if matches!(matchmaker_state.status, TcpConnectionStatus::Disconnected) {
@@ -804,7 +826,7 @@ pub fn maintain_connection_system(
                 return;
             }
 
-            let Some(server) = &**server_to_connect else {
+            let Some(server) = &**matchmaker_params.server_to_connect else {
                 return;
             };
             log::info!("Connecting to {}: {}", server.name, server.addr);
@@ -1250,6 +1272,7 @@ fn sync_clock(
 }
 
 fn process_start_game_message(
+    commands: &mut Commands,
     start_game: StartGame,
     connection_state: &mut ConnectionState,
     current_player_net_id: &mut CurrentPlayerNetId,
@@ -1349,6 +1372,7 @@ fn process_start_game_message(
             );
         }
     }
+    commands.insert_resource(LevelObjectsToSpawnToLoad(start_game.objects.len()));
     for spawn_level_object in start_game.objects {
         update_params
             .spawn_level_object_commands

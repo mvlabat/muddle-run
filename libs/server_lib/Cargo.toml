@@ -15,6 +15,7 @@ anyhow = "1.0"
 bevy = { version = "0.9.1", default-features = false }
 bevy_disturbulence = { git = "https://github.com/mvlabat/bevy_disturbulence.git", branch = "wip", features = ["server"] }
 bevy_rapier2d = "0.19"
+iyes_loopless = "0.9"
 jwt-compact = { version = "0.6", features = ["std", "clock", "with_rsa"], default-features = false }
 kube = "0.77.0"
 local-ip-address = "0.5"

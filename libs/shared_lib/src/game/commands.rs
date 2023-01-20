@@ -53,11 +53,7 @@ impl<T: DeferredCommand> DeferredQueue<T> {
 }
 
 // NOTE: after adding a new command, remember to clean them up in the
-// `restart_game` system.
-
-pub struct RestartGame;
-
-impl DeferredCommand for RestartGame {}
+// `reset_game_world_system` system.
 
 pub struct SwitchPlayerRole {
     pub net_id: PlayerNetId,

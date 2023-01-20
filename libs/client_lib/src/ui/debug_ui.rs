@@ -8,6 +8,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_egui::{egui, egui::epaint::RectShape, EguiContext};
+use iyes_loopless::state::CurrentState;
 use mr_shared_lib::{
     client::components::DebugUiVisibility,
     framebuffer::FrameNumber,
@@ -23,13 +24,13 @@ use mr_shared_lib::{
     net::ConnectionState,
     player::Players,
     registry::EntityRegistry,
-    GameState, SimulationTime,
+    GameSessionState, SimulationTime,
 };
 use std::{collections::VecDeque, marker::PhantomData};
 
 #[derive(SystemParam)]
 pub struct DebugData<'w, 's> {
-    game_state: Res<'w, State<GameState>>,
+    game_state: Res<'w, CurrentState<GameSessionState>>,
     time: Res<'w, SimulationTime>,
     current_ticks_per_second: Res<'w, GameTicksPerSecond>,
     delay_server_time: Res<'w, DelayServerTime>,
@@ -47,7 +48,7 @@ pub struct DebugUiState {
     pub fps_history_len: usize,
     pub pause: bool,
 
-    pub game_state: GameState,
+    pub game_state: GameSessionState,
     pub actual_frames_ahead: u16,
     pub target_frames_ahead: u16,
     pub current_ticks_per_second: f32,
@@ -87,7 +88,7 @@ pub fn update_debug_ui_state_system(
     if debug_ui_state.pause {
         return;
     }
-    debug_ui_state.game_state = debug_data.game_state.current().clone();
+    debug_ui_state.game_state = debug_data.game_state.0.clone();
     debug_ui_state.actual_frames_ahead = debug_data.time.player_frames_ahead();
     debug_ui_state.target_frames_ahead = debug_data.target_frames_ahead.target;
     debug_ui_state.current_ticks_per_second = debug_data.current_ticks_per_second.value;

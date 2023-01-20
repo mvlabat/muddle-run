@@ -17,15 +17,16 @@ bevy_egui = { version = "0.18", optional = true }
 bevy_mod_picking = { version = "0.11", optional = true }
 bevy_disturbulence = { git = "https://github.com/mvlabat/bevy_disturbulence.git", branch = "wip" }
 bevy_rapier2d = { version = "0.19", features = ["wasm-bindgen", "serde-serialize"] }
-rapier2d = "0.16.1"
 chrono = "0.4.19"
 crossbeam-channel = "0.5.5"
 futures-lite = "1.12.0"
+iyes_loopless = "0.9"
 konst = "0.2.13"
 names = { version = "0.14.0", default-features = false }
 num = "0.4.0"
 puffin = { version = "0.13", optional = true }
 rand = "0.8.4"
+rapier2d = "0.16.1"
 serde = "1.0"
 serde_json = "1.0"
 thiserror = "1.0.30"
