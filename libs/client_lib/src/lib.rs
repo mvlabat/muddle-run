@@ -6,9 +6,9 @@ pub use net::DEFAULT_SERVER_PORT;
 
 use crate::{
     camera::{move_free_camera_pivot_system, reattach_camera_system},
-    components::{CameraPivotDirection, CameraPivotTag},
     config_storage::OfflineAuthConfig,
     game_events::process_scheduled_spawns_system,
+    init_app_systems::load_shaders_system,
     input::{LevelObjectRequestsQueue, MouseRay, MouseWorldPosition, PlayerRequestsQueue},
     net::{
         auth::read_offline_auth_config_system, fill_actual_frames_ahead_system,
@@ -34,13 +34,8 @@ use bevy::{
         schedule::{IntoSystemDescriptor, ShouldRun, SystemStage},
         system::{Commands, IntoSystem, Local, Res, ResMut, Resource, SystemParam},
     },
-    hierarchy::BuildChildren,
     log,
-    math::{Vec2, Vec3},
-    pbr::{PointLight, PointLightBundle},
-    prelude::Camera3dBundle,
     time::Time,
-    transform::components::{GlobalTransform, Transform},
     utils::{HashMap, Instant},
 };
 use bevy_egui::EguiPlugin;
@@ -63,6 +58,7 @@ mod components;
 mod config_storage;
 mod game_events;
 mod helpers;
+mod init_app_systems;
 mod input;
 mod net;
 mod ui;
@@ -77,7 +73,7 @@ pub struct MuddleClientPlugin;
 impl Plugin for MuddleClientPlugin {
     fn build(&self, app: &mut App) {
         let input_stage = SystemStage::single_threaded()
-            .with_system(maintain_connection_system)
+            .with_system(maintain_connection_system.run_not_in_state(AppState::Loading))
             // Processing network events should happen before tracking input:
             // we rely on resetting current's player inputs on each delta update message (event).
             .with_system(process_network_events_system.after(maintain_connection_system))
@@ -107,8 +103,10 @@ impl Plugin for MuddleClientPlugin {
             .add_event::<EditedObjectUpdate>()
             // Startup systems.
             .add_startup_system(init_matchmaker_connection_system)
-            .add_startup_system(basic_scene_system)
+            .add_startup_system(init_app_systems::basic_scene_system)
             .add_startup_system(read_offline_auth_config_system)
+            // Loading the app.
+            .add_system(load_shaders_system.run_in_state(AppState::Loading))
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
                 IntoSystem::into_system(net_adaptive_run_criteria),
@@ -124,21 +122,28 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::update_debug_visibility_system)
             .add_system(ui::debug_ui::debug_ui_system)
             .add_system(ui::debug_ui::profiler_ui_system)
-            .add_system(ui::overlay_ui::connection_status_overlay_system)
+            .add_system(ui::overlay_ui::app_loading_ui.run_in_state(AppState::Loading))
+            .add_system(
+                ui::overlay_ui::connection_status_overlay_system
+                    .run_not_in_state(AppState::Loading),
+            )
             .add_system(ui::debug_ui::inspect_object_system)
-            .add_system(ui::player_ui::leaderboard_ui_system)
-            .add_system(ui::player_ui::help_ui_system)
+            .add_system(
+                ui::player_ui::leaderboard_ui_system.run_not_in_state(GameSessionState::Loading),
+            )
+            .add_system(ui::player_ui::help_ui_system.run_not_in_state(GameSessionState::Loading))
             .add_startup_system(ui::main_menu_ui::init_menu_auth_state_system)
             .add_system_set(
                 ui::main_menu_ui::process_io_messages_system_set().label("process_io_messages"),
             )
             .add_system(
                 ui::main_menu_ui::main_menu_ui_system
+                    .run_in_state(AppState::MainMenu)
                     .run_if(matchmaker_is_initialised)
                     .run_if_not(has_server_to_connect)
                     .after("process_io_messages"),
             )
-            // Not only Egui for builder mode.
+            // Builder mode systems.
             .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))
             // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.
             .add_system(process_control_points_input_system.after("builder_system_set"))
@@ -334,38 +339,6 @@ fn pause_simulation_system(
         );
         commands.insert_resource(NextState(GameSessionState::Paused));
     }
-}
-
-fn basic_scene_system(mut commands: Commands) {
-    // Add entities to the scene.
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
-            range: 256.0,
-            intensity: 1280000.0,
-            ..Default::default()
-        },
-        transform: Transform::from_translation(Vec3::new(-64.0, -92.0, 144.0)),
-        ..Default::default()
-    });
-    // Camera.
-    let main_camera_entity = commands
-        .spawn(Camera3dBundle {
-            transform: Transform::from_translation(Vec3::new(-3.0, -14.0, 14.0))
-                .looking_at(Vec3::default(), Vec3::Z),
-            ..Default::default()
-        })
-        .insert(bevy_mod_picking::PickingCameraBundle::default())
-        .id();
-    let main_camera_pivot_entity = commands
-        .spawn_empty()
-        .insert(CameraPivotTag)
-        .insert(CameraPivotDirection(Vec2::ZERO))
-        .insert(Transform::IDENTITY)
-        .insert(GlobalTransform::IDENTITY)
-        .add_child(main_camera_entity)
-        .id();
-    commands.insert_resource(MainCameraPivotEntity(main_camera_pivot_entity));
-    commands.insert_resource(MainCameraEntity(main_camera_entity));
 }
 
 #[derive(SystemParam)]
