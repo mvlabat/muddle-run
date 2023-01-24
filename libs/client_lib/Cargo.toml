@@ -13,7 +13,7 @@ profiler = ["puffin", "puffin_egui", "mr_shared_lib/profiler"]
 
 [dependencies]
 anyhow = "1.0"
-base64 = "0.20.0-alpha.1"
+base64 = "0.21.0"
 bevy = "0.9.1"
 bevy_egui = "0.18"
 bevy-inspector-egui = "0.15.0"
