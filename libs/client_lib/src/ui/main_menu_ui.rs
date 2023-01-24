@@ -5,10 +5,10 @@ use crate::{
         ServerToConnect, TcpConnectionStatus,
     },
     ui::{
-        widgets::list_menu::{button_panel, MenuListItem, PanelButton},
+        widgets::list_menu::{button_panel, MenuListItem, MenuListItemResponse, PanelButton},
         without_item_spacing,
     },
-    MuddleClientConfig, OfflineAuthConfig,
+    OfflineAuthConfig,
 };
 use bevy::{
     ecs::{
@@ -19,7 +19,11 @@ use bevy::{
     utils::{HashMap, Instant, Uuid},
     window::Windows,
 };
-use bevy_egui::{egui, egui::Widget, EguiContext};
+use bevy_egui::{
+    egui,
+    egui::{Ui, Widget},
+    EguiContext,
+};
 use iyes_loopless::prelude::*;
 use mr_messages_lib::{
     GameServerState, GetLevelResponse, GetLevelsRequest, GetLevelsUserFilter, InitLevel,
@@ -30,6 +34,7 @@ use mr_shared_lib::net::MessageId;
 use std::{
     collections::BTreeMap,
     marker::PhantomData,
+    net::SocketAddr,
     ops::{Add, Mul, Sub},
     time::Duration,
 };
@@ -217,10 +222,11 @@ impl Default for AuthUiScreen {
     }
 }
 
-#[derive(Default)]
 pub struct MatchmakerUiState {
     observed_no_ready_servers_at: Option<Instant>,
     servers: HashMap<String, Server>,
+    connect_manually_is_active: bool,
+    connect_manually_ip_addr: String,
     // Contains a sever name, as we don't want selection to jump every time a server is
     // added/removed.
     selected_server: Option<String>,
@@ -258,6 +264,7 @@ impl Default for SelectedLevel {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum MatchmakerUiScreen {
     ServersList,
     CreateServer,
@@ -282,13 +289,40 @@ impl Default for LevelsListFilter {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct MainMenuUiState {
     screen: MainMenuUiScreen,
     auth: AuthUiState,
     matchmaker: MatchmakerUiState,
 }
 
+impl MainMenuUiState {
+    pub fn new(connect_manually_ip_addr: String) -> Self {
+        Self {
+            screen: Default::default(),
+            auth: Default::default(),
+            matchmaker: MatchmakerUiState {
+                observed_no_ready_servers_at: None,
+                servers: Default::default(),
+                connect_manually_is_active: false,
+                connect_manually_ip_addr,
+                selected_server: None,
+                levels: Default::default(),
+                levels_list_filter: Default::default(),
+                selected_level: Default::default(),
+                selected_level_data: None,
+                screen: Default::default(),
+                request_id_counter: Default::default(),
+                current_request_id: None,
+                pending_create_server_request: None,
+                create_server_request_sent_at: None,
+                request_error_message: None,
+            },
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
 pub enum MainMenuUiScreen {
     Auth,
     Matchmaker,
@@ -302,7 +336,6 @@ impl Default for MainMenuUiScreen {
 
 #[derive(SystemParam)]
 pub struct Configs<'w, 's> {
-    client_config: Res<'w, MuddleClientConfig>,
     offline_auth_config: Res<'w, OfflineAuthConfig>,
     #[system_param(ignore)]
     _marker: PhantomData<&'s ()>,
@@ -350,25 +383,27 @@ pub fn main_menu_ui_system(
     mut ui_context: UiContext,
     configs: Configs,
     mut main_menu_ui_state: ResMut<MainMenuUiState>,
-    matchmaker_state: Res<MatchmakerState>,
-    mut main_menu_ui_channels: ResMut<MainMenuUiChannels>,
+    matchmaker_state: Option<Res<MatchmakerState>>,
+    mut main_menu_ui_channels: Option<ResMut<MainMenuUiChannels>>,
     mut server_to_connect: ResMut<ServerToConnect>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
 
-    if !matches!(matchmaker_state.status, TcpConnectionStatus::Connected) {
-        main_menu_ui_state.matchmaker.servers.clear();
-    }
+    if let Some(matchmaker_state) = &matchmaker_state {
+        if !matches!(matchmaker_state.status, TcpConnectionStatus::Connected) {
+            main_menu_ui_state.matchmaker.servers.clear();
+        }
 
-    if !main_menu_ui_state.matchmaker.has_ready_server()
-        && matches!(matchmaker_state.status, TcpConnectionStatus::Connected)
-        && main_menu_ui_state
-            .matchmaker
-            .observed_no_ready_servers_at
-            .is_none()
-    {
-        main_menu_ui_state.matchmaker.observed_no_ready_servers_at = Some(Instant::now());
+        if !main_menu_ui_state.matchmaker.has_ready_server()
+            && matches!(matchmaker_state.status, TcpConnectionStatus::Connected)
+            && main_menu_ui_state
+                .matchmaker
+                .observed_no_ready_servers_at
+                .is_none()
+        {
+            main_menu_ui_state.matchmaker.observed_no_ready_servers_at = Some(Instant::now());
+        }
     }
 
     let screen_height = ui_context.windows.get_primary().unwrap().height();
@@ -392,39 +427,43 @@ pub fn main_menu_ui_system(
                 .fixed_size(egui::Vec2::new(window_width, window_height))
                 .show(ui.ctx(), |ui| {
                     let MainMenuUiState {
-                        screen: ref mut main_menu_ui_screen,
+                        screen: main_menu_ui_screen,
                         auth: auth_ui_state,
                         matchmaker: matchmaker_ui_state,
                     } = &mut *main_menu_ui_state;
 
-                    match matchmaker_state.status {
-                        TcpConnectionStatus::Connected => {
-                            // Header.
-                            if !matchmaker_ui_state.has_ready_server()
-                                && matchmaker_ui_state.pending_create_server_request.is_some()
-                            {
-                                let progress = Instant::now()
-                                    .duration_since(
-                                        matchmaker_ui_state.observed_no_ready_servers_at.unwrap(),
-                                    )
-                                    .as_secs_f32()
-                                    / 120.0;
-                                status_bar(
-                                    ui,
-                                    "Spinning up a game server (might take a couple of minutes)...",
-                                    progress.min(0.95),
-                                );
-                            } else {
-                                status_bar(ui, "Matchmaker server: connected", 1.0);
+                    if let Some(matchmaker_state) = &matchmaker_state {
+                        match matchmaker_state.status {
+                            TcpConnectionStatus::Connected => {
+                                // Header.
+                                if !matchmaker_ui_state.has_ready_server()
+                                    && matchmaker_ui_state.pending_create_server_request.is_some()
+                                {
+                                    let progress = Instant::now()
+                                        .duration_since(
+                                            matchmaker_ui_state.observed_no_ready_servers_at.unwrap(),
+                                        )
+                                        .as_secs_f32()
+                                        / 120.0;
+                                    status_bar(
+                                        ui,
+                                        "Spinning up a game server (might take a couple of minutes)...",
+                                        progress.min(0.95),
+                                    );
+                                } else {
+                                    status_bar(ui, "Matchmaker server: connected", 1.0);
+                                }
+                            }
+                            TcpConnectionStatus::Connecting | TcpConnectionStatus::Disconnected => {
+                                status_bar(ui, "Connecting to the matchmaker...", 0.0);
                             }
                         }
-                        TcpConnectionStatus::Connecting | TcpConnectionStatus::Disconnected => {
-                            status_bar(ui, "Connecting to the matchmaker...", 0.0);
-                        }
+                    } else {
+                        status_bar(ui, "Matchmaker address isn't set", 0.0);
                     }
 
-                    match main_menu_ui_screen {
-                        MainMenuUiScreen::Auth => {
+                    match (*main_menu_ui_screen, main_menu_ui_channels.as_deref_mut()) {
+                        (MainMenuUiScreen::Auth, Some(main_menu_ui_channels)) => {
                             egui::containers::Frame::none()
                                 .inner_margin(egui::style::Margin::symmetric(25.0, 15.0))
                                 .show(ui, |ui| {
@@ -439,13 +478,13 @@ pub fn main_menu_ui_system(
                                     }
                                 });
                         }
-                        MainMenuUiScreen::Matchmaker => {
+                        (MainMenuUiScreen::Matchmaker | MainMenuUiScreen::Auth, main_menu_ui_channels) => {
                             matchmaker_screen(
                                 ui,
-                                &matchmaker_state,
+                                matchmaker_state.as_deref(),
                                 matchmaker_ui_state,
                                 &mut server_to_connect,
-                                &mut main_menu_ui_channels,
+                                main_menu_ui_channels,
                             );
                         }
                     }
@@ -541,9 +580,7 @@ pub fn process_auth_messages_system(
 }
 
 pub fn process_matchmaker_messages_system(
-    mut matchmaker_state: ResMut<MatchmakerState>,
     mut main_menu_ui_state: ResMut<MainMenuUiState>,
-    configs: Configs,
     mut main_menu_ui_channels: ResMut<MainMenuUiChannels>,
     mut server_to_connect: ResMut<ServerToConnect>,
 ) {
@@ -584,24 +621,7 @@ pub fn process_matchmaker_messages_system(
         }
 
         match main_menu_ui_channels.matchmaker_message_rx.try_recv() {
-            Ok(MatchmakerMessage::Init {
-                servers: mut init_list,
-            }) => {
-                if let Some(server_addr) = configs.client_config.server_addr {
-                    init_list.push(Server {
-                        name: "localhost".to_string(),
-                        state: GameServerState::Allocated,
-                        addr: server_addr,
-                        player_capacity: 0,
-                        player_count: 0,
-                        request_id: Default::default(),
-                    });
-                    // Sometimes, a matchmaker status message may come one frame late, which will
-                    // cause the server list to reset. We can safely set the status to `Connected`
-                    // as soon as we get the init message as well.
-                    matchmaker_state.status = TcpConnectionStatus::Connected;
-                }
-
+            Ok(MatchmakerMessage::Init { servers: init_list }) => {
                 log::debug!("Initialize servers list: {:?}", init_list);
                 main_menu_ui_state.matchmaker.servers = init_list
                     .into_iter()
@@ -969,29 +989,36 @@ fn authentication_screen(
 
 fn matchmaker_screen(
     ui: &mut egui::Ui,
-    matchmaker_state: &MatchmakerState,
+    matchmaker_state: Option<&MatchmakerState>,
     matchmaker_ui_state: &mut MatchmakerUiState,
     server_to_connect: &mut Option<Server>,
-    main_menu_ui_channels: &mut MainMenuUiChannels,
+    main_menu_ui_channels: Option<&mut MainMenuUiChannels>,
 ) {
-    match matchmaker_ui_state.screen {
-        MatchmakerUiScreen::ServersList => matchmaker_servers_list_screen(
-            ui,
-            server_to_connect,
-            matchmaker_ui_state,
-            main_menu_ui_channels.persistence_request_tx.clone(),
-        ),
-        MatchmakerUiScreen::CreateServer
+    match (matchmaker_ui_state.screen, matchmaker_state) {
+        (MatchmakerUiScreen::CreateServer, Some(_matchmaker_state))
             if matchmaker_ui_state.pending_create_server_request.is_some() =>
         {
             connect_to_server_screen(ui, matchmaker_ui_state)
         }
-        MatchmakerUiScreen::CreateServer => matchmaker_create_server_screen(
-            ui,
-            matchmaker_state,
-            matchmaker_ui_state,
-            main_menu_ui_channels.persistence_request_tx.clone(),
-        ),
+        (MatchmakerUiScreen::CreateServer, Some(matchmaker_state)) => {
+            matchmaker_create_server_screen(
+                ui,
+                matchmaker_state,
+                matchmaker_ui_state,
+                main_menu_ui_channels
+                    .expect("Expected UI channels to exist when matchmaker state exists")
+                    .persistence_request_tx
+                    .clone(),
+            )
+        }
+        (MatchmakerUiScreen::ServersList | MatchmakerUiScreen::CreateServer, _) => {
+            matchmaker_servers_list_screen(
+                ui,
+                server_to_connect,
+                matchmaker_ui_state,
+                main_menu_ui_channels.map(|channels| channels.persistence_request_tx.clone()),
+            )
+        }
     }
 }
 
@@ -999,7 +1026,7 @@ fn matchmaker_servers_list_screen(
     ui: &mut egui::Ui,
     server_to_connect: &mut Option<Server>,
     matchmaker_ui_state: &mut MatchmakerUiState,
-    persistence_requests_tx: UnboundedSender<PersistenceRequest>,
+    persistence_requests_tx: Option<UnboundedSender<PersistenceRequest>>,
 ) {
     // Server list.
     let mut sorted_servers = matchmaker_ui_state
@@ -1013,29 +1040,60 @@ fn matchmaker_servers_list_screen(
         egui::containers::ScrollArea::vertical()
             .max_height(500.0)
             .show(ui, |ui| {
-                let response = MenuListItem::new("Create a server")
-                    .secondary_widget(|ui| {
-                        ui.label("Create a server to let other players join");
-                    })
-                    .image_widget(plus_image)
-                    .show(ui);
-                if response.item.clicked() {
-                    matchmaker_ui_state.selected_server = None;
-                    matchmaker_ui_state.screen = MatchmakerUiScreen::CreateServer;
-                    let request_id = matchmaker_ui_state.request_id_counter.increment();
-                    matchmaker_ui_state.current_request_id = Some(request_id);
-                    persistence_requests_tx
-                        .send(PersistenceRequest::GetLevels {
-                            request_id,
-                            body: GetLevelsRequest {
-                                user_filter: None,
-                                pagination: PaginationParams {
-                                    offset: 0,
-                                    limit: 20,
-                                },
-                            },
+                if let Some(persistence_requests_tx) = persistence_requests_tx {
+                    let response = MenuListItem::new("Create a server")
+                        .secondary_widget(|ui| {
+                            ui.label("Create a server to let other players join");
                         })
-                        .expect("Failed to write to a channel (persistence request)");
+                        .image_widget(plus_image)
+                        .show(ui);
+                    if response.item.clicked() {
+                        matchmaker_ui_state.connect_manually_is_active = false;
+                        matchmaker_ui_state.selected_server = None;
+                        matchmaker_ui_state.screen = MatchmakerUiScreen::CreateServer;
+                        let request_id = matchmaker_ui_state.request_id_counter.increment();
+                        matchmaker_ui_state.current_request_id = Some(request_id);
+                        persistence_requests_tx
+                            .send(PersistenceRequest::GetLevels {
+                                request_id,
+                                body: GetLevelsRequest {
+                                    user_filter: None,
+                                    pagination: PaginationParams {
+                                        offset: 0,
+                                        limit: 20,
+                                    },
+                                },
+                            })
+                            .expect("Failed to write to a channel (persistence request)");
+                    }
+                }
+
+                let connect_response = connect_manually_item(
+                    &mut matchmaker_ui_state.connect_manually_ip_addr,
+                    matchmaker_ui_state.connect_manually_is_active,
+                    ui,
+                );
+                if connect_response.item.clicked() {
+                    matchmaker_ui_state.connect_manually_is_active = true;
+                    matchmaker_ui_state.selected_server = None;
+                }
+                if connect_response.secondary.clicked() {
+                    match matchmaker_ui_state.connect_manually_ip_addr.parse() {
+                        Ok(addr) => {
+                            matchmaker_ui_state.connect_manually_is_active = false;
+                            *server_to_connect = Some(Server {
+                                name: "Unknown".to_string(),
+                                state: GameServerState::Ready,
+                                addr,
+                                player_capacity: 0,
+                                player_count: 0,
+                                request_id: Default::default(),
+                            });
+                        }
+                        Err(err) => {
+                            log::error!("Invalid server addr: {err:?}");
+                        }
+                    }
                 }
 
                 server_list(
@@ -1043,6 +1101,9 @@ fn matchmaker_servers_list_screen(
                     &sorted_servers,
                     &mut matchmaker_ui_state.selected_server,
                 );
+                if matchmaker_ui_state.selected_server.is_some() {
+                    matchmaker_ui_state.connect_manually_is_active = false;
+                }
             });
     });
 
@@ -1066,6 +1127,36 @@ fn matchmaker_servers_list_screen(
                 .clone(),
         );
     }
+}
+
+fn connect_manually_item(
+    connect_manually_ip_addr: &mut String,
+    is_active: bool,
+    ui: &mut Ui,
+) -> MenuListItemResponse<egui::Response, ()> {
+    MenuListItem::new("Connect manually")
+        .secondary_widget(|ui| {
+            if !is_active {
+                return ui.label("Select to connect to a server by IP");
+            }
+
+            ui.horizontal(|ui| {
+                ui.style_mut().visuals.widgets.inactive.bg_stroke =
+                    ui.style_mut().visuals.window_stroke();
+                egui::widgets::TextEdit::singleline(connect_manually_ip_addr)
+                    .desired_width(150.0)
+                    .show(ui);
+                ui.add_enabled(
+                    connect_manually_ip_addr.parse::<SocketAddr>().is_ok(),
+                    egui::widgets::Button::new("Connect"),
+                )
+                .on_disabled_hover_text("Enter a valid server address to connect")
+            })
+            .inner
+        })
+        .selected(is_active)
+        .image_widget(circle_image)
+        .show(ui)
 }
 
 fn matchmaker_create_server_screen(
@@ -1422,4 +1513,31 @@ fn plus_image(ui: &mut egui::Ui) {
         .rect_filled(horizontal, 0.0, ui.visuals().widgets.inactive.bg_fill);
     ui.painter()
         .rect_filled(vertical, 0.0, ui.visuals().widgets.inactive.bg_fill);
+}
+
+#[allow(dead_code)]
+fn cancel_image(ui: &mut egui::Ui) {
+    ui.painter().circle_stroke(
+        ui.max_rect().center(),
+        14.0,
+        egui::Stroke::new(3.0, ui.visuals().widgets.inactive.bg_fill),
+    );
+    let mut mesh = egui::Mesh::with_texture(egui::TextureId::Managed(0));
+    mesh.add_colored_rect(
+        egui::Rect::from_center_size(ui.max_rect().center(), egui::Vec2::new(28.0, 4.0)),
+        ui.visuals().widgets.inactive.bg_fill,
+    );
+    mesh.rotate(
+        egui::emath::Rot2::from_angle(-std::f32::consts::FRAC_PI_4),
+        ui.max_rect().center(),
+    );
+    ui.painter().add(mesh);
+}
+
+fn circle_image(ui: &mut egui::Ui) {
+    ui.painter().circle_stroke(
+        ui.max_rect().center(),
+        14.0,
+        egui::Stroke::new(3.0, ui.visuals().widgets.inactive.bg_fill),
+    );
 }

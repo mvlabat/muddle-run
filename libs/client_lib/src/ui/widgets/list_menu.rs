@@ -7,6 +7,7 @@ pub struct MenuListItem<Secondary, Collapsing> {
     title: String,
     id: egui::Id,
     is_selected: bool,
+    is_hoverable: bool,
     image_widget: Option<Box<UiFunc>>,
     secondary: Secondary,
     collapsing: Collapsing,
@@ -41,6 +42,7 @@ impl MenuListItem<DrawNothing, DrawNothing> {
             title: title.to_string(),
             id: egui::Id::new(title.to_string()),
             is_selected: false,
+            is_hoverable: true,
             image_widget: None,
             secondary: |_| {},
             collapsing: |_| {},
@@ -66,6 +68,12 @@ where
         self
     }
 
+    #[allow(dead_code)]
+    pub fn hoverable(mut self, is_hoverable: bool) -> Self {
+        self.is_hoverable = is_hoverable;
+        self
+    }
+
     pub fn image_widget(mut self, image_widget: impl FnOnce(&mut egui::Ui) + 'static) -> Self {
         self.image_widget = Some(Box::new(image_widget));
         self
@@ -79,6 +87,7 @@ where
             title: self.title,
             id: self.id,
             is_selected: self.is_selected,
+            is_hoverable: self.is_hoverable,
             image_widget: self.image_widget,
             secondary: widget,
             collapsing: self.collapsing,
@@ -93,6 +102,7 @@ where
             title: self.title,
             id: self.id,
             is_selected: self.is_selected,
+            is_hoverable: self.is_hoverable,
             image_widget: self.image_widget,
             secondary: self.secondary,
             collapsing: widget,
@@ -111,7 +121,7 @@ where
 
         let fill = if self.is_selected {
             Some(ui.style().visuals.extreme_bg_color)
-        } else if response.hovered() {
+        } else if self.is_hoverable && response.hovered() {
             Some(ui.style().visuals.faint_bg_color)
         } else {
             Some(ui.style().visuals.window_fill())
@@ -158,6 +168,7 @@ where
         secondary_ui.style_mut().override_text_style = Some(egui::TextStyle::Heading);
         secondary_ui.label(self.title);
         secondary_ui.style_mut().override_text_style = None;
+        secondary_ui.add_space(3.0);
         let secondary = (self.secondary)(&mut secondary_ui);
 
         let mut collapsing_ui = ui.child_ui(
@@ -212,7 +223,10 @@ where
         };
 
         let mut ctx_output = ui.ctx().output();
-        if response.hovered() && ctx_output.cursor_icon == egui::CursorIcon::Default {
+        if self.is_hoverable
+            && response.hovered()
+            && ctx_output.cursor_icon == egui::CursorIcon::Default
+        {
             ctx_output.cursor_icon = egui::CursorIcon::PointingHand;
         }
 

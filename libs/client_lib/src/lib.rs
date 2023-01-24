@@ -14,12 +14,11 @@ use crate::{
         auth::read_offline_auth_config_system, fill_actual_frames_ahead_system,
         has_server_to_connect, init_matchmaker_connection_system, maintain_connection_system,
         process_network_events_system, send_network_updates_system, send_requests_system,
-        ServerToConnect,
+        ServerToConnect, DEFAULT_SERVER_IP_ADDR,
     },
     ui::{
         builder_ui::{EditedLevelObject, EditedObjectUpdate},
         debug_ui::update_debug_ui_state_system,
-        main_menu_ui::matchmaker_is_initialised,
     },
     visuals::{
         control_builder_visibility_system, process_control_points_input_system,
@@ -72,6 +71,14 @@ pub struct MuddleClientPlugin;
 
 impl Plugin for MuddleClientPlugin {
     fn build(&self, app: &mut App) {
+        let config_server_addr = app
+            .world
+            .get_resource::<MuddleClientConfig>()
+            .expect("Expected MuddleClientConfig to be initialised before MuddleClientPlugin")
+            .server_addr
+            .unwrap_or_else(|| SocketAddr::new(DEFAULT_SERVER_IP_ADDR, DEFAULT_SERVER_PORT))
+            .to_string();
+
         let input_stage = SystemStage::single_threaded()
             .with_system(maintain_connection_system.run_not_in_state(AppState::Loading))
             // Processing network events should happen before tracking input:
@@ -99,7 +106,7 @@ impl Plugin for MuddleClientPlugin {
             .add_plugin(WorldInspectorPlugin::new())
             .init_resource::<WindowInnerSize>()
             .init_resource::<input::MouseScreenPosition>()
-            .init_resource::<ui::main_menu_ui::MainMenuUiState>()
+            .insert_resource(ui::main_menu_ui::MainMenuUiState::new(config_server_addr))
             .add_event::<EditedObjectUpdate>()
             // Startup systems.
             .add_startup_system(init_matchmaker_connection_system)
@@ -139,7 +146,6 @@ impl Plugin for MuddleClientPlugin {
             .add_system(
                 ui::main_menu_ui::main_menu_ui_system
                     .run_in_state(AppState::MainMenu)
-                    .run_if(matchmaker_is_initialised)
                     .run_if_not(has_server_to_connect)
                     .after("process_io_messages"),
             )

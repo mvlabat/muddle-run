@@ -138,6 +138,7 @@ pub enum DisconnectReason {
     InvalidUpdate,
     Timeout,
     Closed,
+    Aborted,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

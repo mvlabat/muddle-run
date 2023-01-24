@@ -12,10 +12,10 @@ use crate::{
 };
 use auth::{AuthMessage, AuthRequest};
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::Instant};
-use bevy_disturbulence::{NetworkEvent, NetworkResource};
+use bevy_disturbulence::{IncomingTrySendError, NetworkError, NetworkEvent, NetworkResource};
 use futures::{select, FutureExt};
 use iyes_loopless::state::NextState;
-use mr_messages_lib::{MatchmakerMessage, MatchmakerRequest, Server};
+use mr_messages_lib::{GameServerState, MatchmakerMessage, MatchmakerRequest, Server};
 use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
     game::{
@@ -59,7 +59,7 @@ mod persistence;
 mod redirect_uri_server;
 
 pub const DEFAULT_SERVER_PORT: u16 = 3455;
-const DEFAULT_SERVER_IP_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+pub const DEFAULT_SERVER_IP_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
 #[derive(SystemParam)]
 pub struct UpdateParams<'w, 's> {
@@ -328,6 +328,11 @@ pub fn process_network_events_system(
             }
             NetworkEvent::Error(handle, err) => {
                 log::error!("Network error ({}): {:?}", handle, err);
+                if let NetworkError::TurbulenceChannelError(IncomingTrySendError::Error(_)) = err {
+                    network_params
+                        .connection_state
+                        .set_status(ConnectionStatus::Disconnecting(DisconnectReason::Aborted));
+                };
             }
             _ => {}
         }
@@ -723,6 +728,7 @@ pub fn maintain_connection_system(
     mut matchmaker_params: MatchmakerParams,
     mut network_params: NetworkParams,
     mut initial_rtt: ResMut<InitialRtt>,
+    mut initialised_server_to_connect_without_matchmaker: Local<bool>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -765,7 +771,7 @@ pub fn maintain_connection_system(
     );
 
     // TODO: if a client isn't getting any updates, we may also want to pause the
-    // game and wait for some time for a server to respond.
+    //  game and wait for some time for a server to respond.
 
     let connection_has_timed_out = Instant::now().duration_since(
         network_params
@@ -812,11 +818,8 @@ pub fn maintain_connection_system(
             .set_status(ConnectionStatus::Uninitialized);
     }
 
-    // TODO! so I left off after just finishing with the loading states, need to
-    //  sort out the menu app state and running conditions
-
     if network_params.net.connections.is_empty() {
-        let addr = if let Some((matchmaker_state, matchmaker_channels)) = matchmaker.as_mut() {
+        if let Some((matchmaker_state, matchmaker_channels)) = matchmaker.as_mut() {
             if matches!(matchmaker_state.status, TcpConnectionStatus::Disconnected) {
                 log::trace!("Requesting a connection to the matchmaker");
                 matchmaker_channels
@@ -825,22 +828,31 @@ pub fn maintain_connection_system(
                     .expect("Failed to write to a channel (matchmaker connection request)");
                 return;
             }
-
-            let Some(server) = &**matchmaker_params.server_to_connect else {
-                return;
-            };
-            log::info!("Connecting to {}: {}", server.name, server.addr);
-            format!("http://{}", server.addr)
-        } else {
+        } else if !*initialised_server_to_connect_without_matchmaker {
+            // We want to init the connection to a server only once.
+            // If a client disconnects, they'll be able to re-connect via the main menu.
+            *initialised_server_to_connect_without_matchmaker = true;
             let server_socket_addr = client_config
                 .server_addr
                 .unwrap_or_else(|| SocketAddr::new(DEFAULT_SERVER_IP_ADDR, DEFAULT_SERVER_PORT));
 
-            log::info!("Connecting to {}", server_socket_addr);
-            format!("http://{server_socket_addr}")
+            **matchmaker_params.server_to_connect = Some(Server {
+                name: "Unknown".to_string(),
+                state: GameServerState::Ready,
+                addr: server_socket_addr,
+                player_capacity: 0,
+                player_count: 0,
+                request_id: Default::default(),
+            });
         };
 
-        network_params.net.connect(&addr);
+        let Some(server) = &**matchmaker_params.server_to_connect else {
+            return;
+        };
+        log::info!("Connecting to {}: {}", server.name, server.addr);
+        network_params
+            .net
+            .connect(&format!("http://{}", server.addr));
     }
 }
 
