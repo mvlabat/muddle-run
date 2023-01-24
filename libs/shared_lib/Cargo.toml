@@ -16,7 +16,7 @@ bevy = { version = "0.9.1", default-features = false }
 bevy_egui = { version = "0.18", optional = true }
 bevy_mod_picking = { version = "0.11", optional = true }
 bevy_disturbulence = { git = "https://github.com/mvlabat/bevy_disturbulence.git", branch = "wip" }
-bevy_rapier2d = { version = "0.19", features = ["wasm-bindgen", "serde-serialize"] }
+bevy_rapier2d = { version = "0.20", features = ["wasm-bindgen", "serde-serialize"] }
 chrono = "0.4.19"
 crossbeam-channel = "0.5.5"
 futures-lite = "1.12.0"

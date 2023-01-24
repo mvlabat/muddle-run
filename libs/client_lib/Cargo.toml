@@ -20,7 +20,7 @@ bevy-inspector-egui = "0.15.0"
 bevy-inspector-egui-rapier = { version = "0.9", features = ["rapier2d"] }
 bevy_mod_picking = "0.11"
 bevy_disturbulence = { git = "https://github.com/mvlabat/bevy_disturbulence.git", branch = "wip", features = ["client"] }
-bevy_rapier2d = { version = "0.19", features = ["wasm-bindgen"] }
+bevy_rapier2d = { version = "0.20", features = ["wasm-bindgen"] }
 chrono = "0.4.23"
 futures = "0.3.25"
 iyes_loopless = "0.9"
