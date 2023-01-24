@@ -11,7 +11,7 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, time::Duration};
 
-pub const DEFAULT_JWK_CACHE_TTL: u64 = 15;
+pub const DEFAULT_JWK_CACHE_TTL_SECS: u64 = 15;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JwkSet<'a> {
@@ -131,10 +131,10 @@ pub async fn poll_jwks(client: reqwest::Client, certs_url: Url, jwks: Jwks) {
                 let jwk_ttl = max_age.unwrap_or_else(|err| {
                     log::error!(
                         "Unable to determine cache TTL (will invalidate in {} seconds): {:?}",
-                        DEFAULT_JWK_CACHE_TTL,
+                        DEFAULT_JWK_CACHE_TTL_SECS,
                         err
                     );
-                    Duration::from_secs(DEFAULT_JWK_CACHE_TTL)
+                    Duration::from_secs(DEFAULT_JWK_CACHE_TTL_SECS)
                 });
 
                 match response.json::<JwkSet>().await {
@@ -162,10 +162,10 @@ pub async fn poll_jwks(client: reqwest::Client, certs_url: Url, jwks: Jwks) {
             Err(err) => {
                 log::error!(
                     "Failed to fetch JwtSet (will re-try in {} seconds): {:?}",
-                    DEFAULT_JWK_CACHE_TTL,
+                    DEFAULT_JWK_CACHE_TTL_SECS,
                     err
                 );
-                Duration::from_secs(DEFAULT_JWK_CACHE_TTL)
+                Duration::from_secs(DEFAULT_JWK_CACHE_TTL_SECS)
             }
         };
 

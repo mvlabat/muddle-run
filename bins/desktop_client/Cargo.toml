@@ -11,8 +11,8 @@ mr_client_lib = { path = "../../libs/client_lib", features = ["profiler"] }
 mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 
 bevy = "0.9.1"
-sentry = "0.29.1"
 bevy_puffin = "0.3"
+sentry = "0.29.1"
 
 [build-dependencies]
 mr_build_dotenv = { path = "../../libs/build_dotenv" }

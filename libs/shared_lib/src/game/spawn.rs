@@ -22,7 +22,8 @@ use crate::{
     messages::{EntityNetId, PlayerNetId},
     registry::EntityRegistry,
     util::{dedup_by_key_unsorted, player_sensor_outline},
-    GameTime, SimulationTime, PLAYER_RADIUS, PLAYER_SENSOR_RADIUS,
+    GameSessionState, GameTime, LevelObjectsToSpawnToLoad, SimulationTime, PLAYER_RADIUS,
+    PLAYER_SENSOR_RADIUS,
 };
 use bevy::{
     ecs::{
@@ -38,6 +39,7 @@ use bevy_rapier2d::{
     prelude::CollisionGroups,
     rapier::geometry::ColliderShape,
 };
+use iyes_loopless::state::NextState;
 use std::fmt::Debug;
 
 #[derive(WorldQuery)]
@@ -94,7 +96,7 @@ pub struct PlayerQuery<'w> {
     _tag: Without<PlayerSensor>,
 }
 
-pub fn spawn_players(
+pub fn spawn_players_system(
     mut commands: Commands,
     time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
@@ -258,7 +260,7 @@ pub fn spawn_players(
     }
 }
 
-pub fn despawn_players(
+pub fn despawn_players_system(
     mut commands: Commands,
     time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
@@ -348,12 +350,13 @@ pub struct LevelObjectsParams<'w, 's> {
     level_object_query: Query<'w, 's, UpdateLevelObjectQuery<'static>>,
 }
 
-pub fn update_level_objects(
+pub fn update_level_objects_system(
     mut commands: Commands,
     time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
     mut update_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
     mut level_object_params: LevelObjectsParams,
+    mut level_objects_to_spawn_to_load: Option<ResMut<LevelObjectsToSpawnToLoad>>,
     shape_sender: Res<ColliderShapeSender>,
 ) {
     #[cfg(feature = "profiler")]
@@ -458,6 +461,16 @@ pub fn update_level_objects(
             .insert(spawned_component);
 
         if let Some(ref shape) = shape {
+            // This resource exists if we've just started the game. Once all the objects are
+            // spawned, we must remove the resource and switch to the
+            // `GameSessionState::Playing` state.
+            //
+            // IMPORTANT: the same logic is present in `poll_calculating_shapes_system`,
+            // remember to update it as well if there are any changes to this code.
+            if let Some(level_objects_to_spawn_to_load) = &mut level_objects_to_spawn_to_load {
+                level_objects_to_spawn_to_load.0 -= 1;
+            }
+
             let (physics_bundle, sensor) = command
                 .object
                 .desc
@@ -526,6 +539,17 @@ pub fn update_level_objects(
             }
         }
     }
+
+    if let Some(level_objects_to_spawn_to_load) = &mut level_objects_to_spawn_to_load {
+        if level_objects_to_spawn_to_load.0 == 0 {
+            log::info!(
+                "Changing the game session state to {:?}",
+                GameSessionState::Playing
+            );
+            commands.insert_resource(NextState(GameSessionState::Playing));
+            commands.remove_resource::<LevelObjectsToSpawnToLoad>();
+        }
+    }
 }
 
 type GhostEntites = Option<(
@@ -533,8 +557,9 @@ type GhostEntites = Option<(
     &'static LevelObjectServerGhostChild,
 )>;
 
-pub fn poll_calculating_shapes(
+pub fn poll_calculating_shapes_system(
     mut commands: Commands,
+    mut level_objects_to_spawn_to_load: Option<ResMut<LevelObjectsToSpawnToLoad>>,
     time: Res<GameTime>,
     level_state: Res<LevelState>,
     mut pbr_client_params: PbrClientParams,
@@ -573,6 +598,16 @@ pub fn poll_calculating_shapes(
                 continue;
             }
         };
+
+        // This resource exists if we've just started the game. Once all the objects are
+        // spawned, we must remove the resource and switch to the
+        // `GameSessionState::Playing` state.
+        //
+        // IMPORTANT: the same logic is present in `update_level_objects_system`,
+        // remember to update it as well if there are any changes to this code.
+        if let Some(level_objects_to_spawn_to_load) = &mut level_objects_to_spawn_to_load {
+            level_objects_to_spawn_to_load.0 -= 1;
+        }
 
         let (physics_bundle, sensor) = level_object
             .desc
@@ -654,7 +689,7 @@ fn insert_client_components(
     };
 }
 
-pub fn despawn_level_objects(
+pub fn despawn_level_objects_system(
     mut commands: Commands,
     time: Res<SimulationTime>,
     mut pbr_client_params: PbrClientParams,
@@ -757,7 +792,7 @@ pub fn despawn_level_objects(
     }
 }
 
-pub fn process_spawned_entities(
+pub fn process_spawned_entities_system(
     mut commands: Commands,
     game_time: Res<GameTime>,
     mut player_entities: ResMut<EntityRegistry<PlayerNetId>>,

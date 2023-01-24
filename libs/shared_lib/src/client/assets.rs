@@ -36,7 +36,7 @@ pub struct MuddleMeshes {
     pub control_point: Handle<Mesh>,
 }
 
-pub fn init_muddle_assets(
+pub fn init_muddle_assets_system(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,

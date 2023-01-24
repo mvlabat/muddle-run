@@ -57,7 +57,7 @@ pub struct RoutePointDesc {
     pub position: Vec2,
 }
 
-pub fn update_level_object_movement_route_settings(
+pub fn update_level_object_movement_route_settings_system(
     mut commands: Commands,
     time: Res<SimulationTime>,
     level: Res<LevelState>,
@@ -221,7 +221,7 @@ pub struct LevelObjectQuery<'w> {
     spawned: &'w Spawned,
 }
 
-pub fn process_objects_route_graph(
+pub fn process_objects_route_graph_system(
     time: Res<SimulationTime>,
     mut level_objects: Query<LevelObjectQuery, With<LevelObjectTag>>,
 ) {

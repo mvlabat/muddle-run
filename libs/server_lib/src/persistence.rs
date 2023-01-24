@@ -78,7 +78,7 @@ pub async fn get_user(persistence_url: Url, user_id: i64) -> anyhow::Result<GetU
     Ok(response)
 }
 
-#[derive(Resource)]
+#[derive(Resource, Deref, DerefMut)]
 pub struct InitLevelObjects(pub Vec<LevelObject>);
 
 pub async fn load_level(
@@ -198,7 +198,7 @@ pub fn init_jwks_polling(config: Option<Res<PersistenceConfig>>, jwks: Res<Jwks>
     TOKIO.spawn(poll_jwks(client, auth0_certs_url, jwks));
 }
 
-pub fn save_level(
+pub fn save_level_system(
     mut last_sent: Local<Option<Instant>>,
     request_tx: Res<PersistenceRequestSender>,
     fetched_level_info: Option<Res<FetchedLevelInfo>>,

@@ -116,7 +116,11 @@ pub enum ReliableServerMessage {
     /// A kludge message basically, to let our networking stack to initialize
     /// properly for webrtc.
     Initialize,
-    /// Is sent as a response to client's `ReliableClientMessage::Handshake`.
+    /// Is sent if a server is still in the loading state when a client joins
+    /// (as a response to client's `ReliableClientMessage::Handshake`).
+    Loading,
+    /// Is sent as a response to client's `ReliableClientMessage::Handshake` or
+    /// when the game is started if a client is already joined.
     StartGame(StartGame),
     ConnectedPlayer((PlayerNetId, Player)),
     DisconnectedPlayer(DisconnectedPlayer),
@@ -134,6 +138,7 @@ pub enum DisconnectReason {
     InvalidUpdate,
     Timeout,
     Closed,
+    Aborted,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

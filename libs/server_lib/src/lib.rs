@@ -5,20 +5,21 @@ pub use crate::net::watch_agones_updates;
 pub use mr_shared_lib::{game::PlayerEventSender, player::PlayerEvent};
 
 use crate::{
-    game_events::{process_player_events, process_scheduled_spawns},
+    game_events::{process_player_events_system, process_scheduled_spawns_system},
     net::{
-        process_network_events, send_network_updates, startup, ConnectionStates, FetchedLevelInfo,
+        broadcast_disconnected_players_system, process_network_events_system,
+        send_network_updates_system, startup, ConnectionStates, FetchedLevelInfo,
         NewPlayerConnections, PlayerConnections,
     },
     persistence::{
         create_level, get_user, handle_persistence_requests, init_jwks_polling, load_level,
-        save_level, InitLevelObjects, Jwks, PersistenceConfig, PersistenceMessage,
+        save_level_system, InitLevelObjects, Jwks, PersistenceConfig, PersistenceMessage,
         PersistenceRequest,
     },
     player_updates::{
-        process_despawn_level_object_requests, process_player_input_updates,
-        process_spawn_level_object_requests, process_switch_role_requests,
-        process_update_level_object_requests,
+        process_despawn_level_object_requests_system, process_player_input_updates_system,
+        process_spawn_level_object_requests_system, process_switch_role_requests_system,
+        process_update_level_object_requests_system,
     },
 };
 use bevy::{
@@ -26,6 +27,7 @@ use bevy::{
     prelude::*,
     time::{FixedTimestep, TimePlugin},
 };
+use iyes_loopless::prelude::*;
 use kube::Client;
 use mr_messages_lib::{InitLevel, LevelData};
 use mr_shared_lib::{
@@ -41,7 +43,8 @@ use mr_shared_lib::{
     },
     player::{PlayerRole, Players},
     registry::IncrementId,
-    MuddleSharedPlugin, SIMULATIONS_PER_SECOND,
+    AppState, GameSessionState, LevelObjectsToSpawnToLoad, MuddleSharedPlugin,
+    SIMULATIONS_PER_SECOND,
 };
 use mr_utils_lib::kube_discovery;
 use reqwest::Url;
@@ -58,7 +61,7 @@ mod net;
 mod persistence;
 mod player_updates;
 
-pub const DEFAULT_IDLE_TIMEOUT: u64 = 300_000;
+pub const DEFAULT_IDLE_TIMEOUT_MILLIS: u64 = 300_000;
 
 #[derive(Resource)]
 pub struct Agones {
@@ -157,20 +160,27 @@ impl Plugin for MuddleServerPlugin {
         app.add_system(process_idle_timeout);
 
         let input_stage = SystemStage::parallel()
-            .with_system(process_scheduled_spawns)
-            .with_system(process_network_events)
-            .with_system(process_player_input_updates.after(process_network_events))
-            .with_system(process_switch_role_requests.after(process_network_events))
+            .with_system(process_scheduled_spawns_system)
+            .with_system(process_network_events_system)
+            .with_system(process_player_input_updates_system.after(process_network_events_system))
+            .with_system(process_switch_role_requests_system.after(process_network_events_system))
             // It's ok to run the following in random order since object updates aren't possible
             // on the client before an authoritative confirmation that an object has been spawned.
-            .with_system(process_spawn_level_object_requests.after(process_network_events))
-            .with_system(process_update_level_object_requests.after(process_network_events))
-            .with_system(process_despawn_level_object_requests.after(process_network_events));
+            .with_system(
+                process_spawn_level_object_requests_system.after(process_network_events_system),
+            )
+            .with_system(
+                process_update_level_object_requests_system.after(process_network_events_system),
+            )
+            .with_system(
+                process_despawn_level_object_requests_system.after(process_network_events_system),
+            );
         let post_game_stage = SystemStage::single_threaded()
-            .with_system(process_player_events)
-            .with_system(save_level);
-        let broadcast_updates_stage =
-            SystemStage::single_threaded().with_system(send_network_updates);
+            .with_system(process_player_events_system)
+            .with_system(save_level_system);
+        let broadcast_updates_stage = SystemStage::single_threaded()
+            .with_system(broadcast_disconnected_players_system)
+            .with_system(send_network_updates_system.run_in_state(GameSessionState::Playing));
 
         // Game.
         app.add_plugin(MuddleSharedPlugin::new(
@@ -182,40 +192,39 @@ impl Plugin for MuddleServerPlugin {
             None,
         ));
 
-        let world = &mut app.world;
-        world.get_resource_or_insert_with(EntityNetIdCounter::default);
-        world.get_resource_or_insert_with(PlayerNetIdCounter::default);
-        world.get_resource_or_insert_with(PlayerConnections::default);
-        world.get_resource_or_insert_with(NewPlayerConnections::default);
-        world.get_resource_or_insert_with(ConnectionStates::default);
-        world.get_resource_or_insert_with(DeferredPlayerQueues::<RunnerInput>::default);
-        world.get_resource_or_insert_with(DeferredPlayerQueues::<PlayerRole>::default);
-        world.get_resource_or_insert_with(
-            DeferredPlayerQueues::<messages::SpawnLevelObjectRequestBody>::default,
-        );
-        world.get_resource_or_insert_with(DeferredPlayerQueues::<SpawnLevelObjectRequest>::default);
-        world.get_resource_or_insert_with(DeferredPlayerQueues::<LevelObject>::default);
-        world.get_resource_or_insert_with(DeferredPlayerQueues::<EntityNetId>::default);
-        world.get_resource_or_insert_with(DeferredMessagesQueue::<RespawnPlayer>::default);
-        world.get_resource_or_insert_with(DeferredMessagesQueue::<SpawnLevelObject>::default);
-        world.get_resource_or_insert_with(DeferredMessagesQueue::<UpdateLevelObject>::default);
-        world.get_resource_or_insert_with(DeferredMessagesQueue::<DespawnLevelObject>::default);
-        world.get_resource_or_insert_with(|| LastPlayerDisconnectedAt(Instant::now()));
-        world.get_resource_or_insert_with(|| {
-            IdleTimeout(
-                server_config
-                    .idle_timeout_millis
-                    .map(Duration::from_millis)
-                    .unwrap_or_else(|| {
-                        log::info!(
-                            "Using the default value for MUDDLE_IDLE_TIMEOUT: {}",
-                            DEFAULT_IDLE_TIMEOUT
-                        );
-                        Duration::from_millis(DEFAULT_IDLE_TIMEOUT)
-                    }),
-            )
-        });
-        world.get_resource_or_insert_with(Jwks::default);
+        // We override the initial state for server as we aren't using the loading state
+        // atm.
+        app.insert_resource(CurrentState(AppState::Playing));
+
+        app.init_resource::<EntityNetIdCounter>();
+        app.init_resource::<PlayerNetIdCounter>();
+        app.init_resource::<PlayerConnections>();
+        app.init_resource::<NewPlayerConnections>();
+        app.init_resource::<ConnectionStates>();
+        app.init_resource::<DeferredPlayerQueues<RunnerInput>>();
+        app.init_resource::<DeferredPlayerQueues<PlayerRole>>();
+        app.init_resource::<DeferredPlayerQueues<messages::SpawnLevelObjectRequestBody>>();
+        app.init_resource::<DeferredPlayerQueues<SpawnLevelObjectRequest>>();
+        app.init_resource::<DeferredPlayerQueues<LevelObject>>();
+        app.init_resource::<DeferredPlayerQueues<EntityNetId>>();
+        app.init_resource::<DeferredMessagesQueue<RespawnPlayer>>();
+        app.init_resource::<DeferredMessagesQueue<SpawnLevelObject>>();
+        app.init_resource::<DeferredMessagesQueue<UpdateLevelObject>>();
+        app.init_resource::<DeferredMessagesQueue<DespawnLevelObject>>();
+        app.insert_resource(LastPlayerDisconnectedAt(Instant::now()));
+        app.insert_resource(IdleTimeout(
+            server_config
+                .idle_timeout_millis
+                .map(Duration::from_millis)
+                .unwrap_or_else(|| {
+                    log::info!(
+                        "Using the default value for MUDDLE_IDLE_TIMEOUT: {}",
+                        DEFAULT_IDLE_TIMEOUT_MILLIS
+                    );
+                    Duration::from_millis(DEFAULT_IDLE_TIMEOUT_MILLIS)
+                }),
+        ));
+        app.init_resource::<Jwks>();
     }
 }
 
@@ -351,11 +360,19 @@ fn default_level_objects() -> Vec<LevelObject> {
 }
 
 pub fn init_level(
+    mut commands: Commands,
     mut init_level_objects: ResMut<InitLevelObjects>,
     mut entity_net_id_counter: ResMut<EntityNetIdCounter>,
     mut spawn_level_object_commands: ResMut<DeferredQueue<UpdateLevelObject>>,
 ) {
-    for level_object in std::mem::take(&mut init_level_objects.0) {
+    let level_objects_to_spawn = std::mem::take(&mut init_level_objects.0);
+    commands.insert_resource(LevelObjectsToSpawnToLoad(level_objects_to_spawn.len()));
+    log::info!(
+        "Level objects to spawn to load: {}",
+        level_objects_to_spawn.len()
+    );
+
+    for level_object in level_objects_to_spawn {
         assert_eq!(entity_net_id_counter.increment(), level_object.net_id);
         spawn_level_object_commands.push(UpdateLevelObject {
             frame_number: FrameNumber::new(0),

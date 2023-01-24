@@ -32,8 +32,11 @@ pub enum ConnectionStatus {
     Connected,
     /// We've received a `Disconnect` event or triggered the process manually.
     /// After we finish the needed clean-up, we switch the status to
-    /// `Disconnected`.
+    /// `Disconnected` (or immediately to `Uninitialized` for clients).
     Disconnecting(DisconnectReason),
+    /// This status must never be set manually (it's only set in the
+    /// `broadcast_disconnected_players` function, once all the necessary
+    /// updates have been processed).
     Disconnected,
 }
 
@@ -410,7 +413,7 @@ impl Acknowledgment {
     }
 }
 
-pub fn network_setup(mut net: NonSendMut<NetworkResource>) {
+pub fn network_setup_system(mut net: NonSendMut<NetworkResource>) {
     net.set_channels_builder(|builder: &mut ConnectionChannelsBuilder| {
         builder
             .register::<Message<UnreliableClientMessage>>(CLIENT_INPUT_MESSAGE_SETTINGS)

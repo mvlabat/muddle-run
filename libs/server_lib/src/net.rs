@@ -144,7 +144,7 @@ pub struct NetworkParams<'w, 's> {
     persistence_msg_rx: ResMut<'w, PersistenceMessageReceiver>,
 }
 
-pub fn process_network_events(
+pub fn process_network_events_system(
     mut despawned_players_for_handles: Local<HashSet<u32>>,
     time: Res<GameTime>,
     mut players: ResMut<Players>,
@@ -335,7 +335,10 @@ pub fn process_network_events(
             ) {
                 (Some(id), Some(connection_state)) => (id, connection_state),
                 _ => {
-                    log::error!("A player for handle {} is not registered", handle);
+                    log::debug!(
+                        "A player for handle {handle} is not registered, ignoring {:?}",
+                        &client_message.message
+                    );
                     break;
                 }
             };
@@ -382,7 +385,7 @@ pub fn process_network_events(
                         if let Err(err) = connection_state
                             .apply_outgoing_acknowledgements(frame_number, ack_bit_set)
                         {
-                            log::debug!(
+                            log::trace!(
                                 "Failed to apply outgoing packet acknowledgments (player: {}, update frame: {}, current frame: {}): {:?}",
                                 player_net_id.0,
                                 update.frame_number,
@@ -717,7 +720,7 @@ fn disconnect_players(
                     .set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
             }
         } else if Instant::now().duration_since(connection_state.status_updated_at())
-            > Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
+            > Duration::from_millis(CONNECTION_TIMEOUT_MILLIS)
         {
             // Disconnect players that haven't sent any updates at all (they are likely
             // in the `Connecting` or `Handshaking` status) if they are staying in this
@@ -729,7 +732,7 @@ fn disconnect_players(
         // Disconnecting players that haven't sent any message for
         // `CONNECTION_TIMEOUT_MILLIS`.
         if Instant::now().duration_since(connection_state.last_valid_message_received_at)
-            > Duration::from_secs(CONNECTION_TIMEOUT_MILLIS)
+            > Duration::from_millis(CONNECTION_TIMEOUT_MILLIS)
         {
             log::warn!("Disconnecting {}: idle", handle);
             connection_state.set_status(ConnectionStatus::Disconnecting(DisconnectReason::Timeout));
@@ -818,19 +821,34 @@ pub struct LevelParams<'w, 's> {
     marker: PhantomData<&'s ()>,
 }
 
-pub fn send_network_updates(
+#[derive(SystemParam)]
+pub struct PlayerParams<'w, 's> {
+    players: Res<'w, Players>,
+    player_entities: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Position,
+            &'static PlayerDirection,
+            &'static Spawned,
+        ),
+    >,
+    players_registry: Res<'w, EntityRegistry<PlayerNetId>>,
+}
+
+pub fn send_network_updates_system(
     mut network_params: NetworkParams,
     time: Res<SimulationTime>,
     level_params: LevelParams,
-    players: Res<Players>,
-    player_entities: Query<(Entity, &Position, &PlayerDirection, &Spawned)>,
-    players_registry: Res<EntityRegistry<PlayerNetId>>,
+    player_params: PlayerParams,
     mut deferred_message_queues: DeferredMessageQueues,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    // We run this system after we've concluded the simulation. As we don't have
-    // updates for the next frame yet, we decrement the frame number.
+    // We run this system after we've concluded the simulation and incremented the
+    // frame number. As we don't have updates for the next frame yet, we
+    // use the previous frame number just for this system run.
     let time = time.prev_frame();
 
     broadcast_start_game_messages(
@@ -841,12 +859,10 @@ pub fn send_network_updates(
             .as_deref()
             .map(|info| info.deref()),
         &level_params.level_state,
-        &players,
-        &player_entities,
-        &players_registry,
+        &player_params.players,
+        &player_params.player_entities,
+        &player_params.players_registry,
     );
-
-    broadcast_disconnected_players(&mut network_params);
 
     for (&_connection_player_net_id, &connection_handle) in network_params.player_connections.iter()
     {
@@ -862,9 +878,9 @@ pub fn send_network_updates(
         broadcast_delta_update_messages(
             &mut network_params.net,
             &time,
-            &players,
-            &player_entities,
-            &players_registry,
+            &player_params.players,
+            &player_params.player_entities,
+            &player_params.players_registry,
             connection_handle,
             connection_state,
         );
@@ -872,7 +888,7 @@ pub fn send_network_updates(
         send_new_player_messages(
             &mut network_params.net,
             &network_params.new_player_connections,
-            &players,
+            &player_params.players,
             connection_handle,
             connection_state,
         )
@@ -937,7 +953,7 @@ pub fn send_network_updates(
     network_params.new_player_connections.clear();
 }
 
-fn broadcast_disconnected_players(network_params: &mut NetworkParams) {
+pub fn broadcast_disconnected_players_system(mut network_params: NetworkParams) {
     let mut disconnected_players = Vec::new();
     for (&connection_handle, connection_state) in network_params.connection_states.iter_mut() {
         let ConnectionStatus::Disconnecting(reason) = connection_state.status() else {
@@ -1169,7 +1185,7 @@ fn create_player_state(
         .get_with_extrapolation(updates_start_frame)
         .map(|(_frame_number, direction)| *direction)
         .unwrap_or_else(|| {
-            log::debug!(
+            log::trace!(
                 "Missing updates for Player {} (updates start frame: {}, last player direction frame: {:?})",
                 net_id.0,
                 updates_start_frame,

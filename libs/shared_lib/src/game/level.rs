@@ -246,7 +246,7 @@ impl LevelObjectDesc {
     }
 }
 
-pub fn maintain_available_spawn_areas(
+pub fn maintain_available_spawn_areas_system(
     mut level_state: ResMut<LevelState>,
     updated_level_objects: Query<&EntityNetId, Added<LevelObjectTag>>,
 ) {

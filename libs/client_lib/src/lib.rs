@@ -5,23 +5,24 @@
 pub use net::DEFAULT_SERVER_PORT;
 
 use crate::{
-    camera::{move_free_camera_pivot, reattach_camera},
-    components::{CameraPivotDirection, CameraPivotTag},
+    camera::{move_free_camera_pivot_system, reattach_camera_system},
     config_storage::OfflineAuthConfig,
-    game_events::process_scheduled_spawns,
+    game_events::process_scheduled_spawns_system,
+    init_app_systems::load_shaders_system,
     input::{LevelObjectRequestsQueue, MouseRay, MouseWorldPosition, PlayerRequestsQueue},
     net::{
-        auth::read_offline_auth_config, fill_actual_frames_ahead, init_matchmaker_connection,
-        maintain_connection, process_network_events, send_network_updates, send_requests,
-        ServerToConnect,
+        auth::read_offline_auth_config_system, fill_actual_frames_ahead_system,
+        has_server_to_connect, init_matchmaker_connection_system, maintain_connection_system,
+        process_network_events_system, send_network_updates_system, send_requests_system,
+        ServerToConnect, DEFAULT_SERVER_IP_ADDR,
     },
     ui::{
         builder_ui::{EditedLevelObject, EditedObjectUpdate},
-        debug_ui::update_debug_ui_state,
+        debug_ui::update_debug_ui_state_system,
     },
     visuals::{
-        control_builder_visibility, process_control_points_input, spawn_control_points,
-        update_player_sensor_materials,
+        control_builder_visibility_system, process_control_points_input_system,
+        spawn_control_points_system, update_player_sensor_materials_system,
     },
 };
 use bevy::{
@@ -29,28 +30,24 @@ use bevy::{
     diagnostic::FrameTimeDiagnosticsPlugin,
     ecs::{
         entity::Entity,
-        schedule::{IntoSystemDescriptor, ShouldRun, State, StateError, SystemStage},
+        schedule::{IntoSystemDescriptor, ShouldRun, SystemStage},
         system::{Commands, IntoSystem, Local, Res, ResMut, Resource, SystemParam},
     },
-    hierarchy::BuildChildren,
     log,
-    math::{Vec2, Vec3},
-    pbr::{PointLight, PointLightBundle},
-    prelude::Camera3dBundle,
     time::Time,
-    transform::components::{GlobalTransform, Transform},
     utils::{HashMap, Instant},
 };
 use bevy_egui::EguiPlugin;
 use bevy_inspector_egui::{WorldInspectorParams, WorldInspectorPlugin};
 use bevy_inspector_egui_rapier::InspectableRapierPlugin;
+use iyes_loopless::prelude::*;
 use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
     game::client_factories::VisibilitySettings,
     messages::{EntityNetId, PlayerNetId},
     net::{ConnectionState, ConnectionStatus, MessageId},
-    GameState, GameTime, MuddleSharedPlugin, SimulationTime, COMPONENT_FRAMEBUFFER_LIMIT,
-    SIMULATIONS_PER_SECOND, TICKS_PER_NETWORK_BROADCAST,
+    AppState, GameSessionState, GameTime, MuddleSharedPlugin, SimulationTime,
+    COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND, TICKS_PER_NETWORK_BROADCAST,
 };
 use std::{marker::PhantomData, net::SocketAddr};
 use url::Url;
@@ -60,6 +57,7 @@ mod components;
 mod config_storage;
 mod game_events;
 mod helpers;
+mod init_app_systems;
 mod input;
 mod net;
 mod ui;
@@ -73,25 +71,33 @@ pub struct MuddleClientPlugin;
 
 impl Plugin for MuddleClientPlugin {
     fn build(&self, app: &mut App) {
+        let config_server_addr = app
+            .world
+            .get_resource::<MuddleClientConfig>()
+            .expect("Expected MuddleClientConfig to be initialised before MuddleClientPlugin")
+            .server_addr
+            .unwrap_or_else(|| SocketAddr::new(DEFAULT_SERVER_IP_ADDR, DEFAULT_SERVER_PORT))
+            .to_string();
+
         let input_stage = SystemStage::single_threaded()
-            // Processing network events should happen before tracking input
-            // because we reset current's player inputs on each delta update.
-            .with_system(maintain_connection)
-            .with_system(process_network_events.after(maintain_connection))
-            .with_system(input::track_input_events.after(process_network_events))
-            .with_system(input::cast_mouse_ray.after(input::track_input_events));
+            .with_system(maintain_connection_system.run_not_in_state(AppState::Loading))
+            // Processing network events should happen before tracking input:
+            // we rely on resetting current's player inputs on each delta update message (event).
+            .with_system(process_network_events_system.after(maintain_connection_system))
+            .with_system(input::track_input_events_system.after(process_network_events_system))
+            .with_system(input::cast_mouse_ray_system.after(input::track_input_events_system));
         let broadcast_updates_stage = SystemStage::single_threaded()
-            .with_system(send_network_updates)
-            .with_system(send_requests);
+            .with_system(send_network_updates_system)
+            .with_system(send_requests_system);
         let post_tick_stage = SystemStage::single_threaded()
-            .with_system(control_builder_visibility)
-            .with_system(update_player_sensor_materials)
-            .with_system(reattach_camera)
-            .with_system(move_free_camera_pivot.after(reattach_camera))
-            .with_system(pause_simulation)
-            .with_system(update_debug_ui_state.after(pause_simulation))
-            .with_system(control_ticking_speed.after(pause_simulation))
-            .with_system(fill_actual_frames_ahead.after(control_ticking_speed));
+            .with_system(control_builder_visibility_system)
+            .with_system(update_player_sensor_materials_system)
+            .with_system(reattach_camera_system)
+            .with_system(move_free_camera_pivot_system.after(reattach_camera_system))
+            .with_system(pause_simulation_system)
+            .with_system(update_debug_ui_state_system.after(pause_simulation_system))
+            .with_system(control_ticking_speed_system.after(pause_simulation_system))
+            .with_system(fill_actual_frames_ahead_system.after(control_ticking_speed_system));
 
         app.add_plugin(bevy_mod_picking::PickingPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin)
@@ -100,11 +106,14 @@ impl Plugin for MuddleClientPlugin {
             .add_plugin(WorldInspectorPlugin::new())
             .init_resource::<WindowInnerSize>()
             .init_resource::<input::MouseScreenPosition>()
+            .insert_resource(ui::main_menu_ui::MainMenuUiState::new(config_server_addr))
             .add_event::<EditedObjectUpdate>()
             // Startup systems.
-            .add_startup_system(init_matchmaker_connection)
-            .add_startup_system(basic_scene)
-            .add_startup_system(read_offline_auth_config)
+            .add_startup_system(init_matchmaker_connection_system)
+            .add_startup_system(init_app_systems::basic_scene_system)
+            .add_startup_system(read_offline_auth_config_system)
+            // Loading the app.
+            .add_system(load_shaders_system.run_in_state(AppState::Loading))
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
                 IntoSystem::into_system(net_adaptive_run_criteria),
@@ -114,45 +123,62 @@ impl Plugin for MuddleClientPlugin {
                 post_tick_stage,
                 None,
             ))
-            .add_system(process_scheduled_spawns)
+            .add_system(process_scheduled_spawns_system)
             // Egui.
-            .add_startup_system(ui::set_ui_scale_factor)
-            .add_system(ui::debug_ui::update_debug_visibility)
-            .add_system(ui::debug_ui::debug_ui)
-            .add_system(ui::debug_ui::profiler_ui)
-            .add_system(ui::overlay_ui::connection_status_overlay)
-            .add_system(ui::debug_ui::inspect_object)
-            .add_system(ui::player_ui::leaderboard_ui)
-            .add_system(ui::player_ui::help_ui)
-            .add_system(ui::main_menu_ui::main_menu_ui)
-            // Not only Egui for builder mode.
+            .add_startup_system(ui::set_ui_scale_factor_system)
+            .add_system(ui::debug_ui::update_debug_visibility_system)
+            .add_system(ui::debug_ui::debug_ui_system)
+            .add_system(ui::debug_ui::profiler_ui_system)
+            .add_system(ui::overlay_ui::app_loading_ui.run_in_state(AppState::Loading))
+            .add_system(
+                ui::overlay_ui::connection_status_overlay_system
+                    .run_not_in_state(AppState::Loading),
+            )
+            .add_system(ui::debug_ui::inspect_object_system)
+            .add_system(
+                ui::player_ui::leaderboard_ui_system.run_not_in_state(GameSessionState::Loading),
+            )
+            .add_system(ui::player_ui::help_ui_system.run_not_in_state(GameSessionState::Loading))
+            .add_startup_system(ui::main_menu_ui::init_menu_auth_state_system)
+            .add_system_set(
+                ui::main_menu_ui::process_io_messages_system_set().label("process_io_messages"),
+            )
+            .add_system(
+                ui::main_menu_ui::main_menu_ui_system
+                    .run_in_state(AppState::MainMenu)
+                    .run_if_not(has_server_to_connect)
+                    .after("process_io_messages"),
+            )
+            // Builder mode systems.
             .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))
             // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.
-            .add_system(process_control_points_input.after("builder_system_set"))
-            .add_system(spawn_control_points.after("builder_system_set"));
+            .add_system(process_control_points_input_system.after("builder_system_set"))
+            .add_system(spawn_control_points_system.after("builder_system_set"));
 
-        let world = &mut app.world;
-        world
+        // There's also `GameSessionState`, which is added by `MuddleSharedPlugin`.
+        app.add_state(AppState::Loading);
+
+        app.world
             .get_resource_mut::<WorldInspectorParams>()
             .unwrap()
             .enabled = false;
-        world.get_resource_or_insert_with(InitialRtt::default);
-        world.get_resource_or_insert_with(EstimatedServerTime::default);
-        world.get_resource_or_insert_with(GameTicksPerSecond::default);
-        world.get_resource_or_insert_with(TargetFramesAhead::default);
-        world.get_resource_or_insert_with(DelayServerTime::default);
-        world.get_resource_or_insert_with(ui::debug_ui::DebugUiState::default);
-        world.get_resource_or_insert_with(CurrentPlayerNetId::default);
-        world.get_resource_or_insert_with(ConnectionState::default);
-        world.get_resource_or_insert_with(PlayerRequestsQueue::default);
-        world.get_resource_or_insert_with(EditedLevelObject::default);
-        world.get_resource_or_insert_with(LevelObjectRequestsQueue::default);
-        world.get_resource_or_insert_with(LevelObjectCorrelations::default);
-        world.get_resource_or_insert_with(MouseRay::default);
-        world.get_resource_or_insert_with(MouseWorldPosition::default);
-        world.get_resource_or_insert_with(VisibilitySettings::default);
-        world.get_resource_or_insert_with(ServerToConnect::default);
-        world.get_resource_or_insert_with(OfflineAuthConfig::default);
+        app.init_resource::<InitialRtt>();
+        app.init_resource::<EstimatedServerTime>();
+        app.init_resource::<GameTicksPerSecond>();
+        app.init_resource::<TargetFramesAhead>();
+        app.init_resource::<DelayServerTime>();
+        app.init_resource::<ui::debug_ui::DebugUiState>();
+        app.init_resource::<CurrentPlayerNetId>();
+        app.init_resource::<ConnectionState>();
+        app.init_resource::<PlayerRequestsQueue>();
+        app.init_resource::<EditedLevelObject>();
+        app.init_resource::<LevelObjectRequestsQueue>();
+        app.init_resource::<LevelObjectCorrelations>();
+        app.init_resource::<MouseRay>();
+        app.init_resource::<MouseWorldPosition>();
+        app.init_resource::<VisibilitySettings>();
+        app.init_resource::<ServerToConnect>();
+        app.init_resource::<OfflineAuthConfig>();
     }
 }
 
@@ -283,8 +309,9 @@ pub struct MainCameraPivotEntity(pub Entity);
 #[derive(Resource)]
 pub struct MainCameraEntity(pub Entity);
 
-fn pause_simulation(
-    mut game_state: ResMut<State<GameState>>,
+fn pause_simulation_system(
+    mut commands: Commands,
+    game_state: Res<CurrentState<GameSessionState>>,
     connection_state: Res<ConnectionState>,
     game_time: Res<GameTime>,
     estimated_server_time: Res<EstimatedServerTime>,
@@ -299,70 +326,25 @@ fn pause_simulation(
         .saturating_sub(estimated_server_time.frame_number.value())
         < COMPONENT_FRAMEBUFFER_LIMIT / 2;
 
-    // We always assume that `GameState::Playing` is the initial state and
-    // `GameState::Paused` is pushed to the top of the stack.
-    if let GameState::Paused = game_state.current() {
+    if let GameSessionState::Paused = game_state.0 {
         if is_connected && has_server_updates {
-            let result = game_state.pop();
-            match result {
-                Ok(()) => {
-                    log::info!("Unpausing the game");
-                }
-                Err(StateError::StateAlreadyQueued) => {
-                    // TODO: investigate why this runs more than once before
-                    // changing the state sometimes.
-                }
-                Err(StateError::StackEmpty | StateError::AlreadyInState) => unreachable!(),
-            }
+            log::info!(
+                "Changing the game session state to {:?}",
+                GameSessionState::Playing
+            );
+            commands.insert_resource(NextState(GameSessionState::Playing));
             return;
         }
     }
 
-    if !is_connected || !has_server_updates {
-        let result = game_state.push(GameState::Paused);
-        match result {
-            Ok(()) => {
-                log::info!("Pausing the game");
-            }
-            Err(StateError::AlreadyInState) | Err(StateError::StateAlreadyQueued) => {
-                // It's ok. Bevy won't let us push duplicate values - that's
-                // what we rely on.
-            }
-            Err(StateError::StackEmpty) => unreachable!(),
-        }
+    // We can pause the game only when we are actually playing (not loading).
+    if matches!(game_state.0, GameSessionState::Playing) && (!is_connected || !has_server_updates) {
+        log::info!(
+            "Changing the game session state to {:?}",
+            GameSessionState::Paused
+        );
+        commands.insert_resource(NextState(GameSessionState::Paused));
     }
-}
-
-fn basic_scene(mut commands: Commands) {
-    // Add entities to the scene.
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
-            range: 256.0,
-            intensity: 1280000.0,
-            ..Default::default()
-        },
-        transform: Transform::from_translation(Vec3::new(-64.0, -92.0, 144.0)),
-        ..Default::default()
-    });
-    // Camera.
-    let main_camera_entity = commands
-        .spawn(Camera3dBundle {
-            transform: Transform::from_translation(Vec3::new(-3.0, -14.0, 14.0))
-                .looking_at(Vec3::default(), Vec3::Z),
-            ..Default::default()
-        })
-        .insert(bevy_mod_picking::PickingCameraBundle::default())
-        .id();
-    let main_camera_pivot_entity = commands
-        .spawn_empty()
-        .insert(CameraPivotTag)
-        .insert(CameraPivotDirection(Vec2::ZERO))
-        .insert(Transform::IDENTITY)
-        .insert(GlobalTransform::IDENTITY)
-        .add_child(main_camera_entity)
-        .id();
-    commands.insert_resource(MainCameraPivotEntity(main_camera_pivot_entity));
-    commands.insert_resource(MainCameraEntity(main_camera_entity));
 }
 
 #[derive(SystemParam)]
@@ -376,7 +358,7 @@ pub struct ControlTickingSpeedParams<'w, 's> {
     marker: PhantomData<&'s ()>,
 }
 
-fn control_ticking_speed(
+fn control_ticking_speed_system(
     mut frames_ticked: Local<u16>,
     mut prev_generation: Local<usize>,
     mut params: ControlTickingSpeedParams,
@@ -485,7 +467,7 @@ fn net_adaptive_run_criteria(
     mut state: Local<NetAdaptiveRunCriteriaState>,
     time: Res<Time>,
     game_ticks_per_second: Res<GameTicksPerSecond>,
-    game_state: Res<State<GameState>>,
+    game_state: Res<CurrentState<GameSessionState>>,
 ) -> ShouldRun {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
@@ -502,7 +484,7 @@ fn net_adaptive_run_criteria(
 
     // In the scenario when a client was frozen (minimized, for example) and it got
     // disconnected, we don't want to replay all the accumulated frames.
-    if game_state.current() != &GameState::Playing {
+    if game_state.0 != GameSessionState::Playing {
         state.accumulator = state.accumulator.min(1.0);
     }
 
