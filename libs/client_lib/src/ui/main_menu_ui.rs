@@ -207,19 +207,15 @@ impl InputField {
     }
 }
 
+#[derive(Default)]
 pub enum AuthUiScreen {
     RefreshAuth,
+    #[default]
     SignIn,
     SignUp,
     LinkAccount,
     SetDisplayName,
     GoogleOpenID,
-}
-
-impl Default for AuthUiScreen {
-    fn default() -> Self {
-        Self::SignIn
-    }
 }
 
 pub struct MatchmakerUiState {

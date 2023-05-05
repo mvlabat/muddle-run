@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "type": "cargo",
+            "name": "Check mr_server",
+            "cargoArgs": ["clippy", "-p", "mr_server"]
+        },
+        {
+            "type": "cargo",
+            "name": "Check mr_client",
+            "cargoArgs": ["clippy", "-p", "mr_client"]
+        }
+    ]
+}

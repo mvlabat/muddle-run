@@ -42,14 +42,6 @@ where
         *self = WrappedCounter::add(self, Self::new(1.as_())).0;
         old
     }
-
-    pub fn add_signed(&self, rhs: i16) -> Self {
-        if rhs > 0 {
-            self.add(Self::new(rhs.unsigned_abs().as_())).0
-        } else {
-            self.sub(Self::new(rhs.unsigned_abs().as_()))
-        }
-    }
 }
 
 impl<T: Integer> std::fmt::Display for WrappedCounter<T> {
