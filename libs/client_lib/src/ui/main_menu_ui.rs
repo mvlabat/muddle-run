@@ -12,19 +12,19 @@ use crate::{
 };
 use bevy::{
     ecs::{
-        schedule::SystemSet,
-        system::{Res, ResMut, Resource, SystemParam},
+        query::With,
+        schedule::{IntoSystemConfigs, SystemConfigs},
+        system::{Query, Res, ResMut, Resource, SystemParam},
     },
     log,
     utils::{HashMap, Instant, Uuid},
-    window::Windows,
+    window::{PrimaryWindow, Window},
 };
 use bevy_egui::{
     egui,
     egui::{Ui, Widget},
-    EguiContext,
+    EguiContexts,
 };
-use iyes_loopless::prelude::*;
 use mr_messages_lib::{
     GameServerState, GetLevelResponse, GetLevelsRequest, GetLevelsUserFilter, InitLevel,
     LevelsListItem, LinkAccountLoginMethod, MatchmakerMessage, MatchmakerRequest, PaginationParams,
@@ -339,24 +339,23 @@ pub struct Configs<'w, 's> {
 
 #[derive(SystemParam)]
 pub struct UiContext<'w, 's> {
-    egui_context: ResMut<'w, EguiContext>,
-    windows: Res<'w, Windows>,
-    #[system_param(ignore)]
-    _marker: PhantomData<&'s ()>,
+    egui_contexts: EguiContexts<'w, 's>,
+    windows: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
 }
 
-pub fn process_io_messages_system_set() -> SystemSet {
-    ConditionSet::new()
-        .run_if(matchmaker_is_initialised)
-        .with_system(process_auth_messages_system)
-        .with_system(process_matchmaker_messages_system)
-        .with_system(process_persistence_messages_system)
-        .into()
+pub fn process_io_messages_system_set() -> SystemConfigs {
+    (
+        process_auth_messages_system,
+        process_matchmaker_messages_system,
+        process_persistence_messages_system,
+    )
+        .into_configs()
+        .distributive_run_if(matchmaker_is_initialised)
 }
 
 pub fn matchmaker_is_initialised(
-    matchmaker_state: Option<ResMut<MatchmakerState>>,
-    main_menu_ui_channels: Option<ResMut<MainMenuUiChannels>>,
+    matchmaker_state: Option<Res<MatchmakerState>>,
+    main_menu_ui_channels: Option<Res<MainMenuUiChannels>>,
 ) -> bool {
     // If matchmaker address is not configured (which means that the state and the
     // channels aren't initialized either), we don't want to render the main menu.
@@ -402,13 +401,13 @@ pub fn main_menu_ui_system(
         }
     }
 
-    let screen_height = ui_context.windows.get_primary().unwrap().height();
+    let screen_height = ui_context.windows.single().height();
 
     let window_width = 400.0;
     let window_height = 600.0;
     let offset_y = (200.0 - (200.0 + window_height - screen_height).max(0.0)).max(0.0);
 
-    let ctx = ui_context.egui_context.ctx_mut();
+    let ctx = ui_context.egui_contexts.ctx_mut();
     egui::CentralPanel::default()
         .frame(egui::Frame::none().fill(egui::Color32::from_black_alpha(200)))
         .show(ctx, |ui| {

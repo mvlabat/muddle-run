@@ -9,9 +9,9 @@ use bevy::{
     prelude::*,
     render::camera::CameraProjection,
     utils::Instant,
+    window::PrimaryWindow,
 };
-use bevy_egui::EguiContext;
-use bevy_inspector_egui::WorldInspectorParams;
+use bevy_egui::EguiContexts;
 use mr_shared_lib::{
     game::{components::Spawned, level::LevelObject},
     messages::{EntityNetId, PlayerNetId, SpawnLevelObjectRequest},
@@ -19,7 +19,6 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     GameTime, COMPONENT_FRAMEBUFFER_LIMIT,
 };
-use std::marker::PhantomData;
 
 const SWITCH_ROLE_COOLDOWN_SECS: u64 = 1;
 
@@ -84,31 +83,27 @@ pub struct PlayerUpdatesParams<'w, 's> {
 
 #[derive(SystemParam)]
 pub struct UiParams<'w, 's> {
-    egui_context: ResMut<'w, EguiContext>,
+    egui_contexts: EguiContexts<'w, 's>,
     debug_ui_state: ResMut<'w, DebugUiState>,
-    #[system_param(ignore)]
-    marker: PhantomData<&'s ()>,
 }
 
 pub fn track_input_events_system(
     mut input_events: InputEvents,
     time: Res<GameTime>,
     mut ui_params: UiParams,
-    mut world_inspector_params: ResMut<WorldInspectorParams>,
     mut player_updates_params: PlayerUpdatesParams,
     mut mouse_position: ResMut<MouseScreenPosition>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    if ui_params.egui_context.ctx_mut().wants_keyboard_input() {
+    if ui_params.egui_contexts.ctx_mut().wants_keyboard_input() {
         return;
     }
 
     process_hotkeys(
         &keyboard_input,
         &mut ui_params.debug_ui_state,
-        &mut world_inspector_params,
         &mut player_updates_params,
     );
 
@@ -167,7 +162,7 @@ pub fn track_input_events_system(
     }
 
     // Absolute cursor position (in window coordinates).
-    if let Some(ev) = input_events.cursor.iter().next_back() {
+    if let Some(ev) = input_events.cursor.iter().last() {
         mouse_position.0 = ev.position;
     }
 
@@ -182,7 +177,7 @@ pub fn track_input_events_system(
 }
 
 pub fn cast_mouse_ray_system(
-    windows: Res<Windows>,
+    primary_window_query: Query<&'static Window, With<PrimaryWindow>>,
     mouse_position: Res<MouseScreenPosition>,
     main_camera_entity: Res<MainCameraEntity>,
     cameras: Query<(&GlobalTransform, &Camera, &Projection)>,
@@ -191,7 +186,9 @@ pub fn cast_mouse_ray_system(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    let window = windows.iter().next().expect("expected a window");
+    let window = primary_window_query
+        .get_single()
+        .expect("expected a window");
     let (camera_transform, _camera, camera_projection) = cameras
         .get(main_camera_entity.0)
         .expect("expected a main camera");
@@ -220,12 +217,10 @@ pub fn cast_mouse_ray_system(
 fn process_hotkeys(
     keyboard_input: &Input<KeyCode>,
     debug_ui_state: &mut DebugUiState,
-    world_inspector_params: &mut WorldInspectorParams,
     player_updates_params: &mut PlayerUpdatesParams,
 ) {
     if keyboard_input.just_pressed(KeyCode::Period) {
         debug_ui_state.show = !debug_ui_state.show;
-        world_inspector_params.enabled = debug_ui_state.show;
         #[cfg(feature = "profiler")]
         puffin::set_scopes_on(debug_ui_state.show);
     }

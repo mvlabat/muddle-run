@@ -218,6 +218,7 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
             },
             ..RapierConfiguration::default()
         });
+        // Note: `AppState` initialisation is overwritten by `mr_server`.
         app.add_state::<AppState>();
         app.add_state::<GameSessionState>();
         app.add_plugin(NetworkingPlugin {
@@ -334,7 +335,9 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
         simulation_schedule.add_systems(post_game_set.in_base_set(SimulationSet::PostGame));
 
         // `SimulationSet::Last` base set systems.
-        simulation_schedule.add_systems((tick_simulation_frame_system, apply_system_buffers).in_base_set(SimulationSet::Last));
+        simulation_schedule.add_systems(
+            (tick_simulation_frame_system, apply_system_buffers).in_base_set(SimulationSet::Last),
+        );
 
         // let simulation_schedule = Schedule::default()
         //     .with_run_criteria(IntoSystem::into_system(simulation_tick_run_criteria))
@@ -469,56 +472,6 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
 
         // `MainSet::Last` base set systems.
         main_schedule.add_systems(post_tick_set.in_base_set(MainSet::Last));
-        // let main_schedule = (meh
-        //     .with_stage(stage::SIMULATION_SCHEDULE, simulation_schedule)
-        //     .with_stage(
-        //         stage::BROADCAST_UPDATES,
-        //         broadcast_updates_stage
-        //
-        // .with_run_criteria(game_tick_run_criteria(TICKS_PER_NETWORK_BROADCAST)),
-        //     )
-        //     .with_stage(
-        //         stage::POST_SIMULATIONS,
-        //         SystemStage::single_threaded()
-        //             // These systems are also present in the simulation set.
-        //             // If the game is loading, the simulation set isn't run, but we
-        // still need these             // systems as spawning level objects is
-        // part of loading.             .with_system(
-        //                 poll_calculating_shapes_system
-        //                     .run_in_state(GameSessionState::Loading)
-        //                     .label("poll_shapes"),
-        //             )
-        //             .with_system(
-        //                 update_level_objects_system
-        //                     .run_in_state(GameSessionState::Loading)
-        //                     .label("update_level_objects")
-        //                     .after("poll_shapes"),
-        //             )
-        //             .with_system(
-        //                 tick_game_frame_system
-        //                     .run_not_in_state(GameSessionState::Paused)
-        //                     .after("update_level_objects"),
-        //             )
-        //
-        // .with_system(process_spawned_entities_system.after(tick_game_frame_system))
-        //             // Removing disconnected players doesn't depend on ticks, so it's
-        // fine to have             // it unordered.
-        //             .with_system(remove_disconnected_players_system),
-        //     )
-        //     .with_stage(
-        //         stage::POST_TICK,
-        //         post_tick_stage.
-        // with_system_set(RapierPhysicsPlugin::<()>::get_systems(
-        // PhysicsStages::DetectDespawn,         )),
-        //     ));
-
-        // app.add_stage_before(CoreStage::Update, stage::MAIN_SCHEDULE, main_schedule);
-        //        app.add_stage_before(
-        //            stage::MAIN_SCHEDULE,
-        //            stage::READ_INPUT_UPDATES,
-        //            SystemStage::single_threaded()
-        //.with_system(read_movement_updates_system.run_in_state(GameSessionState::Playing)),
-        //        );
 
         app.add_schedule(MainSchedule, main_schedule);
         app.add_schedule(SimulationSchedule, simulation_schedule);
@@ -549,45 +502,6 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
                 .in_set(AppSet::MainSchedule),
         );
 
-        // // We predefine every enter/exit stage to mark them as single-threaded.
-        // // Atm, Bevy suffers from from the scheduler overhead to plan running systems
-        // in // parallel, which negates the parallelisation.
-        // app.add_systems(
-        //     stage::READ_INPUT_UPDATES,
-        //     stage::GAME_SESSION_STATE_TRANSITION,
-        //     StateTransitionStage::new(GameSessionState::Loading)
-        //         .with_enter_stage(
-        //             GameSessionState::Loading,
-        //
-        // SystemStage::single_threaded().with_system(reset_game_world_system.
-        // at_start()),         )
-        //         .with_exit_stage(GameSessionState::Loading,
-        // SystemStage::single_threaded())
-        //         .with_enter_stage(GameSessionState::Playing,
-        // SystemStage::single_threaded())
-        //         .with_exit_stage(GameSessionState::Playing,
-        // SystemStage::single_threaded())
-        //         .with_enter_stage(GameSessionState::Paused,
-        // SystemStage::single_threaded())
-        //         .with_exit_stage(GameSessionState::Paused,
-        // SystemStage::single_threaded()), );
-        // app.add_stage_before(
-        //     stage::GAME_SESSION_STATE_TRANSITION,
-        //     stage::APP_STATE_TRANSITION,
-        //     StateTransitionStage::new(AppState::Loading)
-        //         .with_enter_stage(AppState::Loading, SystemStage::single_threaded())
-        //         .with_exit_stage(AppState::Loading, SystemStage::single_threaded())
-        //         .with_enter_stage(AppState::MainMenu, SystemStage::single_threaded())
-        //         .with_exit_stage(AppState::MainMenu, SystemStage::single_threaded())
-        //         .with_enter_stage(AppState::Playing, SystemStage::single_threaded())
-        //         .with_exit_stage(AppState::Playing, SystemStage::single_threaded()),
-        // );
-        // app.add_stage_before(
-        //     stage::READ_INPUT_UPDATES,
-        //     stage::WRITE_INPUT_UPDATES,
-        //     input_stage,
-        // );
-
         #[cfg(feature = "client")]
         app.add_startup_system(client::assets::init_muddle_assets_system);
 
@@ -617,13 +531,14 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, States)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default, States)]
 pub enum AppState {
     /// Currently, this state is used only for clients.
     /// We use this state to spawn dummy PBR entities to trigger shaders
     /// loading. This is useful for browsers in the first place, as loading
     /// shaders is blocking there and freezes the app (so a loading screen
     /// should be shown).
+    #[default]
     Loading,
     /// This state is used when a client is launched in the mode when going
     /// through the authentication and matchmaking menus is required before
@@ -631,12 +546,6 @@ pub enum AppState {
     MainMenu,
     /// A level is being loaded or played.
     Playing,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self::Loading
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, States)]

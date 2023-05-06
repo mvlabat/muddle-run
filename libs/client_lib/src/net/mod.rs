@@ -14,7 +14,6 @@ use auth::{AuthMessage, AuthRequest};
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::Instant};
 use bevy_disturbulence::{IncomingTrySendError, NetworkError, NetworkEvent, NetworkResource};
 use futures::{select, FutureExt};
-use iyes_loopless::state::NextState;
 use mr_messages_lib::{GameServerState, MatchmakerMessage, MatchmakerRequest, Server};
 use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
@@ -416,7 +415,7 @@ pub fn process_network_events_system(
                     // thought that `Handshake` probably comes with less edge-cases, since we
                     // always get it before starting the game.
                     log::info!("Changing the app state to {:?}", AppState::Playing);
-                    commands.insert_resource(NextState(AppState::Playing));
+                    commands.insert_resource(NextState(Some(AppState::Playing)));
                     // On game start, `GameSessionState::Loading` is likely current state as
                     // well, we rely on `iyes_loopless` behaviour to run the
                     // enter stage regardless of whether current state
@@ -425,7 +424,7 @@ pub fn process_network_events_system(
                         "Changing the game session state to {:?}",
                         GameSessionState::Loading
                     );
-                    commands.insert_resource(NextState(GameSessionState::Loading));
+                    commands.insert_resource(NextState(Some(GameSessionState::Loading)));
                 }
                 UnreliableServerMessage::DeltaUpdate(update) => {
                     let mut skip_update = false;

@@ -95,14 +95,20 @@ pub fn init_muddle_assets_system(
             .add(with_blend_alpha_mode(Color::rgb(0.5, 0.492, 0.816).into())),
     });
     commands.insert_resource(MuddleMeshes {
-        player_sensor: meshes.add(Mesh::from(Icosphere {
-            radius: PLAYER_SENSOR_RADIUS,
-            subdivisions: 16,
-        })),
-        control_point: meshes.add(Mesh::from(Icosphere {
-            radius: 0.15,
-            subdivisions: 32,
-        })),
+        player_sensor: meshes.add(
+            Mesh::try_from(Icosphere {
+                radius: PLAYER_SENSOR_RADIUS,
+                subdivisions: 16,
+            })
+            .unwrap(),
+        ),
+        control_point: meshes.add(
+            Mesh::try_from(Icosphere {
+                radius: 0.15,
+                subdivisions: 32,
+            })
+            .unwrap(),
+        ),
     });
 }
 

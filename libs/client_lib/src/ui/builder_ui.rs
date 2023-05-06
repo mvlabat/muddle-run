@@ -9,7 +9,7 @@ use bevy::{
         entity::Entity,
         event::{EventReader, EventWriter},
         query::WorldQuery,
-        schedule::{IntoSystemDescriptor, ShouldRun, SystemSet},
+        schedule::{IntoSystemConfig, IntoSystemConfigs, SystemConfigs},
         system::{Local, Query, Res, ResMut, Resource, SystemParam},
     },
     input::{mouse::MouseButton, Input},
@@ -20,7 +20,7 @@ use bevy::{
 };
 use bevy_egui::{
     egui::{self, Ui},
-    EguiContext,
+    EguiContexts,
 };
 use mr_shared_lib::{
     framebuffer::FrameNumber,
@@ -112,35 +112,45 @@ pub struct EditedObjectUpdate {
     pub new: Entity,
 }
 
-pub fn builder_system_set() -> SystemSet {
-    SystemSet::new()
-        .with_run_criteria(builder_run_criteria)
-        .with_system(builder_ui_system)
-        .with_system(process_builder_mouse_input_system.after(builder_ui_system))
+pub fn builder_system_set() -> SystemConfigs {
+    (
+        deselect_edited_object,
+        builder_ui_system.run_if(builder_run_criteria),
+        process_builder_mouse_input_system
+            .after(builder_ui_system)
+            .run_if(builder_run_criteria),
+    )
+        .into_configs()
 }
 
-pub fn builder_run_criteria(
-    player_params: PlayerParams,
-    mut edited_level_object: ResMut<EditedLevelObject>,
-) -> ShouldRun {
+pub fn builder_run_criteria(player_params: PlayerParams) -> bool {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
     let player = match player_params.current_player() {
         Some(player) => player,
         None => {
-            edited_level_object.deselect();
-            return ShouldRun::No;
+            return false;
         }
     };
-    if !matches!(player.role, PlayerRole::Builder) {
+    matches!(player.role, PlayerRole::Builder)
+}
+
+pub fn deselect_edited_object(
+    player_params: PlayerParams,
+    mut edited_level_object: ResMut<EditedLevelObject>,
+) {
+    #[cfg(feature = "profiler")]
+    puffin::profile_function!();
+    if player_params
+        .current_player()
+        .map_or(true, |player| !matches!(player.role, PlayerRole::Builder))
+    {
         edited_level_object.deselect();
-        return ShouldRun::No;
     }
-    ShouldRun::Yes
 }
 
 pub fn builder_ui_system(
-    mut egui_context: ResMut<EguiContext>,
+    mut egui_contexts: EguiContexts,
     mut builder_ui_state: Local<BuilderUiState>,
     mouse_input: MouseInput<(), ()>,
     mut level_object_correlations: ResMut<LevelObjectCorrelations>,
@@ -149,7 +159,7 @@ pub fn builder_ui_system(
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    let ctx = egui_context.ctx_mut();
+    let ctx = egui_contexts.ctx_mut();
 
     // Picking a level object if we received a confirmation from the server about an
     // object created by us.
@@ -344,7 +354,7 @@ pub fn builder_ui_system(
 }
 
 pub fn process_builder_mouse_input_system(
-    mut egui_context: ResMut<EguiContext>,
+    mut egui_contexts: EguiContexts,
     mut mouse_input: MouseInput<(), ()>,
     mut level_objects: LevelObjects,
     mut object_update: EventReader<EditedObjectUpdate>,
@@ -363,7 +373,7 @@ pub fn process_builder_mouse_input_system(
     }
 
     // Picking a level object with a mouse.
-    if !egui_context.ctx_mut().wants_pointer_input() {
+    if !egui_contexts.ctx_mut().wants_pointer_input() {
         mouse_input.mouse_entity_picker.process_input(&mut None);
     }
 
@@ -404,7 +414,7 @@ pub fn process_builder_mouse_input_system(
             && mouse_input
                 .mouse_button_input
                 .just_pressed(MouseButton::Left)
-            && !egui_context.ctx_mut().is_pointer_over_area()
+            && !egui_contexts.ctx_mut().is_pointer_over_area()
         {
             *is_being_placed = false;
         }

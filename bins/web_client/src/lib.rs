@@ -1,6 +1,6 @@
 #![allow(clippy::unused_unit)]
 
-use bevy::prelude::*;
+use bevy::{prelude::*, window::PrimaryWindow};
 use mr_client_lib::{MuddleClientConfig, MuddleClientPlugin, DEFAULT_SERVER_PORT};
 use mr_utils_lib::try_parse_from_env;
 use std::net::SocketAddr;
@@ -17,18 +17,15 @@ pub fn main() {
             matchmaker_url: try_parse_from_env!("MUDDLE_MATCHMAKER_URL"),
             server_addr: server_addr(),
         })
-        .insert_resource(Msaa { samples: 4 })
+        .insert_resource(Msaa::Sample4)
         .add_plugins(bevy::DefaultPlugins)
         .add_plugin(MuddleClientPlugin)
         .add_system(resize_canvas)
         .run();
 }
 
-fn resize_canvas(mut windows: ResMut<Windows>) {
-    let window = match windows.get_primary_mut() {
-        Some(window) => window,
-        None => return,
-    };
+fn resize_canvas(mut windows: Query<&'static mut Window, With<PrimaryWindow>>) {
+    let Ok(mut window) = windows.get_single_mut() else { return };
 
     let js_window = web_sys::window().expect("no global `window` exists");
 
@@ -45,7 +42,7 @@ fn resize_canvas(mut windows: ResMut<Windows>) {
 
     #[allow(clippy::float_cmp)]
     if window.width() != width || window.height() != height {
-        window.set_resolution(width, height);
+        window.resolution.set(width, height);
     }
 }
 

@@ -6,7 +6,8 @@ use bevy::{
     ecs::{
         entity::Entity,
         query::{Changed, With},
-        system::{Commands, Query, RemovedComponents, Res, SystemParam},
+        removal_detection::RemovedComponents,
+        system::{Commands, Query, Res, SystemParam},
     },
     hierarchy::{BuildChildren, Parent},
     log,
@@ -42,7 +43,7 @@ pub fn reattach_camera_system(
     main_camera_pivot: Res<MainCameraPivotEntity>,
     current_player_net_id: Res<CurrentPlayerNetId>,
     player_registry: Res<EntityRegistry<PlayerNetId>>,
-    despawned_player_events: RemovedComponents<PlayerTag>,
+    mut despawned_player_events: RemovedComponents<PlayerTag>,
     queries: ReattachCameraQueries,
 ) {
     #[cfg(feature = "profiler")]

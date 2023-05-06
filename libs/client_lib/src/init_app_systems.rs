@@ -6,7 +6,8 @@ use bevy::{
     core_pipeline::core_3d::Camera3dBundle,
     ecs::{
         entity::Entity,
-        system::{Commands, Local},
+        schedule::NextState,
+        system::{Commands, Local, ResMut},
     },
     hierarchy::BuildChildren,
     log,
@@ -14,13 +15,13 @@ use bevy::{
     pbr::{PbrBundle, PointLight, PointLightBundle},
     transform::components::{GlobalTransform, Transform},
 };
-use iyes_loopless::state::NextState;
 use mr_shared_lib::{client::assets::MuddleAssets, AppState};
 
 /// This system is needed for the web version. As assets loading is blocking
 /// there, we need to trigger loading shaders before we join a game.
 pub fn load_shaders_system(
     mut commands: Commands,
+    mut next_app_state: ResMut<NextState<AppState>>,
     assets: MuddleAssets,
     mut frames_skipped: Local<u8>,
     mut entities_to_clean_up: Local<Vec<Entity>>,
@@ -36,7 +37,7 @@ pub fn load_shaders_system(
             commands.entity(entity).despawn();
         }
         log::info!("Changing the app state to {:?}", AppState::MainMenu);
-        commands.insert_resource(NextState(AppState::MainMenu));
+        next_app_state.set(AppState::MainMenu);
         return;
     }
 

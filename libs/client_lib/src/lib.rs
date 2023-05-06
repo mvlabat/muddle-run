@@ -18,7 +18,7 @@ use crate::{
     },
     ui::{
         builder_ui::{EditedLevelObject, EditedObjectUpdate},
-        debug_ui::update_debug_ui_state_system,
+        debug_ui::{update_debug_ui_state_system, DebugUiState},
     },
     visuals::{
         control_builder_visibility_system, process_control_points_input_system,
@@ -30,23 +30,24 @@ use bevy::{
     diagnostic::FrameTimeDiagnosticsPlugin,
     ecs::{
         entity::Entity,
-        schedule::{IntoSystemDescriptor, ShouldRun, SystemStage},
-        system::{Commands, IntoSystem, Local, Res, ResMut, Resource, SystemParam},
+        schedule::{
+            common_conditions::{in_state, not},
+            Condition, IntoSystemConfig, IntoSystemConfigs, NextState, State, SystemSet,
+        },
+        system::{IntoSystem, Local, Res, ResMut, Resource, SystemParam},
     },
     log,
     time::Time,
     utils::{HashMap, Instant},
 };
 use bevy_egui::EguiPlugin;
-use bevy_inspector_egui::{WorldInspectorParams, WorldInspectorPlugin};
-use bevy_inspector_egui_rapier::InspectableRapierPlugin;
-use iyes_loopless::prelude::*;
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
     game::client_factories::VisibilitySettings,
     messages::{EntityNetId, PlayerNetId},
     net::{ConnectionState, ConnectionStatus, MessageId},
-    AppState, GameSessionState, GameTime, MuddleSharedPlugin, SimulationTime,
+    AppState, GameSessionState, GameTime, MuddleSharedPlugin, MuddleSystemConfigs, SimulationTime,
     COMPONENT_FRAMEBUFFER_LIMIT, SIMULATIONS_PER_SECOND, TICKS_PER_NETWORK_BROADCAST,
 };
 use std::{marker::PhantomData, net::SocketAddr};
@@ -69,6 +70,12 @@ const TICKING_SPEED_FACTOR: u16 = 100;
 
 pub struct MuddleClientPlugin;
 
+#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
+pub enum ClientSet {
+    ProcessIoMessages,
+    BuilderSystems,
+}
+
 impl Plugin for MuddleClientPlugin {
     fn build(&self, app: &mut App) {
         let config_server_addr = app
@@ -79,31 +86,38 @@ impl Plugin for MuddleClientPlugin {
             .unwrap_or_else(|| SocketAddr::new(DEFAULT_SERVER_IP_ADDR, DEFAULT_SERVER_PORT))
             .to_string();
 
-        let input_stage = SystemStage::single_threaded()
-            .with_system(maintain_connection_system.run_not_in_state(AppState::Loading))
+        let input_set = (
+            maintain_connection_system.run_if(not(in_state(AppState::Loading))),
             // Processing network events should happen before tracking input:
             // we rely on resetting current's player inputs on each delta update message (event).
-            .with_system(process_network_events_system.after(maintain_connection_system))
-            .with_system(input::track_input_events_system.after(process_network_events_system))
-            .with_system(input::cast_mouse_ray_system.after(input::track_input_events_system));
-        let broadcast_updates_stage = SystemStage::single_threaded()
-            .with_system(send_network_updates_system)
-            .with_system(send_requests_system);
-        let post_tick_stage = SystemStage::single_threaded()
-            .with_system(control_builder_visibility_system)
-            .with_system(update_player_sensor_materials_system)
-            .with_system(reattach_camera_system)
-            .with_system(move_free_camera_pivot_system.after(reattach_camera_system))
-            .with_system(pause_simulation_system)
-            .with_system(update_debug_ui_state_system.after(pause_simulation_system))
-            .with_system(control_ticking_speed_system.after(pause_simulation_system))
-            .with_system(fill_actual_frames_ahead_system.after(control_ticking_speed_system));
+            process_network_events_system.after(maintain_connection_system),
+            input::track_input_events_system.after(process_network_events_system),
+            input::cast_mouse_ray_system.after(input::track_input_events_system),
+        )
+            .into_configs();
+        let broadcast_updates_set =
+            (send_network_updates_system, send_requests_system).into_configs();
+        let post_tick_set = (
+            control_builder_visibility_system,
+            update_player_sensor_materials_system,
+            reattach_camera_system,
+            move_free_camera_pivot_system.after(reattach_camera_system),
+            pause_simulation_system,
+            update_debug_ui_state_system.after(pause_simulation_system),
+            control_ticking_speed_system.after(pause_simulation_system),
+            fill_actual_frames_ahead_system.after(control_ticking_speed_system),
+        )
+            .into_configs();
 
         app.add_plugin(bevy_mod_picking::PickingPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(EguiPlugin)
-            .add_plugin(InspectableRapierPlugin)
-            .add_plugin(WorldInspectorPlugin::new())
+            // TODO: re-enable once Bevy 0.10 support is released.
+            // .add_plugin(bevy_inspector_egui_rapier::InspectableRapierPlugin)
+            .add_plugin(
+                WorldInspectorPlugin::new()
+                    .run_if(|debug_ui_state: Res<DebugUiState>| debug_ui_state.show),
+            )
             .init_resource::<WindowInnerSize>()
             .init_resource::<input::MouseScreenPosition>()
             .insert_resource(ui::main_menu_ui::MainMenuUiState::new(config_server_addr))
@@ -113,14 +127,16 @@ impl Plugin for MuddleClientPlugin {
             .add_startup_system(init_app_systems::basic_scene_system)
             .add_startup_system(read_offline_auth_config_system)
             // Loading the app.
-            .add_system(load_shaders_system.run_in_state(AppState::Loading))
+            .add_system(load_shaders_system.run_if(in_state(AppState::Loading)))
             // Game.
             .add_plugin(MuddleSharedPlugin::new(
-                IntoSystem::into_system(net_adaptive_run_criteria),
-                input_stage,
-                SystemStage::single_threaded(),
-                broadcast_updates_stage,
-                post_tick_stage,
+                MuddleSystemConfigs {
+                    main_run_criteria: IntoSystem::into_system(net_adaptive_run_criteria),
+                    input_set,
+                    post_game_set: ().into_configs(),
+                    broadcast_updates_set,
+                    post_tick_set,
+                },
                 None,
             ))
             .add_system(process_scheduled_spawns_system)
@@ -129,39 +145,35 @@ impl Plugin for MuddleClientPlugin {
             .add_system(ui::debug_ui::update_debug_visibility_system)
             .add_system(ui::debug_ui::debug_ui_system)
             .add_system(ui::debug_ui::profiler_ui_system)
-            .add_system(ui::overlay_ui::app_loading_ui.run_in_state(AppState::Loading))
+            .add_system(ui::overlay_ui::app_loading_ui.run_if(in_state(AppState::Loading)))
             .add_system(
                 ui::overlay_ui::connection_status_overlay_system
-                    .run_not_in_state(AppState::Loading),
+                    .run_if(not(in_state(AppState::Loading))),
             )
             .add_system(ui::debug_ui::inspect_object_system)
             .add_system(
-                ui::player_ui::leaderboard_ui_system.run_not_in_state(GameSessionState::Loading),
+                ui::player_ui::leaderboard_ui_system
+                    .run_if(not(in_state(GameSessionState::Loading))),
             )
-            .add_system(ui::player_ui::help_ui_system.run_not_in_state(GameSessionState::Loading))
+            .add_system(
+                ui::player_ui::help_ui_system.run_if(not(in_state(GameSessionState::Loading))),
+            )
             .add_startup_system(ui::main_menu_ui::init_menu_auth_state_system)
-            .add_system_set(
-                ui::main_menu_ui::process_io_messages_system_set().label("process_io_messages"),
+            .add_systems(
+                ui::main_menu_ui::process_io_messages_system_set()
+                    .in_set(ClientSet::ProcessIoMessages),
             )
             .add_system(
                 ui::main_menu_ui::main_menu_ui_system
-                    .run_in_state(AppState::MainMenu)
-                    .run_if_not(has_server_to_connect)
-                    .after("process_io_messages"),
+                    .run_if(in_state(AppState::MainMenu).and_then(not(has_server_to_connect)))
+                    .after(ClientSet::ProcessIoMessages),
             )
             // Builder mode systems.
-            .add_system_set(ui::builder_ui::builder_system_set().label("builder_system_set"))
+            .add_systems(ui::builder_ui::builder_system_set().in_set(ClientSet::BuilderSystems))
             // Add to the system set above after fixing https://github.com/mvlabat/muddle-run/issues/46.
-            .add_system(process_control_points_input_system.after("builder_system_set"))
-            .add_system(spawn_control_points_system.after("builder_system_set"));
+            .add_system(process_control_points_input_system.after(ClientSet::BuilderSystems))
+            .add_system(spawn_control_points_system.after(ClientSet::BuilderSystems));
 
-        // There's also `GameSessionState`, which is added by `MuddleSharedPlugin`.
-        app.add_state(AppState::Loading);
-
-        app.world
-            .get_resource_mut::<WorldInspectorParams>()
-            .unwrap()
-            .enabled = false;
         app.init_resource::<InitialRtt>();
         app.init_resource::<EstimatedServerTime>();
         app.init_resource::<GameTicksPerSecond>();
@@ -310,8 +322,8 @@ pub struct MainCameraPivotEntity(pub Entity);
 pub struct MainCameraEntity(pub Entity);
 
 fn pause_simulation_system(
-    mut commands: Commands,
-    game_state: Res<CurrentState<GameSessionState>>,
+    mut next_game_session_state: ResMut<NextState<GameSessionState>>,
+    game_session_state: Res<State<GameSessionState>>,
     connection_state: Res<ConnectionState>,
     game_time: Res<GameTime>,
     estimated_server_time: Res<EstimatedServerTime>,
@@ -326,24 +338,26 @@ fn pause_simulation_system(
         .saturating_sub(estimated_server_time.frame_number.value())
         < COMPONENT_FRAMEBUFFER_LIMIT / 2;
 
-    if let GameSessionState::Paused = game_state.0 {
+    if let GameSessionState::Paused = game_session_state.0 {
         if is_connected && has_server_updates {
             log::info!(
                 "Changing the game session state to {:?}",
                 GameSessionState::Playing
             );
-            commands.insert_resource(NextState(GameSessionState::Playing));
+            next_game_session_state.set(GameSessionState::Playing);
             return;
         }
     }
 
     // We can pause the game only when we are actually playing (not loading).
-    if matches!(game_state.0, GameSessionState::Playing) && (!is_connected || !has_server_updates) {
+    if matches!(game_session_state.0, GameSessionState::Playing)
+        && (!is_connected || !has_server_updates)
+    {
         log::info!(
             "Changing the game session state to {:?}",
             GameSessionState::Paused
         );
-        commands.insert_resource(NextState(GameSessionState::Paused));
+        next_game_session_state.set(GameSessionState::Paused);
     }
 }
 
@@ -467,8 +481,8 @@ fn net_adaptive_run_criteria(
     mut state: Local<NetAdaptiveRunCriteriaState>,
     time: Res<Time>,
     game_ticks_per_second: Res<GameTicksPerSecond>,
-    game_state: Res<CurrentState<GameSessionState>>,
-) -> ShouldRun {
+    game_state: Res<State<GameSessionState>>,
+) -> bool {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
     // See `control_ticking_speed` for the rate value changes.
@@ -499,16 +513,16 @@ fn net_adaptive_run_criteria(
             let threshold_secs = 0.05;
             if secs_being_in_loop > threshold_secs {
                 state.started_looping_at = None;
-                ShouldRun::Yes
+                true
             } else {
-                ShouldRun::YesAndCheckAgain
+                true
             }
         } else {
             state.started_looping_at = Some(Instant::now());
-            ShouldRun::YesAndCheckAgain
+            true
         }
     } else {
         state.started_looping_at = None;
-        ShouldRun::No
+        false
     }
 }

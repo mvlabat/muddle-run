@@ -104,24 +104,25 @@ pub fn sortable_list<
     );
 
     let list_id = Id::new(list_id);
-    let mut memory = ui.memory();
-    let sortable_list_data = memory
-        .data
-        .get_temp_mut_or_default::<SortableListData<T>>(list_id);
 
-    let current_list_set = sortable_list_data
-        .list
-        .iter()
-        .cloned()
-        .collect::<HashSet<_>>();
-    let list_set = list.iter().cloned().collect::<HashSet<_>>();
-    if current_list_set != list_set {
-        sortable_list_data.dragged_item = None;
-        sortable_list_data.list = list.clone();
-    }
+    let mut sortable_list_data = ui.memory_mut(|m| {
+        let sortable_list_data = m
+            .data
+            .get_temp_mut_or_default::<SortableListData<T>>(list_id);
 
-    let mut sortable_list_data = sortable_list_data.clone();
-    drop(memory);
+        let current_list_set = sortable_list_data
+            .list
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>();
+        let list_set = list.iter().cloned().collect::<HashSet<_>>();
+        if current_list_set != list_set {
+            sortable_list_data.dragged_item = None;
+            sortable_list_data.list = list.clone();
+        }
+
+        sortable_list_data.clone()
+    });
 
     let mut list_item_rects = Vec::new();
 
@@ -129,11 +130,13 @@ pub fn sortable_list<
     let padding = ui.spacing().button_padding;
     let available_width = ui.available_width();
 
-    let cross_galley = ui.fonts().layout_no_wrap(
-        cross_text.to_owned(),
-        egui::TextStyle::Button.resolve(ui.style()),
-        ui.visuals().text_color(),
-    );
+    let cross_galley = ui.fonts(|f| {
+        f.layout_no_wrap(
+            cross_text.to_owned(),
+            egui::TextStyle::Button.resolve(ui.style()),
+            ui.visuals().text_color(),
+        )
+    });
     let total_extra = egui::Vec2::new(cross_galley.size().x, 0.0)
         + padding * 2.0
         + egui::Vec2::new(padding.x, 0.0) * 2.0;
@@ -155,7 +158,8 @@ pub fn sortable_list<
         if is_dragged_item {
             let dragged_item = sortable_list_data.dragged_item.as_ref().unwrap();
             let rect_delta = dragged_item.initial_rect.min - rect.min;
-            let delta = ui.input().pointer.interact_pos().unwrap() - dragged_item.initial_drag_pos
+            let delta = ui.input(|i| i.pointer.interact_pos().unwrap())
+                - dragged_item.initial_drag_pos
                 + rect_delta;
             rect.min += delta;
             rect.max += delta;
@@ -168,12 +172,14 @@ pub fn sortable_list<
                 egui::Sense::hover()
             };
 
-            let label_galley = ui.fonts().layout(
-                list_item.label.clone(),
-                egui::TextStyle::Button.resolve(ui.style()),
-                ui.visuals().text_color(),
-                available_width - total_extra.x,
-            );
+            let label_galley = ui.fonts(|f| {
+                f.layout(
+                    list_item.label.clone(),
+                    egui::TextStyle::Button.resolve(ui.style()),
+                    ui.visuals().text_color(),
+                    available_width - total_extra.x,
+                )
+            });
 
             let shrank_rect = rect.shrink2(padding);
             let cross_rect = egui::Rect::from_min_size(
@@ -200,7 +206,7 @@ pub fn sortable_list<
                 is_dragged_item = true;
                 sortable_list_data.dragged_item = Some(DraggedItem {
                     id: list_item.id,
-                    initial_drag_pos: ui.input().pointer.interact_pos().unwrap(),
+                    initial_drag_pos: ui.input(|i| i.pointer.interact_pos().unwrap()),
                     initial_rect: rect,
                 });
             }
@@ -225,11 +231,13 @@ pub fn sortable_list<
                 egui::Color32::from_rgb(140, 30, 30)
             };
 
-            let cross_galley = ui.fonts().layout_no_wrap(
-                cross_text.to_owned(),
-                egui::TextStyle::Button.resolve(ui.style()),
-                cross_color,
-            );
+            let cross_galley = ui.fonts(|f| {
+                f.layout_no_wrap(
+                    cross_text.to_owned(),
+                    egui::TextStyle::Button.resolve(ui.style()),
+                    cross_color,
+                )
+            });
 
             let paint_item_job = PaintItemJob {
                 rect,
@@ -246,7 +254,7 @@ pub fn sortable_list<
             }
 
             if !interacting_with_cross && item_response.hovered() && list_item.sortable {
-                ui.output().cursor_icon = egui::CursorIcon::Grab;
+                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grab);
             }
         }
     }
@@ -255,7 +263,7 @@ pub fn sortable_list<
         sortable_list_data.list.remove(i);
     }
 
-    if !ui.memory().is_anything_being_dragged() {
+    if !ui.memory(|m| m.is_anything_being_dragged()) {
         sortable_list_data.dragged_item = None;
     }
 
@@ -274,7 +282,7 @@ pub fn sortable_list<
             delayed_paint_job.paint(ui);
         }
 
-        ui.output().cursor_icon = egui::CursorIcon::Grabbing;
+        ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grabbing);
     }
 
     ui.separator();
@@ -285,9 +293,10 @@ pub fn sortable_list<
         edited = true;
     }
 
-    ui.memory()
-        .data
-        .insert_temp::<SortableListData<T>>(list_id, sortable_list_data);
+    ui.memory_mut(|m| {
+        m.data
+            .insert_temp::<SortableListData<T>>(list_id, sortable_list_data)
+    });
 
     edited
 }

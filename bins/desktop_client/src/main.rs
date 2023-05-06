@@ -1,4 +1,4 @@
-use bevy::{log, log::LogPlugin, prelude::*};
+use bevy::{log, log::LogPlugin, prelude::*, window::WindowResolution};
 use mr_client_lib::{MuddleClientConfig, MuddleClientPlugin, DEFAULT_SERVER_PORT};
 use mr_utils_lib::try_parse_from_env;
 use std::net::SocketAddr;
@@ -23,18 +23,17 @@ fn main() {
         server_addr: server_addr(),
     })
     // Window and rendering.
-    .insert_resource(Msaa { samples: 4 })
+    .insert_resource(Msaa::Sample4)
     .add_plugins(
         DefaultPlugins
             .build()
             .disable::<LogPlugin>()
             .set(WindowPlugin {
-                window: WindowDescriptor {
+                primary_window: Some(Window {
                     title: "Muddle Run".to_owned(),
-                    width: 1024.0,
-                    height: 768.0,
+                    resolution: WindowResolution::new(1024.0, 768.0),
                     ..Default::default()
-                },
+                }),
                 ..Default::default()
             }),
     )
