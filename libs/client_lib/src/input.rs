@@ -141,6 +141,11 @@ pub fn track_input_events_system(
             time.frame_number,
             COMPONENT_FRAMEBUFFER_LIMIT,
         );
+        log::trace!(
+            "Inserting direction update: {} (frame: {})",
+            direction,
+            time.frame_number
+        );
         direction_updates.insert(
             time.frame_number,
             Some(PlayerDirectionUpdate {

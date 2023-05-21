@@ -3,9 +3,12 @@
 #![allow(clippy::only_used_in_recursion)]
 
 pub use net::DEFAULT_SERVER_PORT;
+pub use plugins::logging::MuddleTracePlugin;
 
 use crate::{
-    camera::{move_free_camera_pivot_system, reattach_camera_system},
+    camera::{
+        move_free_camera_pivot_system, reattach_camera_system, update_camera_transform_system,
+    },
     config_storage::OfflineAuthConfig,
     game_events::process_scheduled_spawns_system,
     init_app_systems::load_shaders_system,
@@ -19,6 +22,7 @@ use crate::{
     ui::{
         builder_ui::{EditedLevelObject, EditedObjectUpdate},
         debug_ui::{update_debug_ui_state_system, DebugUiState},
+        side_panel::OccupiedScreenSpace,
     },
     visuals::{
         control_builder_visibility_system, process_control_points_input_system,
@@ -61,6 +65,7 @@ mod helpers;
 mod init_app_systems;
 mod input;
 mod net;
+mod plugins;
 mod ui;
 mod utils;
 mod visuals;
@@ -118,8 +123,8 @@ impl Plugin for MuddleClientPlugin {
                 WorldInspectorPlugin::new()
                     .run_if(|debug_ui_state: Res<DebugUiState>| debug_ui_state.show),
             )
-            .init_resource::<WindowInnerSize>()
             .init_resource::<input::MouseScreenPosition>()
+            .init_resource::<OccupiedScreenSpace>()
             .insert_resource(ui::main_menu_ui::MainMenuUiState::new(config_server_addr))
             .add_event::<EditedObjectUpdate>()
             // Startup systems.
@@ -142,9 +147,10 @@ impl Plugin for MuddleClientPlugin {
             .add_system(process_scheduled_spawns_system)
             // Egui.
             .add_startup_system(ui::set_ui_scale_factor_system)
+            .add_system(update_camera_transform_system)
             .add_system(ui::debug_ui::update_debug_visibility_system)
             .add_system(ui::debug_ui::debug_ui_system)
-            .add_system(ui::debug_ui::profiler_ui_system)
+            .add_system(ui::side_panel::side_panels_ui_system)
             .add_system(ui::overlay_ui::app_loading_ui.run_if(in_state(AppState::Loading)))
             .add_system(
                 ui::overlay_ui::connection_status_overlay_system
@@ -207,12 +213,6 @@ pub struct MuddleClientConfig {
 }
 
 #[derive(Resource, Default)]
-pub struct WindowInnerSize {
-    pub width: usize,
-    pub height: usize,
-}
-
-#[derive(Resource, Default)]
 pub struct ExpectedFramesAhead {
     pub frames: FrameNumber,
 }
@@ -247,7 +247,7 @@ pub struct EstimatedServerTime {
 
 /// If an incoming delta update comes later or earlier than `server_frame` (from
 /// the `SimulationTime` resource), we update this value to let the clocks sync
-/// so that a clien receives updates in time before the simulation.
+/// so that a client receives updates in time before the simulation.
 /// See the `sync_clock` function.
 #[derive(Resource, Default)]
 pub struct DelayServerTime {

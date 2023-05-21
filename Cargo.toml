@@ -66,7 +66,7 @@ bevy_winit = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/mu
 #rapier2d = { git = "https://github.com/dimforge/rapier.git", rev = "3a2f5f7cf5e21cfa5a3cc687caa8f4fbc3c04984" }
 #puffin = { git = "https://github.com/EmbarkStudios/puffin.git", rev = "4616fee7fb8a143afdf0821587ba531e4f3671e9" }
 #puffin_egui = { git = "https://github.com/EmbarkStudios/puffin.git", rev = "4616fee7fb8a143afdf0821587ba531e4f3671e9" }
-#bevy_rapier2d = { path = "../bevy_rapier/bevy_rapier2d" }
+bevy_rapier2d = { path = "../bevy_rapier/bevy_rapier2d" }
 #bevy_puffin = { path = "../bevy_puffin" }
 #bevy = { path = "../bevy" }
 #bevy_egui = { path = "../bevy_egui" }
@@ -92,3 +92,6 @@ tracing-subscriber = { git = "https://github.com/mvlabat/tracing.git", branch = 
 
 #[patch.'https://github.com/bevyengine/bevy']
 #bevy = { git = "https://github.com/bevyengine/bevy//" }
+
+[patch.'https://github.com/mvlabat/bevy_disturbulence']
+bevy_disturbulence = { path = "../bevy_disturbulence" }

@@ -223,7 +223,8 @@ pub struct SimulatedObjectQuery<'w> {
 }
 
 /// Exclude objects that won't affect a local player by simulations if a client
-/// is correcting mispredictions.
+/// is correcting mispredictions (i.e. other players, server time "ghosts" of
+/// level objects).
 pub fn isolate_client_mispredicted_world_system(
     time: Res<SimulationTime>,
     mut objects: Query<SimulatedObjectQuery, Without<PlayerFrameSimulated>>,

@@ -1,4 +1,5 @@
 use crate::{
+    camera::{OriginalCameraTransform, CAMERA_TARGET},
     components::{CameraPivotDirection, CameraPivotTag},
     MainCameraEntity, MainCameraPivotEntity,
 };
@@ -65,12 +66,14 @@ pub fn basic_scene_system(mut commands: Commands) {
         ..Default::default()
     });
     // Camera.
+    let camera_transform = Transform::from_translation(Vec3::new(-3.0, -14.0, 14.0))
+        .looking_at(CAMERA_TARGET, Vec3::Z);
     let main_camera_entity = commands
         .spawn(Camera3dBundle {
-            transform: Transform::from_translation(Vec3::new(-3.0, -14.0, 14.0))
-                .looking_at(Vec3::default(), Vec3::Z),
+            transform: camera_transform,
             ..Default::default()
         })
+        .insert(OriginalCameraTransform(camera_transform))
         .insert(bevy_mod_picking::PickingCameraBundle::default())
         .id();
     let main_camera_pivot_entity = commands

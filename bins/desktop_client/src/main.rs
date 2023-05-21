@@ -1,11 +1,13 @@
 use bevy::{log, log::LogPlugin, prelude::*, window::WindowResolution};
-use mr_client_lib::{MuddleClientConfig, MuddleClientPlugin, DEFAULT_SERVER_PORT};
+use mr_client_lib::{
+    MuddleClientConfig, MuddleClientPlugin, MuddleTracePlugin, DEFAULT_SERVER_PORT,
+};
 use mr_utils_lib::try_parse_from_env;
 use std::net::SocketAddr;
 
 fn main() {
     let mut app = App::new();
-    app.add_plugin(bevy_puffin::PuffinTracePlugin::new().with_scopes_off());
+    app.add_plugin(MuddleTracePlugin);
 
     mr_utils_lib::env::load_env();
 

@@ -16,6 +16,7 @@ pub mod debug_ui;
 pub mod main_menu_ui;
 pub mod overlay_ui;
 pub mod player_ui;
+pub mod side_panel;
 
 mod widgets;
 

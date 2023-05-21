@@ -1,13 +1,20 @@
 #![allow(clippy::unused_unit)]
 
 use bevy::{prelude::*, window::PrimaryWindow};
-use mr_client_lib::{MuddleClientConfig, MuddleClientPlugin, DEFAULT_SERVER_PORT};
+use mr_client_lib::{
+    MuddleClientConfig, MuddleClientPlugin, MuddleTracePlugin, DEFAULT_SERVER_PORT,
+};
 use mr_utils_lib::try_parse_from_env;
 use std::net::SocketAddr;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
 pub fn main() {
+    let mut app = App::new();
+    app.add_plugin(MuddleTracePlugin);
+
+    egui_logger::init().unwrap();
+
     App::new()
         .insert_resource(MuddleClientConfig {
             persistence_url: try_parse_from_env!("MUDDLE_PUBLIC_PERSISTENCE_URL"),
@@ -18,7 +25,7 @@ pub fn main() {
             server_addr: server_addr(),
         })
         .insert_resource(Msaa::Sample4)
-        .add_plugins(bevy::DefaultPlugins)
+        .add_plugins(DefaultPlugins)
         .add_plugin(MuddleClientPlugin)
         .add_system(resize_canvas)
         .run();

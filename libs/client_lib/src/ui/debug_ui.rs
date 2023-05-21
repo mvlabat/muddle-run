@@ -106,23 +106,6 @@ pub fn update_debug_ui_state_system(
     debug_ui_state.jitter_millis = debug_data.connection_state.jitter_millis() as usize;
 }
 
-pub fn profiler_ui_system(mut egui_contexts: EguiContexts, debug_ui_state: Res<DebugUiState>) {
-    #[cfg(feature = "profiler")]
-    puffin::profile_function!();
-    let ctx = egui_contexts.ctx_mut();
-
-    if !debug_ui_state.show {
-        return;
-    }
-
-    egui::Window::new("Profiler")
-        .default_size([1024.0, 600.0])
-        .show(ctx, |_ui| {
-            #[cfg(feature = "profiler")]
-            puffin_egui::profiler_ui(_ui)
-        });
-}
-
 pub fn debug_ui_system(
     mut egui_contexts: EguiContexts,
     mut debug_ui_state: ResMut<DebugUiState>,

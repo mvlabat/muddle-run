@@ -1,9 +1,11 @@
 use crate::{
     components::{CameraPivotDirection, CameraPivotTag},
+    ui::side_panel::OccupiedScreenSpace,
     CurrentPlayerNetId, MainCameraPivotEntity,
 };
 use bevy::{
     ecs::{
+        component::Component,
         entity::Entity,
         query::{Changed, With},
         removal_detection::RemovedComponents,
@@ -11,8 +13,12 @@ use bevy::{
     },
     hierarchy::{BuildChildren, Parent},
     log,
+    math::Vec3,
+    prelude::{Deref, DerefMut},
+    render::camera::Projection,
     time::Time,
     transform::components::Transform,
+    window::{PrimaryWindow, Window},
 };
 use mr_shared_lib::{
     game::components::{PlayerTag, Position, Spawned},
@@ -20,6 +26,12 @@ use mr_shared_lib::{
     registry::EntityRegistry,
     GameTime, PLAYER_RADIUS,
 };
+
+pub const CAMERA_TARGET: Vec3 = Vec3::ZERO;
+
+/// Camera transform which is unaffected by UI side panels.
+#[derive(Component, Deref, DerefMut)]
+pub struct OriginalCameraTransform(pub Transform);
 
 const CAMERA_MOVEMENT_SPEED: f32 = 4.0;
 
@@ -35,6 +47,37 @@ pub struct ReattachCameraQueries<'w, 's> {
     camera_pivot_parents: Query<'w, 's, Option<&'static Parent>, With<CameraPivotTag>>,
     spawned_or_despawned_players: SpawnedOrDespawnedPlayers<'w, 's>,
     all_entities: Query<'w, 's, Entity>,
+}
+
+pub fn update_camera_transform_system(
+    occupied_screen_space: Res<OccupiedScreenSpace>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut camera_query: Query<(&Projection, &mut Transform, &OriginalCameraTransform)>,
+) {
+    let (camera_projection, mut transform, original_camera_transform) =
+        match camera_query.get_single_mut() {
+            Ok((Projection::Perspective(projection), transform, original_camera_transform)) => {
+                (projection, transform, original_camera_transform)
+            }
+            _ => unreachable!(),
+        };
+
+    let distance_to_target = (CAMERA_TARGET - original_camera_transform.translation).length();
+    let frustum_height = 2.0 * distance_to_target * (camera_projection.fov * 0.5).tan();
+    let frustum_width = frustum_height * camera_projection.aspect_ratio;
+
+    let window = windows.single();
+
+    let left_taken = 0.0;
+    let right_taken = 0.0;
+    let top_taken = 0.0;
+    let bottom_taken = occupied_screen_space.bottom / window.height();
+    transform.translation = original_camera_transform.translation
+        + transform.rotation.mul_vec3(Vec3::new(
+            (right_taken - left_taken) * frustum_width * 0.5,
+            (top_taken - bottom_taken) * frustum_height * 0.5,
+            0.0,
+        ));
 }
 
 pub fn reattach_camera_system(
@@ -108,7 +151,7 @@ pub fn reattach_camera_system(
         (failed_to_deattach || current_player_net_id.0.is_none()),
     ) {
         log::debug!("Freeing camera pivot");
-        main_camera_pivot_commands.insert(Transform::from_xyz(0.0, 0.0, 0.0));
+        main_camera_pivot_commands.insert(Transform::IDENTITY);
         // If an entity was removed with `World::despawn` (that's what happens when we
         // restart the game), calling `remove_parent` will panic.
         if queries.all_entities.contains(camera_pivot_parent.get()) {

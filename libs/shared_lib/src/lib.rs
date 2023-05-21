@@ -68,36 +68,9 @@ pub mod server;
 pub mod util;
 pub mod wrapped_counter;
 
-// Constants.
-pub mod stage {
-    pub const WRITE_INPUT_UPDATES: &str = "mr_shared_write_input_updates";
-    pub const APP_STATE_TRANSITION: &str = "mr_shared_app_state_transition";
-    pub const GAME_SESSION_STATE_TRANSITION: &str = "mr_shared_game_session_state_transition";
-    pub const READ_INPUT_UPDATES: &str = "mr_shared_read_input_updates";
-    // Here, between `WRITE_INPUT_UPDATES` and `BROADCAST_UPDATES` runs the main
-    // schedule, which also includes the `SIMULATION_SCHEDULE` (running the game
-    // logic and physics).
-    // ...
-    pub const MAIN_SCHEDULE: &str = "mr_shared_main_schedule";
-    pub const SIMULATION_SCHEDULE: &str = "mr_shared_simulation_schedule";
-    // ...
-    pub const BROADCAST_UPDATES: &str = "mr_shared_broadcast_updates";
-    pub const POST_SIMULATIONS: &str = "mr_shared_post_simulations";
-    pub const POST_TICK: &str = "mr_shared_post_tick";
-
-    // Stages of the `SIMULATION_SCHEDULE`:
-    pub const SPAWN: &str = "mr_shared_spawn";
-    pub const PRE_GAME: &str = "mr_shared_pre_game";
-    pub const FINALIZE_PHYSICS: &str = "mr_shared_finalize_physics";
-    pub const GAME: &str = "mr_shared_game";
-    pub const PHYSICS: &str = "mr_shared_physics";
-    pub const POST_PHYSICS: &str = "mr_shared_post_physics";
-    pub const POST_GAME: &str = "mr_shared_post_game";
-    pub const SIMULATION_FINAL: &str = "mr_shared_simulation_final";
-}
-
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 enum AppSet {
+    ResetWorld,
     WriteInputUpdates,
     MainSchedule,
 }
@@ -105,9 +78,11 @@ enum AppSet {
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 #[system_set(base)]
 enum MainSet {
+    First,
     SimulationSchedule,
     BroadcastUpdates,
     PostSimulation,
+    PostTick,
     Last,
 }
 
@@ -127,10 +102,12 @@ enum SimulationSet {
 /// We need a copy to turn it not into a base set.
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 enum PhysicsSimulationSet {
+    First,
     SyncBackend,
     SyncBackendFlush,
     StepSimulation,
     Writeback,
+    Last,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, ScheduleLabel)]
@@ -298,12 +275,14 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
         simulation_schedule.add_systems(game_set.in_base_set(SimulationSet::Game));
 
         // `SimulationSet::GamePhysics` base set systems.
+        simulation_schedule.add_system(apply_system_buffers.in_set(PhysicsSimulationSet::First));
         simulation_schedule.configure_sets(
             (
                 PhysicsSimulationSet::SyncBackend,
                 PhysicsSimulationSet::SyncBackendFlush,
                 PhysicsSimulationSet::StepSimulation,
                 PhysicsSimulationSet::Writeback,
+                PhysicsSimulationSet::Last,
             )
                 .chain()
                 .in_base_set(SimulationSet::GamePhysics),
@@ -324,12 +303,16 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
             RapierPhysicsPlugin::<()>::get_systems(PhysicsSet::Writeback)
                 .in_set(PhysicsSimulationSet::Writeback),
         );
+        simulation_schedule.add_system(apply_system_buffers.in_set(PhysicsSimulationSet::Last));
 
         // `SimulationSet::PostGamePhysics` base set systems.
-        simulation_schedule.add_systems((
-            process_collision_events_system.pipe(process_players_with_new_collisions_system),
-            sync_position_system,
-        ));
+        simulation_schedule.add_systems(
+            (
+                process_collision_events_system.pipe(process_players_with_new_collisions_system),
+                sync_position_system,
+            )
+                .in_base_set(SimulationSet::PostGamePhysics),
+        );
 
         // `SimulationSet::PostGame` base set systems.
         simulation_schedule.add_systems(post_game_set.in_base_set(SimulationSet::PostGame));
@@ -339,101 +322,26 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
             (tick_simulation_frame_system, apply_system_buffers).in_base_set(SimulationSet::Last),
         );
 
-        // let simulation_schedule = Schedule::default()
-        //     .with_run_criteria(IntoSystem::into_system(simulation_tick_run_criteria))
-        //     .with_stage(
-        //         stage::SPAWN,
-        //         SystemStage::single_threaded()
-        //             .with_system(Events::<CollisionEvent>::update_system)
-        //             .with_system(Events::<PlayerFinish>::update_system)
-        //             .with_system(Events::<PlayerDeath>::update_system)
-        //             .with_system(switch_player_role_system)
-        //
-        // .with_system(despawn_players_system.after(switch_player_role_system))
-        //             .with_system(despawn_level_objects_system)
-        //             // Updating level objects might despawn entities completely if
-        // they are             // updated with replacement. Running it before
-        // `despawn_level_objects` might             // result into an edge-case
-        // where changes to the `Spawned` component are not             //
-        // propagated.
-        // .with_system(update_level_objects_system.after(despawn_level_objects_system))
-        //             // Adding components to an entity if there's a command to remove
-        // it the queue             // will lead to crash. Executing this system
-        // before `update_level_objects` helps             // to avoid this
-        // scenario.
-        // .with_system(poll_calculating_shapes_system.
-        // before(update_level_objects_system))             .with_system(
-        //
-        // maintain_available_spawn_areas_system.after(update_level_objects_system),
-        //             )
-        //             .with_system(
-        //                 spawn_players_system
-        //                     .after(despawn_players_system)
-        //                     .after(maintain_available_spawn_areas_system),
-        //             ),
-        //     )
-        //     .with_stage(
-        //         stage::PRE_GAME,
-        //         SystemStage::single_threaded()
-        //             .with_system(update_level_object_movement_route_settings_system),
-        //     )
-        //     .with_stage(
-        //         stage::GAME,
-        //         SystemStage::single_threaded()
-        //             .with_system(isolate_client_mispredicted_world_system)
-        //             .with_system(player_movement_system)
-        //             .with_system(process_objects_route_graph_system)
-        //             .with_system(
-        //
-        // load_object_positions_system.after(process_objects_route_graph_system),
-        //             ),
-        //     )
-        //     .with_stage(
-        //         stage::PHYSICS,
-        //         SystemStage::single_threaded()
-        //             .with_system_set(RapierPhysicsPlugin::<()>::get_systems(
-        //                 PhysicsSet::SyncBackend,
-        //             ))
-        //             .with_system_set(
-        //
-        // RapierPhysicsPlugin::<()>::get_systems(PhysicsStages::StepSimulation)
-        //                     .label(PhysicsSystemSetLabel::StepSimulation)
-        //                     .after(PhysicsSystemSetLabel::SyncBackend),
-        //             )
-        //             .with_system_set(
-        //
-        // RapierPhysicsPlugin::<()>::get_systems(PhysicsStages::Writeback)
-        //                     .label(PhysicsSystemSetLabel::Writeback)
-        //                     .after(PhysicsSystemSetLabel::StepSimulation),
-        //             ),
-        //     )
-        //     .with_stage(
-        //         stage::POST_PHYSICS,
-        //         SystemStage::single_threaded()
-        //             .with_system(
-        //                 process_collision_events_system
-        //                     .pipe(process_players_with_new_collisions_system),
-        //             )
-        //             .with_system(sync_position_system),
-        //     )
-        //     .with_stage(stage::POST_GAME, post_game_stage)
-        //     .with_stage(
-        //         stage::SIMULATION_FINAL,
-        //         SystemStage::single_threaded().
-        // with_system(tick_simulation_frame_system),     );
-
         let mut main_schedule = Schedule::new();
-        // app.init_schedule(MainSchedule);
-        // let mut main_schedule = app.get_schedule_mut(MainSchedule).unwrap();
-
         main_schedule.configure_sets(
             (
+                MainSet::First,
                 MainSet::SimulationSchedule,
                 MainSet::BroadcastUpdates,
                 MainSet::PostSimulation,
+                MainSet::PostTick,
                 MainSet::Last,
             )
                 .chain(),
+        );
+
+        // `MainSet::First` base set systems.
+        main_schedule.add_systems(
+            (
+                apply_state_transition::<AppState>,
+                apply_state_transition::<GameSessionState>,
+            )
+                .in_base_set(MainSet::First),
         );
 
         // `MainSet::SimulationSchedule` base set systems.
@@ -461,17 +369,26 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
             // part of loading.
             poll_calculating_shapes_system.run_if(in_state(GameSessionState::Loading)),
             update_level_objects_system.run_if(in_state(GameSessionState::Loading)),
-            tick_game_frame_system,
+            tick_game_frame_system.run_if(not(in_state(GameSessionState::Paused))),
             process_spawned_entities_system.after(tick_game_frame_system),
             // Removing disconnected players doesn't depend on ticks, so it's
             // fine to have it unordered.
             remove_disconnected_players_system,
-        )
-            .chain();
+        );
         main_schedule.add_systems(post_simulation_set.in_base_set(MainSet::PostSimulation));
 
+        // `MainSet::PostTick` base set systems.
+        main_schedule.add_systems(post_tick_set.in_base_set(MainSet::PostTick));
+
         // `MainSet::Last` base set systems.
-        main_schedule.add_systems(post_tick_set.in_base_set(MainSet::Last));
+        main_schedule.add_systems(
+            (
+                bevy_rapier2d::plugin::systems::sync_removals,
+                apply_system_buffers,
+            )
+                .chain()
+                .in_base_set(MainSet::Last),
+        );
 
         app.add_schedule(MainSchedule, main_schedule);
         app.add_schedule(SimulationSchedule, simulation_schedule);
@@ -479,7 +396,24 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
         app.add_startup_system(network_setup_system);
 
         app.configure_sets(
-            (AppSet::WriteInputUpdates, AppSet::MainSchedule).in_base_set(CoreSet::Update),
+            (
+                AppSet::ResetWorld,
+                AppSet::WriteInputUpdates,
+                AppSet::MainSchedule,
+            )
+                .chain()
+                .in_base_set(CoreSet::Update),
+        );
+        app.add_systems(
+            (
+                apply_system_buffers,
+                reset_game_world_system.run_if(
+                    state_changed::<GameSessionState>()
+                        .and_then(in_state(GameSessionState::Loading)),
+                ),
+            )
+                .chain()
+                .in_set(AppSet::ResetWorld),
         );
         app.add_systems(input_set.in_set(AppSet::WriteInputUpdates));
         main_run_criteria.initialize(&mut app.world);
@@ -490,10 +424,6 @@ impl<S: System<In = (), Out = bool>> Plugin for MuddleSharedPlugin<S> {
         );
         app.add_systems(
             (
-                reset_game_world_system.run_if(
-                    state_changed::<GameSessionState>()
-                        .and_then(in_state(GameSessionState::Loading)),
-                ),
                 apply_system_buffers,
                 read_movement_updates_system.run_if(in_state(GameSessionState::Playing)),
                 run_main_schedule_system,
@@ -548,17 +478,12 @@ pub enum AppState {
     Playing,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, States)]
+#[derive(Default, Clone, Debug, Eq, PartialEq, Hash, States)]
 pub enum GameSessionState {
+    #[default]
     Loading,
     Playing,
     Paused,
-}
-
-impl Default for GameSessionState {
-    fn default() -> Self {
-        Self::Loading
-    }
 }
 
 /// The resource is added when a client/server starts spawning level objects on
@@ -728,12 +653,12 @@ fn game_tick_run_criteria(
         }
 
         if state.last_tick + ticks_per_step <= time.frame_number {
-            trace!("Run and loop a game schedule (game {})", time.frame_number);
+            log::trace!("Run and loop a game schedule (game {})", time.frame_number);
             let ticks_per_step = ticks_per_step;
             state.last_tick += ticks_per_step;
             true
         } else {
-            trace!("Don't run a game schedule (game {})", time.frame_number);
+            log::trace!("Don't run a game schedule (game {})", time.frame_number);
             false
         }
     }
@@ -742,6 +667,7 @@ fn game_tick_run_criteria(
 #[derive(Default, Clone)]
 pub struct SimulationTickRunCriteriaState {
     last_game_frame: Option<FrameNumber>,
+    last_game_state: GameSessionState,
     last_player_frame: FrameNumber,
     last_server_frame: FrameNumber,
 }
@@ -761,12 +687,14 @@ fn simulation_tick_run_criteria(
     } else if state.last_player_frame == simulation_time.player_frame
         && state.last_server_frame == simulation_time.server_frame
         && game_state.0 == GameSessionState::Playing
+        && game_state.0 == state.last_game_state
     {
         panic!(
             "Simulation frame hasn't advanced: {}, {}",
             simulation_time.player_frame, simulation_time.server_frame
         );
     }
+    state.last_game_state = game_state.0.clone();
     state.last_player_frame = simulation_time.player_frame;
     state.last_server_frame = simulation_time.server_frame;
 
