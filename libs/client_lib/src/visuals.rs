@@ -65,7 +65,11 @@ pub fn control_builder_visibility_system(
                 if let Some(level_object) = level_params.level_object_by_entity(entity) {
                     match level_object.desc {
                         LevelObjectDesc::RoutePoint(_) => {
-                            visible.is_visible = is_builder;
+                            *visible = if is_builder {
+                                Visibility::Inherited
+                            } else {
+                                Visibility::Hidden
+                            };
                         }
                         LevelObjectDesc::Plane(_) | LevelObjectDesc::Cube(_) => {}
                     }
@@ -82,9 +86,13 @@ pub fn control_builder_visibility_system(
             if (transform.translation.x - parent_transform.translation.x).abs() < f32::EPSILON
                 && (transform.translation.y - parent_transform.translation.y).abs() < f32::EPSILON
             {
-                visible.is_visible = false
+                *visible = Visibility::Hidden;
             } else {
-                visible.is_visible = is_builder;
+                *visible = if is_builder {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                };
             }
         }
 

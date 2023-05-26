@@ -1,4 +1,5 @@
 use crate::{
+    camera::{OriginalCameraTransform, CAMERA_TARGET},
     components::{CameraPivotDirection, CameraPivotTag},
     MainCameraEntity, MainCameraPivotEntity,
 };
@@ -6,7 +7,8 @@ use bevy::{
     core_pipeline::core_3d::Camera3dBundle,
     ecs::{
         entity::Entity,
-        system::{Commands, Local},
+        schedule::NextState,
+        system::{Commands, Local, ResMut},
     },
     hierarchy::BuildChildren,
     log,
@@ -14,13 +16,13 @@ use bevy::{
     pbr::{PbrBundle, PointLight, PointLightBundle},
     transform::components::{GlobalTransform, Transform},
 };
-use iyes_loopless::state::NextState;
 use mr_shared_lib::{client::assets::MuddleAssets, AppState};
 
 /// This system is needed for the web version. As assets loading is blocking
 /// there, we need to trigger loading shaders before we join a game.
 pub fn load_shaders_system(
     mut commands: Commands,
+    mut next_app_state: ResMut<NextState<AppState>>,
     assets: MuddleAssets,
     mut frames_skipped: Local<u8>,
     mut entities_to_clean_up: Local<Vec<Entity>>,
@@ -36,7 +38,7 @@ pub fn load_shaders_system(
             commands.entity(entity).despawn();
         }
         log::info!("Changing the app state to {:?}", AppState::MainMenu);
-        commands.insert_resource(NextState(AppState::MainMenu));
+        next_app_state.set(AppState::MainMenu);
         return;
     }
 
@@ -64,12 +66,14 @@ pub fn basic_scene_system(mut commands: Commands) {
         ..Default::default()
     });
     // Camera.
+    let camera_transform = Transform::from_translation(Vec3::new(-3.0, -14.0, 14.0))
+        .looking_at(CAMERA_TARGET, Vec3::Z);
     let main_camera_entity = commands
         .spawn(Camera3dBundle {
-            transform: Transform::from_translation(Vec3::new(-3.0, -14.0, 14.0))
-                .looking_at(Vec3::default(), Vec3::Z),
+            transform: camera_transform,
             ..Default::default()
         })
+        .insert(OriginalCameraTransform(camera_transform))
         .insert(bevy_mod_picking::PickingCameraBundle::default())
         .id();
     let main_camera_pivot_entity = commands

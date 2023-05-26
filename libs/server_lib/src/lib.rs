@@ -1,5 +1,5 @@
 #![feature(hash_drain_filter)]
-#![feature(once_cell)]
+#![feature(lazy_cell)]
 
 pub use crate::net::watch_agones_updates;
 pub use mr_shared_lib::{game::PlayerEventSender, player::PlayerEvent};
@@ -22,12 +22,7 @@ use crate::{
         process_update_level_object_requests_system,
     },
 };
-use bevy::{
-    log,
-    prelude::*,
-    time::{FixedTimestep, TimePlugin},
-};
-use iyes_loopless::prelude::*;
+use bevy::{log, prelude::*, time::TimePlugin};
 use kube::Client;
 use mr_messages_lib::{InitLevel, LevelData};
 use mr_shared_lib::{
@@ -43,7 +38,7 @@ use mr_shared_lib::{
     },
     player::{PlayerRole, Players},
     registry::IncrementId,
-    AppState, GameSessionState, LevelObjectsToSpawnToLoad, MuddleSharedPlugin,
+    AppState, GameSessionState, LevelObjectsToSpawnToLoad, MuddleSharedPlugin, MuddleSystemConfigs,
     SIMULATIONS_PER_SECOND,
 };
 use mr_utils_lib::kube_discovery;
@@ -110,7 +105,9 @@ pub struct MuddleServerPlugin;
 impl Plugin for MuddleServerPlugin {
     fn build(&self, app: &mut App) {
         // The minimal set of Bevy plugins needed for the game logic.
-        app.add_plugin(CorePlugin::default());
+        app.add_plugin(TaskPoolPlugin::default());
+        app.add_plugin(TypeRegistrationPlugin::default());
+        app.add_plugin(FrameCountPlugin::default());
         app.add_plugin(TimePlugin::default());
         app.add_plugin(TransformPlugin::default());
         app.add_plugin(bevy::diagnostic::DiagnosticsPlugin::default());
@@ -159,42 +156,58 @@ impl Plugin for MuddleServerPlugin {
 
         app.add_system(process_idle_timeout);
 
-        let input_stage = SystemStage::parallel()
-            .with_system(process_scheduled_spawns_system)
-            .with_system(process_network_events_system)
-            .with_system(process_player_input_updates_system.after(process_network_events_system))
-            .with_system(process_switch_role_requests_system.after(process_network_events_system))
+        let input_set = (
+            process_scheduled_spawns_system,
+            process_network_events_system,
+            process_player_input_updates_system.after(process_network_events_system),
+            process_switch_role_requests_system.after(process_network_events_system),
             // It's ok to run the following in random order since object updates aren't possible
             // on the client before an authoritative confirmation that an object has been spawned.
-            .with_system(
-                process_spawn_level_object_requests_system.after(process_network_events_system),
-            )
-            .with_system(
-                process_update_level_object_requests_system.after(process_network_events_system),
-            )
-            .with_system(
-                process_despawn_level_object_requests_system.after(process_network_events_system),
-            );
-        let post_game_stage = SystemStage::single_threaded()
-            .with_system(process_player_events_system)
-            .with_system(save_level_system);
-        let broadcast_updates_stage = SystemStage::single_threaded()
-            .with_system(broadcast_disconnected_players_system)
-            .with_system(send_network_updates_system.run_in_state(GameSessionState::Playing));
+            process_spawn_level_object_requests_system.after(process_network_events_system),
+            process_update_level_object_requests_system.after(process_network_events_system),
+            process_despawn_level_object_requests_system.after(process_network_events_system),
+        )
+            .into_configs();
+        let post_game_set = (process_player_events_system, save_level_system).into_configs();
+        let broadcast_updates_set = (
+            broadcast_disconnected_players_system,
+            send_network_updates_system.run_if(in_state(GameSessionState::Playing)),
+        )
+            .into_configs();
 
         // Game.
+        let mut timer = Timer::from_seconds(1.0 / SIMULATIONS_PER_SECOND, TimerMode::Repeating);
         app.add_plugin(MuddleSharedPlugin::new(
-            FixedTimestep::steps_per_second(SIMULATIONS_PER_SECOND as f64),
-            input_stage,
-            post_game_stage,
-            broadcast_updates_stage,
-            SystemStage::single_threaded(),
+            MuddleSystemConfigs {
+                main_run_criteria: IntoSystem::into_system(
+                    move |mut prev_times_finished_this_tick: Local<u32>,
+                          mut prev_last_update: Local<Option<Instant>>,
+                          time: Res<Time>| {
+                        if *prev_times_finished_this_tick == 0
+                            && *prev_last_update != time.last_update()
+                        {
+                            timer.tick(time.delta());
+                            *prev_times_finished_this_tick = timer.times_finished_this_tick();
+                            *prev_last_update = time.last_update();
+                        }
+                        if *prev_times_finished_this_tick == 0 {
+                            return false;
+                        }
+                        *prev_times_finished_this_tick -= 1;
+                        true
+                    },
+                ),
+                input_set,
+                post_game_set,
+                broadcast_updates_set,
+                post_tick_set: IntoSystemConfigs::into_configs(()),
+            },
             None,
         ));
 
         // We override the initial state for server as we aren't using the loading state
         // atm.
-        app.insert_resource(CurrentState(AppState::Playing));
+        app.insert_resource(State(AppState::Playing));
 
         app.init_resource::<EntityNetIdCounter>();
         app.init_resource::<PlayerNetIdCounter>();

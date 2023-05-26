@@ -15,7 +15,8 @@ use bevy::{
         entity::Entity,
         event::{EventReader, EventWriter},
         query::QueryEntityError,
-        system::{In, Query, RemovedComponents, Res, SystemParam},
+        removal_detection::RemovedComponents,
+        system::{In, Query, Res, SystemParam},
     },
     log,
     utils::HashSet,
@@ -44,7 +45,7 @@ pub fn process_collision_events_system(
     mut collision_events: EventReader<CollisionEvent>,
     mut collision_logic_changed_events: EventReader<CollisionLogicChanged>,
     mut queries: CollisionQueries,
-    removed_level_objects: RemovedComponents<LevelObjectTag>,
+    mut removed_level_objects: RemovedComponents<LevelObjectTag>,
     level_object_server_ghost_parents: Query<&LevelObjectServerGhostParent>,
     level: LevelParams,
 ) -> Vec<Entity> {

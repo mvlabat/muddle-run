@@ -39,7 +39,6 @@ use bevy_rapier2d::{
     prelude::CollisionGroups,
     rapier::geometry::ColliderShape,
 };
-use iyes_loopless::state::NextState;
 use std::fmt::Debug;
 
 #[derive(WorldQuery)]
@@ -546,7 +545,7 @@ pub fn update_level_objects_system(
                 "Changing the game session state to {:?}",
                 GameSessionState::Playing
             );
-            commands.insert_resource(NextState(GameSessionState::Playing));
+            commands.insert_resource(NextState(Some(GameSessionState::Playing)));
             commands.remove_resource::<LevelObjectsToSpawnToLoad>();
         }
     }

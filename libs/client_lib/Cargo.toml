@@ -14,27 +14,31 @@ profiler = ["puffin", "puffin_egui", "mr_shared_lib/profiler"]
 [dependencies]
 anyhow = "1.0"
 base64 = "0.20.0-alpha.1"
-bevy = "0.9.1"
-bevy_egui = "0.18"
-bevy-inspector-egui = "0.15.0"
-bevy-inspector-egui-rapier = { version = "0.9", features = ["rapier2d"] }
-bevy_mod_picking = "0.11"
+bevy = "0.10"
+bevy_egui = "0.20"
+bevy-inspector-egui = "0.18"
+#bevy-inspector-egui-rapier = { version = "0.9", features = ["rapier2d"] }
+bevy_mod_picking = "0.12"
 bevy_disturbulence = { git = "https://github.com/mvlabat/bevy_disturbulence.git", branch = "wip", features = ["client"] }
-bevy_rapier2d = { version = "0.19", features = ["wasm-bindgen"] }
+bevy_puffin = "0.4.0"
+bevy_rapier2d = { version = "0.21", features = ["wasm-bindgen"] }
 chrono = "0.4.23"
+egui_logger = "0.3.0"
 futures = "0.3.25"
-iyes_loopless = "0.9"
 jwt-compact = { version = "0.6", features = ["std", "clock", "with_rsa"], default-features = false }
 puffin = { version = "0.14", optional = true }
-puffin_egui = { version = "0.19", optional = true }
+puffin_egui = { version = "0.20", optional = true }
 rand = "0.8"
-rapier2d = "0.16"
+rapier2d = "0.17"
 reqwest = { version = "0.11", features = ["json"] }
 serde = "1.0"
 serde_json = "1.0"
 serde_urlencoded = "0.7"
 sha2 = "0.10"
 tokio = { version = "1.24", features = ["rt", "sync"] }
+tracing-subscriber = {version = "0.3", features = ["registry", "env-filter"]}
+tracing-log = "0.1"
+tracing-error = "0.2"
 url = { version = "2.3", features = ["serde"] }
 wasm-timer = "0.2"
 webbrowser = "0.8"

@@ -87,8 +87,10 @@ impl<'w, 's> ClientFactory<'w, 's> for PlayerSensorClientFactory {
             .insert(PbrBundle {
                 mesh: deps.assets.meshes.player_sensor.clone(),
                 material: deps.assets.materials.player_sensor_normal.clone(),
-                visibility: Visibility {
-                    is_visible: deps.visibility_settings.debug,
+                visibility: if deps.visibility_settings.debug {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
                 },
                 ..Default::default()
             })
@@ -204,12 +206,10 @@ impl<'w, 's> ClientFactory<'w, 's> for PlaneClientFactory {
         };
 
         commands.insert(PbrBundle {
-            visibility: Visibility {
-                is_visible: if input.is_ghost {
-                    deps.visibility_settings.ghosts
-                } else {
-                    true
-                },
+            visibility: if !input.is_ghost || deps.visibility_settings.ghosts {
+                Visibility::Inherited
+            } else {
+                Visibility::Hidden
             },
             mesh: deps.meshes.add(mesh),
             material: {
@@ -262,12 +262,10 @@ impl<'w, 's> ClientFactory<'w, 's> for CubeClientFactory {
             1.0
         };
         commands.insert(PbrBundle {
-            visibility: Visibility {
-                is_visible: if input.is_ghost {
-                    deps.visibility_settings.ghosts
-                } else {
-                    true
-                },
+            visibility: if !input.is_ghost || deps.visibility_settings.ghosts {
+                Visibility::Inherited
+            } else {
+                Visibility::Hidden
             },
             mesh: deps.meshes.add(Mesh::from(shape::Cube {
                 size: input.desc.size * 2.0 * ghost_size_multiplier,
@@ -326,12 +324,12 @@ impl<'w, 's> ClientFactory<'w, 's> for RoutePointClientFactory {
             1.0
         };
         commands.insert(PbrBundle {
-            visibility: Visibility {
-                is_visible: if input.is_ghost {
-                    deps.visibility_settings.ghosts
-                } else {
-                    deps.visibility_settings.route_points
-                },
+            visibility: if input.is_ghost && deps.visibility_settings.ghosts
+                || !input.is_ghost && deps.visibility_settings.route_points
+            {
+                Visibility::Inherited
+            } else {
+                Visibility::Hidden
             },
             mesh: deps.meshes.add(Mesh::from(Pyramid {
                 height: ROUTE_POINT_HEIGHT * ghost_size_multiplier,

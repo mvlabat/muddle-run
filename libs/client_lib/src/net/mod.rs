@@ -14,7 +14,6 @@ use auth::{AuthMessage, AuthRequest};
 use bevy::{ecs::system::SystemParam, log, prelude::*, utils::Instant};
 use bevy_disturbulence::{IncomingTrySendError, NetworkError, NetworkEvent, NetworkResource};
 use futures::{select, FutureExt};
-use iyes_loopless::state::NextState;
 use mr_messages_lib::{GameServerState, MatchmakerMessage, MatchmakerRequest, Server};
 use mr_shared_lib::{
     framebuffer::{FrameNumber, Framebuffer},
@@ -416,7 +415,7 @@ pub fn process_network_events_system(
                     // thought that `Handshake` probably comes with less edge-cases, since we
                     // always get it before starting the game.
                     log::info!("Changing the app state to {:?}", AppState::Playing);
-                    commands.insert_resource(NextState(AppState::Playing));
+                    commands.insert_resource(NextState(Some(AppState::Playing)));
                     // On game start, `GameSessionState::Loading` is likely current state as
                     // well, we rely on `iyes_loopless` behaviour to run the
                     // enter stage regardless of whether current state
@@ -425,7 +424,7 @@ pub fn process_network_events_system(
                         "Changing the game session state to {:?}",
                         GameSessionState::Loading
                     );
-                    commands.insert_resource(NextState(GameSessionState::Loading));
+                    commands.insert_resource(NextState(Some(GameSessionState::Loading)));
                 }
                 UnreliableServerMessage::DeltaUpdate(update) => {
                     let mut skip_update = false;
@@ -452,7 +451,7 @@ pub fn process_network_events_system(
                                     update_params.game_time.frame_number,
                                     err
                                 );
-                                skip_update = true;
+                                // skip_update = true;
                             }
                             Err(
                                 err @ AcknowledgeError::Inconsistent
@@ -733,6 +732,9 @@ pub fn maintain_connection_system(
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
 
+    // If the connection with a game server is established, we send a disconnect
+    // "request" to the matchmaker connection handler (as we no longer need to
+    // be connected to the matchmaker).
     if matches!(
         network_params.connection_state.status(),
         ConnectionStatus::Connected
@@ -747,6 +749,7 @@ pub fn maintain_connection_system(
         }
     }
 
+    // Read matchmaker status changes and update `matchmaker_state` accordingly.
     let mut matchmaker = matchmaker_params
         .matchmaker_state
         .zip(matchmaker_params.main_menu_ui_channels);
@@ -773,16 +776,17 @@ pub fn maintain_connection_system(
     // TODO: if a client isn't getting any updates, we may also want to pause the
     //  game and wait for some time for a server to respond.
 
+    // Determine if a connection has timed out.
     let connection_has_timed_out = Instant::now().duration_since(
         network_params
             .connection_state
             .last_valid_message_received_at,
     ) > Duration::from_millis(CONNECTION_TIMEOUT_MILLIS);
-
     if connection_has_timed_out && !connection_is_uninitialized {
         log::warn!("Connection timeout, resetting");
     }
 
+    // Determine if a client is lagging behind.
     let (newest_acknowledged_incoming_packet, _) =
         network_params.connection_state.incoming_acknowledgments();
     let is_falling_behind = matches!(
@@ -795,7 +799,6 @@ pub fn maintain_connection_system(
             false
         }
     });
-
     if is_falling_behind && !connection_is_uninitialized {
         log::warn!(
             "The client is falling behind, resetting (newest acknowledged frame: {}, current frame: {})",
@@ -804,6 +807,9 @@ pub fn maintain_connection_system(
         );
     }
 
+    // If a connection has timeout, or a client is lagging behind to much, or we are
+    // disconnecting for another reason (initiated by a server, for example), reset
+    // the connection and other relevant state.
     if !connection_is_uninitialized && connection_has_timed_out
         || is_falling_behind
         || matches!(
@@ -818,7 +824,10 @@ pub fn maintain_connection_system(
             .set_status(ConnectionStatus::Uninitialized);
     }
 
+    // Re-initialise the connection with a game server.
     if network_params.net.connections.is_empty() {
+        // If there is a matchmaker server but we are disconnected from it, don't
+        // reconnect to a game server, but reconnect to the matchmaker instead.
         if let Some((matchmaker_state, matchmaker_channels)) = matchmaker.as_mut() {
             if matches!(matchmaker_state.status, TcpConnectionStatus::Disconnected) {
                 log::trace!("Requesting a connection to the matchmaker");
@@ -830,7 +839,7 @@ pub fn maintain_connection_system(
             }
         } else if !*initialised_server_to_connect_without_matchmaker {
             // We want to init the connection to a server only once.
-            // If a client disconnects, they'll be able to re-connect via the main menu.
+            // If a client disconnects, they'll be able to reconnect via the main menu.
             *initialised_server_to_connect_without_matchmaker = true;
             let server_socket_addr = client_config
                 .server_addr
@@ -923,7 +932,11 @@ pub fn send_network_updates_system(
             // TODO: deduplicate updates (the same code is written for server).
             for (frame_number, &direction) in player_direction
                 .buffer
-                .iter_with_interpolation()
+                // If the RTT between client and server is really small, first unacknowledged frame
+                // might be the frame we've just simulated. Also, when we run several frames in a
+                // row before rendering, that means that we haven't processed input updates for
+                // the subsequent frames too, hence the extrapolation.
+                .iter_with_extrapolation(first_unacknowledged_frame)
                 // TODO: should client always send redundant inputs or only the current ones (unless
                 // packet loss is detected)?
                 .skip_while(|(frame_number, _)| *frame_number < first_unacknowledged_frame)
@@ -945,6 +958,7 @@ pub fn send_network_updates_system(
         acknowledgments: network_params.connection_state.incoming_acknowledgments(),
         inputs,
     });
+    log::trace!("Broadcasting {:?} (frame: {})", message, time.frame_number);
     let result = network_params.net.send_message(
         connection_handle,
         Message {

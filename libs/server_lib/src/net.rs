@@ -768,7 +768,7 @@ fn disconnect_players(
                         frame_number: time.frame_number,
                         reason: DespawnReason::Disconnect,
                     });
-                let mut player = players
+                let player = players
                     .get_mut(&player_net_id)
                     .expect("Expected a registered player with an existing player_net_id");
                 player.is_connected = false;

@@ -1,6 +1,9 @@
 use bevy::{
-    ecs::system::{Res, ResMut},
-    window::Windows,
+    ecs::{
+        query::With,
+        system::{Query, ResMut},
+    },
+    window::{PrimaryWindow, Window},
 };
 use bevy_egui::{
     egui::{self, Ui},
@@ -13,11 +16,15 @@ pub mod debug_ui;
 pub mod main_menu_ui;
 pub mod overlay_ui;
 pub mod player_ui;
+pub mod side_panel;
 
 mod widgets;
 
-pub fn set_ui_scale_factor_system(mut egui_settings: ResMut<EguiSettings>, windows: Res<Windows>) {
-    if let Some(window) = windows.get_primary() {
+pub fn set_ui_scale_factor_system(
+    mut egui_settings: ResMut<EguiSettings>,
+    primary_window_query: Query<&Window, With<PrimaryWindow>>,
+) {
+    if let Ok(window) = primary_window_query.get_single() {
         if window.scale_factor() % 2.0 > 0.0 {
             egui_settings.scale_factor = 1.0 / window.scale_factor();
         }

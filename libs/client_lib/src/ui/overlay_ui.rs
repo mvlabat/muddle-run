@@ -3,25 +3,27 @@ use crate::{
     ui::widgets::list_menu::{button_panel, PanelButton},
 };
 use bevy::{
-    ecs::system::{Res, ResMut},
+    ecs::{
+        schedule::State,
+        system::{Res, ResMut},
+    },
     log,
-    prelude::Commands,
+    prelude::NextState,
 };
-use bevy_egui::{egui, EguiContext};
-use iyes_loopless::state::{CurrentState, NextState};
+use bevy_egui::{egui, EguiContexts};
 use mr_shared_lib::{
     messages::DisconnectReason,
     net::{ConnectionState, ConnectionStatus},
     AppState, GameSessionState,
 };
 
-pub fn app_loading_ui(mut egui_context: ResMut<EguiContext>) {
+pub fn app_loading_ui(mut egui_contexts: EguiContexts) {
     let window_width = 400.0;
     let window_height = 100.0;
 
     egui::CentralPanel::default()
         .frame(egui::Frame::none().fill(egui::Color32::from_rgb(47, 47, 47)))
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_contexts.ctx_mut(), |ui| {
             ui.style_mut().spacing.window_margin = egui::style::Margin::same(0.0);
             egui::Window::new("app loading ui")
                 .frame(egui::Frame::window(ui.style()))
@@ -50,9 +52,10 @@ pub fn app_loading_ui(mut egui_context: ResMut<EguiContext>) {
 }
 
 pub fn connection_status_overlay_system(
-    mut commands: Commands,
-    game_session_state: Res<CurrentState<GameSessionState>>,
-    mut egui_context: ResMut<EguiContext>,
+    mut next_app_state: ResMut<NextState<AppState>>,
+    mut next_game_session_state: ResMut<NextState<GameSessionState>>,
+    game_session_state: Res<State<GameSessionState>>,
+    mut egui_contexts: EguiContexts,
     mut connection_state: ResMut<ConnectionState>,
     mut server_to_connect: ResMut<ServerToConnect>,
 ) {
@@ -74,7 +77,7 @@ pub fn connection_status_overlay_system(
     let window_width = 400.0;
     let window_height = 100.0;
 
-    let ctx = egui_context.ctx_mut();
+    let ctx = egui_contexts.ctx_mut();
     egui::CentralPanel::default()
         .frame(egui::Frame::none().fill(egui::Color32::from_black_alpha(200)))
         .show(ctx, |ui| {
@@ -123,12 +126,12 @@ pub fn connection_status_overlay_system(
                         connection_state
                             .set_status(ConnectionStatus::Disconnecting(DisconnectReason::Aborted));
                         log::info!("Changing the app state to {:?}", AppState::MainMenu);
-                        commands.insert_resource(NextState(AppState::MainMenu));
+                        next_app_state.set(AppState::MainMenu);
                         log::info!(
                             "Changing the game session state to {:?}",
                             GameSessionState::Loading
                         );
-                        commands.insert_resource(NextState(GameSessionState::Loading));
+                        next_game_session_state.set(GameSessionState::Loading);
                     }
                 });
         });

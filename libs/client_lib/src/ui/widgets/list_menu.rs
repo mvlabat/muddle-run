@@ -128,7 +128,7 @@ where
         };
 
         let ctx = ui.ctx();
-        let item_height = ctx.memory().data.get_temp::<MenuListItemState>(self.id);
+        let item_height = ctx.memory_mut(|m| m.data.get_temp::<MenuListItemState>(self.id));
 
         let item_height = item_height.map_or_else(
             || {
@@ -136,7 +136,7 @@ where
                     height: COLLAPSED_HEIGHT,
                 };
                 let height = state.animated_height(ctx, self.id, self.is_selected);
-                ctx.memory().data.insert_temp(self.id, state);
+                ctx.memory_mut(|m| m.data.insert_temp(self.id, state));
                 height
             },
             |state| state.animated_height(ctx, self.id, self.is_selected),
@@ -214,21 +214,22 @@ where
         );
 
         if let Some(actual_collapsing_height) = actual_collapsing_height {
-            ui.ctx().memory().data.insert_temp(
-                self.id,
-                MenuListItemState {
-                    height: COLLAPSED_HEIGHT + actual_collapsing_height,
-                },
-            );
+            ui.ctx().memory_mut(|m| {
+                m.data.insert_temp(
+                    self.id,
+                    MenuListItemState {
+                        height: COLLAPSED_HEIGHT + actual_collapsing_height,
+                    },
+                )
+            });
         };
 
-        let mut ctx_output = ui.ctx().output();
-        if self.is_hoverable
-            && response.hovered()
-            && ctx_output.cursor_icon == egui::CursorIcon::Default
-        {
-            ctx_output.cursor_icon = egui::CursorIcon::PointingHand;
-        }
+        ui.ctx().output_mut(|o| {
+            if self.is_hoverable && response.hovered() && o.cursor_icon == egui::CursorIcon::Default
+            {
+                o.cursor_icon = egui::CursorIcon::PointingHand;
+            }
+        });
 
         MenuListItemResponse {
             item: response,

@@ -12,6 +12,7 @@ members = [
     "bins/server",
     "bins/matchmaker",
     "bins/persistence",
+    "bins/sandbox",
 ]
 resolver = "2"
 
@@ -23,26 +24,58 @@ opt-level = 1
 
 [patch.crates-io]
 dotenv = { git = "https://github.com/mvlabat/dotenv.git" }
-bevy = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.9.1/muddle-run" }
-bevy_app = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.9.1/muddle-run" }
-bevy_ecs = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.9.1/muddle-run" }
-bevy_time = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.9.1/muddle-run" }
-bevy_utils = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.9.1/muddle-run" }
+bevy = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_a11y = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_animation = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_app = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_asset = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_audio = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_core = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_core_pipeline = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_derive = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_diagnostic = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_ecs = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_encase_derive = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_gilrs = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_gltf = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_hierarchy = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_input = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_internal = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_log = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_macro_utils = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_math = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_mikktspace = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_pbr = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_ptr = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_reflect = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_render = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_scene = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_sprite = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_tasks = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_text = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_time = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_transform = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_ui = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_utils = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_window = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+bevy_winit = { git = "https://github.com/mvlabat/bevy.git", branch = "v0.10.1/muddle-run" }
+
+
 #bevy_rapier2d = { git = "https://github.com/mvlabat/bevy_rapier.git", branch = "reorder-updates" }
 #parry2d = { git = "https://github.com/dimforge/parry", rev = "5c957b9" }
 #rapier2d = { git = "https://github.com/dimforge/rapier.git", rev = "3a2f5f7cf5e21cfa5a3cc687caa8f4fbc3c04984" }
 #puffin = { git = "https://github.com/EmbarkStudios/puffin.git", rev = "4616fee7fb8a143afdf0821587ba531e4f3671e9" }
 #puffin_egui = { git = "https://github.com/EmbarkStudios/puffin.git", rev = "4616fee7fb8a143afdf0821587ba531e4f3671e9" }
-#bevy_rapier2d = { path = "../bevy_rapier/bevy_rapier2d" }
+bevy_rapier2d = { path = "../bevy_rapier/bevy_rapier2d" }
 #bevy_puffin = { path = "../bevy_puffin" }
 #bevy = { path = "../bevy" }
 #bevy_egui = { path = "../bevy_egui" }
 #egui = { path = "../egui/egui" }
 
-naia-client-socket = { git = "https://github.com/mvlabat/naia.git", branch = "muddle-run" }
-naia-server-socket = { git = "https://github.com/mvlabat/naia.git", branch = "muddle-run" }
-naia-socket-shared = { git = "https://github.com/mvlabat/naia.git", branch = "muddle-run" }
-webrtc-unreliable-client = { git = "https://github.com/mvlabat/webrtc-unreliable-client.git", branch = "muddle-run" }
+#naia-client-socket = { git = "https://github.com/mvlabat/naia.git", branch = "muddle-run" }
+#naia-server-socket = { git = "https://github.com/mvlabat/naia.git", branch = "muddle-run" }
+#naia-socket-shared = { git = "https://github.com/mvlabat/naia.git", branch = "muddle-run" }
+#webrtc-unreliable-client = { git = "https://github.com/mvlabat/webrtc-unreliable-client.git", branch = "muddle-run" }
 #bevy_disturbulence = { path = "../bevy_disturbulence" }
 #naia-client-socket = { path = "../naia/socket/client" }
 #naia-server-socket = { path = "../naia/socket/server" }
@@ -59,3 +92,6 @@ tracing-subscriber = { git = "https://github.com/mvlabat/tracing.git", branch = 
 
 #[patch.'https://github.com/bevyengine/bevy']
 #bevy = { git = "https://github.com/bevyengine/bevy//" }
+
+[patch.'https://github.com/mvlabat/bevy_disturbulence']
+bevy_disturbulence = { path = "../bevy_disturbulence" }

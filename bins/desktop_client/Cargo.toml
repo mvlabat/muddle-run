@@ -10,8 +10,8 @@ edition = "2021"
 mr_client_lib = { path = "../../libs/client_lib", features = ["profiler"] }
 mr_utils_lib = { path = "../../libs/utils_lib", features = ["bevy_logging"] }
 
-bevy = "0.9.1"
-bevy_puffin = "0.3"
+bevy = "0.10"
+bevy_puffin = "0.4"
 sentry = "0.29.1"
 
 [build-dependencies]

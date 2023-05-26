@@ -7,8 +7,7 @@ use bevy::{
     ecs::system::SystemParam,
     prelude::*,
 };
-use bevy_egui::{egui, egui::epaint::RectShape, EguiContext};
-use iyes_loopless::state::CurrentState;
+use bevy_egui::{egui, egui::epaint::RectShape, EguiContexts};
 use mr_shared_lib::{
     client::components::DebugUiVisibility,
     framebuffer::FrameNumber,
@@ -30,7 +29,7 @@ use std::{collections::VecDeque, marker::PhantomData};
 
 #[derive(SystemParam)]
 pub struct DebugData<'w, 's> {
-    game_state: Res<'w, CurrentState<GameSessionState>>,
+    game_state: Res<'w, State<GameSessionState>>,
     time: Res<'w, SimulationTime>,
     current_ticks_per_second: Res<'w, GameTicksPerSecond>,
     delay_server_time: Res<'w, DelayServerTime>,
@@ -73,7 +72,11 @@ pub fn update_debug_visibility_system(
     visibility_settings.debug = debug_ui_state.show;
     if *debug_ui_was_shown != debug_ui_state.show {
         for mut visible in debug_ui_visible.iter_mut() {
-            visible.is_visible = debug_ui_state.show;
+            *visible = if debug_ui_state.show {
+                Visibility::Inherited
+            } else {
+                Visibility::Hidden
+            };
         }
     }
     *debug_ui_was_shown = debug_ui_state.show;
@@ -103,36 +106,14 @@ pub fn update_debug_ui_state_system(
     debug_ui_state.jitter_millis = debug_data.connection_state.jitter_millis() as usize;
 }
 
-pub fn profiler_ui_system(
-    // ResMut is intentional, to avoid fighting over the Mutex from different systems.
-    mut egui_context: ResMut<EguiContext>,
-    debug_ui_state: Res<DebugUiState>,
-) {
-    #[cfg(feature = "profiler")]
-    puffin::profile_function!();
-    let ctx = egui_context.ctx_mut();
-
-    if !debug_ui_state.show {
-        return;
-    }
-
-    egui::Window::new("Profiler")
-        .default_size([1024.0, 600.0])
-        .show(ctx, |_ui| {
-            #[cfg(feature = "profiler")]
-            puffin_egui::profiler_ui(_ui)
-        });
-}
-
 pub fn debug_ui_system(
-    // ResMut is intentional, to avoid fighting over the Mutex from different systems.
-    mut egui_context: ResMut<EguiContext>,
+    mut egui_contexts: EguiContexts,
     mut debug_ui_state: ResMut<DebugUiState>,
     diagnostics: Res<Diagnostics>,
 ) {
     #[cfg(feature = "profiler")]
     puffin::profile_function!();
-    let ctx = egui_context.ctx_mut();
+    let ctx = egui_contexts.ctx_mut();
 
     if let Some(fps_diagnostic) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
         debug_ui_state.fps_history_len = fps_diagnostic.get_max_history_length();
@@ -226,9 +207,8 @@ pub struct InspectObjectQueries<'w, 's> {
 }
 
 pub fn inspect_object_system(
-    // ResMut is intentional, to avoid fighting over the Mutex from different systems.
     debug_ui_state: Res<DebugUiState>,
-    mut egui_context: ResMut<EguiContext>,
+    mut egui_contexts: EguiContexts,
     mut mouse_entity_picker: MouseEntityPicker<(), ()>,
     queries: InspectObjectQueries,
 ) {
@@ -238,7 +218,7 @@ pub fn inspect_object_system(
         return;
     }
 
-    let ctx = egui_context.ctx_mut();
+    let ctx = egui_contexts.ctx_mut();
     if !ctx.is_pointer_over_area() {
         mouse_entity_picker.process_input(&mut None);
     }
@@ -319,7 +299,7 @@ fn graph(
     let rect = rect.shrink(4.0);
     let line_stroke = Stroke::new(1.0, Color32::from_additive_luminance(128));
 
-    if let Some(mouse_pos) = ui.input().pointer.hover_pos() {
+    if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
         if rect.contains(mouse_pos) {
             let y = mouse_pos.y;
             shapes.push(Shape::line_segment(
@@ -328,14 +308,16 @@ fn graph(
             ));
             let value = remap(y, rect.bottom_up_range(), 0.0..=graph_top_value);
             let text = format!("{value:.1}");
-            shapes.push(Shape::text(
-                &ui.fonts(),
-                pos2(rect.left(), y),
-                egui::Align2::LEFT_BOTTOM,
-                text,
-                TextStyle::Monospace.resolve(ui.style()),
-                Color32::WHITE,
-            ));
+            shapes.push(ui.fonts(|fonts| {
+                Shape::text(
+                    fonts,
+                    pos2(rect.left(), y),
+                    egui::Align2::LEFT_BOTTOM,
+                    text,
+                    TextStyle::Monospace.resolve(ui.style()),
+                    Color32::WHITE,
+                )
+            }));
         }
     }
 

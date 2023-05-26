@@ -178,6 +178,8 @@ impl<T: Default + std::fmt::Debug> Framebuffer<T> {
         let frame_len = FrameNumber::new(self.buffer.len() as u16);
         assert!(self.can_insert(frame_number), "Inserting for a frame {} would remove future history (start_frame: {}, limit: {}, len: {})", frame_number, self.start_frame, self.limit, frame_len);
 
+        // If the inserted frame is earlier than the buffer start, we fill all the
+        // elements in-between with default values.
         if frame_number < self.start_frame {
             for _ in frame_number + FrameNumber::new(1)..self.start_frame {
                 self.buffer.push_front(T::default());
@@ -187,19 +189,30 @@ impl<T: Default + std::fmt::Debug> Framebuffer<T> {
             return;
         }
 
-        let frame_len = FrameNumber::new(self.buffer.len() as u16);
-        let end_frame = self.start_frame + frame_len - FrameNumber::new(1);
+        let buffer_len = FrameNumber::new(self.buffer.len() as u16);
+        let end_frame = self.start_frame + buffer_len - FrameNumber::new(1);
+        // If the buffer is empty, it's just the first insert, so we can also mark
+        // `start_frame` respectively.
         if self.buffer.is_empty() {
             self.start_frame = frame_number;
             self.push(value);
-        } else if frame_number >= end_frame + self.limit {
+        }
+        // If we insert far ahead into the future (more than the buffer limit), we clean the buffer,
+        // insert the element and mark the new start frame.
+        else if frame_number >= end_frame + self.limit {
             self.buffer.clear();
             self.start_frame = frame_number;
             self.push(value);
-        } else if frame_number <= end_frame {
-            let offset = frame_len - FrameNumber::new(1) - (end_frame - frame_number);
+        }
+        // If the inserted frame is between `start_frame` and `end_frame`, we just replace
+        // an existing element.
+        else if frame_number <= end_frame {
+            let offset = buffer_len - FrameNumber::new(1) - (end_frame - frame_number);
             self.buffer[offset.value() as usize] = value;
-        } else {
+        }
+        // If the inserted frame is in the future but within the limits, we append default values
+        // until we reach the target frame and then do the insertion.
+        else {
             for _ in end_frame + FrameNumber::new(1)..frame_number {
                 self.push(T::default());
             }
